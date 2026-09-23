@@ -1,0 +1,8 @@
+[Unit]
+Description=teachermovies board sync (status:* labels -> Project 2 Status column; workaround for titanarq/agent-os#14)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/titan/projects/teachermovies
+Environment="PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/usr/bin/python3 /home/titan/projects/teachermovies/scripts/board_sync.py
