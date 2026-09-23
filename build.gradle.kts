@@ -8,14 +8,9 @@ plugins {
     alias(libs.plugins.ksp) apply false
 }
 
-// The two no-ops below keep `./gradlew test` / `assembleDebug` (and so scripts/test.sh and CI)
-// green while the included modules still have no build files. Gradle runs an unqualified task name
-// in every project that has it, so no root aggregation is needed: drop each no-op as soon as the
-// modules provide the real task (`test` in stage 2/3 of #37, `assembleDebug` in stage 3/3).
-tasks.register("test") {
-    group = "verification"
-    description = "No-op until the module build files exist."
-}
+// The no-op below keeps `./gradlew assembleDebug` (and so CI) green while `:app-tv` still has no
+// build file. Gradle runs an unqualified task name in every project that has it, so no root
+// aggregation is needed: drop it as soon as `:app-tv` provides the real task (stage 3/3 of #37).
 tasks.register("assembleDebug") {
     group = "build"
     description = "No-op until :app-tv exists."
