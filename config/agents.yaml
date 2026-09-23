@@ -118,9 +118,9 @@ planner:
   relaunch_cap: 3
   max_parallel_issues: 1
   reconcile_closed_lookback_days: 30
-  # Off until a human has reviewed a refiner dry run on this repo
+  # Reviewed the refiner's dry run on #29/#81-#83 (2026-09-24); unattended from here on
   # (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
-  refiner_unattended: false
+  refiner_unattended: true
 
 classes:
   mechanical-qwen:
