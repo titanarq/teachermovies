@@ -28,7 +28,10 @@ jobs:
           java-version: "17"
 
       - if: steps.gradle-present.outputs.present == 'true'
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # v3 defaulted to the removed `tools` package and failed; install only what the build needs.
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
 
       - if: steps.gradle-present.outputs.present == 'true'
         uses: gradle/actions/setup-gradle@v4
