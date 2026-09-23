@@ -36,3 +36,4 @@ captures/
 *.jks
 *.keystore
 keystore.properties
+*.egg-info/

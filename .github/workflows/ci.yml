@@ -1,0 +1,52 @@
+# Android build + JVM unit tests. No-ops (green) until the Gradle skeleton and wrapper exist; the
+# first infra task creates them. Instrumented tests are never run here (no emulator on purpose).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: gradle-present
+        run: |
+          if [ -f gradlew ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; echo "No Gradle project yet -- skipping build and tests."; fi
+
+      - if: steps.gradle-present.outputs.present == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - if: steps.gradle-present.outputs.present == 'true'
+        uses: android-actions/setup-android@v3
+
+      - if: steps.gradle-present.outputs.present == 'true'
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: build (debug)
+        if: steps.gradle-present.outputs.present == 'true'
+        run: |
+          chmod +x gradlew
+          ./gradlew --console=plain assembleDebug
+
+      - name: unit tests (scripts/test.sh)
+        if: steps.gradle-present.outputs.present == 'true'
+        run: bash scripts/test.sh
+
+      - name: upload test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-test-log
+          path: .cache/gradle-test-last.log
+          if-no-files-found: ignore
