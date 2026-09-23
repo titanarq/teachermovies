@@ -51,22 +51,22 @@ never a jlibtorrent type.
 
 - Kotlin only, JDK 17 toolchain, Gradle Kotlin DSL (`*.gradle.kts`) with a version catalog
   (`gradle/libs.versions.toml`). Add dependencies ONLY through the catalog.
-- `minSdk` 24 or higher as the skeleton decides; `targetSdk`/`compileSdk` = latest stable.
+- `minSdk` 26, `compileSdk`/`targetSdk` 35; all toolchain/library versions per ADR-0004.
 - UI: Jetpack Compose for TV (`androidx.tv:tv-material`), every screen navigable by D-pad;
   focus handling is part of "done".
 - Concurrency: coroutines + `Flow`/`StateFlow`; no RxJava, no raw threads except where a native
   library forces its own (jlibtorrent alert loop, libVLC events) -- bridge those into Flows.
 - Architecture: unidirectional data flow (ViewModel exposes `StateFlow<UiState>`); repositories
   own data; no Android framework types in domain classes.
-- DI: constructor injection; the chosen DI framework is decided by the skeleton task (ADR if it is
-  not plain manual DI or Hilt).
+- DI: constructor injection, manual DI through `AppContainer`; fakes in the main source set (ADR-0003).
 - Persistence: Room stores metadata only (info-hash, name, path, progress, main file, chosen
   audio/subtitle track, last position); media files live on disk under
   `<volume>/Movies/<torrent-id>/`.
 - Errors: no swallowed exceptions; model failures as sealed results at module boundaries.
 - Formatting: ktlint/ktfmt style as configured by the build; no wildcard imports.
-- Security: the HTTP server binds LAN interfaces only, mutating endpoints require
-  `Authorization: Bearer <token>` obtained by PIN pairing; no UPnP for the HTTP server; never log
+- Security: the HTTP server binds LAN interfaces only; every `/api/*` endpoint except
+  `GET /api/status` and `POST /api/pair` requires `Authorization: Bearer <token>` obtained by PIN
+  pairing (SSE may pass it as `?token=`; ADR-0002); no UPnP for the HTTP server; never log
   tokens or PINs.
 - Tests: JVM unit tests (`src/test`) for all logic; fakes over mocks where possible; a
   `FakeTorrentEngine` is the default for anything above the torrent module. Instrumented tests

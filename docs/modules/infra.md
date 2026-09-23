@@ -3,7 +3,7 @@
 **Gradle path:** root project (`settings.gradle.kts`, `build.gradle.kts`, `gradle/libs.versions.toml`, wrapper).
 
 ## Responsibility
-- Gradle skeleton, version catalog, shared convention config (JDK 17 toolchain, lint/format).
+- Gradle skeleton, version catalog, shared convention config (JDK 17 toolchain, lint/format). Versions: ADR-0004 (Gradle 8.7, AGP 8.6.1, Kotlin 2.1.21, compileSdk/targetSdk 35, minSdk 26).
 - CI (`.github/workflows/ci.yml`: Android build + unit tests on ubuntu, JDK 17).
 - `scripts/test.sh` (the single test command) and agent OS host configuration (`config/agents.yaml`, `config/agent_prompts/`, `scripts/` shims).
 
