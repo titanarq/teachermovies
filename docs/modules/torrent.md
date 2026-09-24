@@ -8,7 +8,7 @@
 - Automatic priority 0 for samples/images/extras; download only the movie file and `.srt`/`.ass`.
 - Persisted resume data so downloads continue after reboot.
 - Designed from day 1 for stream-while-downloading: piece-deadline / sequential window API around a playback position (`prioritizeWindow(fileIndex, byteOffset, windowBytes)`), even if phase 8 implements it later.
-- `com.teachermovies.torrent.policy`: pure Kotlin status-mapping policy, kept separate from any adapter so it stays engine-agnostic. `RawStatus`/`RawPhase` mirror libtorrent's `torrent_status::state_t` without referencing it; `DownloadStateMapper.map` derives the user-visible `DownloadState`; `etaSeconds` computes the remaining-time estimate. The jlibtorrent adapter (#52) is the only caller.
+- `com.teachermovies.torrent.policy`: pure Kotlin status-mapping policy, kept separate from any adapter so it stays engine-agnostic. `RawStatus`/`RawPhase` mirror libtorrent's `torrent_status::state_t` without referencing it; `DownloadStateMapper.map` derives the user-visible `DownloadState`; `etaSeconds` computes the remaining-time estimate. `FileSelectionPolicy.select(files: List<TorrentFileInfo>): Selection` picks the main video file (largest video whose path doesn't look like a sample/trailer/extra) and returns per-file `FilePriority`: the main file and any subtitle track at `Normal`, everything else at `Skip`. The jlibtorrent adapter (#52) is the only caller of both.
 
 ## Boundaries
 - No jlibtorrent type escapes this module. Other modules use `FakeTorrentEngine` in tests.
