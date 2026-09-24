@@ -50,6 +50,7 @@ class TorrentWriteRoutesTest {
             appVersion = "test",
             clock = { 0L },
             pairing = pairing,
+            subtitles = FakeSubtitleStore(),
             allowTestRemoteHeader = true,
         )
 
