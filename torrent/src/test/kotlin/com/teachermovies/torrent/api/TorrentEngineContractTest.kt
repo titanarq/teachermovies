@@ -93,4 +93,25 @@ abstract class TorrentEngineContractTest {
                 engine.setFilePriorities(unknownId, emptyMap()),
             )
         }
+
+    @Test
+    fun rangeReadinessOfAnUnknownIdIsUnknownTorrent() =
+        runTest {
+            val engine = createEngine()
+
+            val result = engine.rangeReadiness(unknownId, fileIndex = 0, byteOffset = 0L, lengthBytes = 1024L)
+
+            assertEquals(EngineResult.Failure(EngineError.UnknownTorrent), result)
+        }
+
+    @Test
+    fun rangeReadinessBeforeMetadataIsNotReady() =
+        runTest {
+            val engine = createEngine()
+            val id = (engine.addMagnet(validMagnet) as EngineResult.Ok).value
+
+            val result = engine.rangeReadiness(id, fileIndex = 0, byteOffset = 0L, lengthBytes = 1024L)
+
+            assertEquals(EngineResult.Failure(EngineError.NotReady), result)
+        }
 }
