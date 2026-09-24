@@ -3,9 +3,15 @@ package com.teachermovies.tv.di
 import android.app.Application
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import com.teachermovies.assistant.AssistantSpeechController
 import com.teachermovies.assistant.HiddenSubtitleController
 import com.teachermovies.assistant.LineCaptureController
 import com.teachermovies.assistant.SubtitleEngine
+import com.teachermovies.assistant.speech.AndroidTextToSpeechSpeaker
+import com.teachermovies.assistant.speech.Speaker
+import com.teachermovies.assistant.translation.CachingTranslationProvider
+import com.teachermovies.assistant.translation.NullTranslationProvider
+import com.teachermovies.assistant.translation.TranslationProvider
 import com.teachermovies.core.db.TeacherMoviesDatabase
 import com.teachermovies.core.repo.RoomTorrentRepository
 import com.teachermovies.core.repo.TorrentRepository
@@ -156,6 +162,16 @@ class AppContainer(application: Application) {
         HiddenSubtitleController(player, subtitleEngine, assistantScope, cacheDir = application.cacheDir)
 
     val lineCaptureController: LineCaptureController = LineCaptureController(player, subtitleEngine, assistantScope)
+
+    /** Android text-to-speech for the assistant's spoken answers (#92); prepared by the player screen. */
+    private val speaker: Speaker = AndroidTextToSpeechSpeaker(application)
+
+    // No translation provider is configured yet (#31): the player shows `Traducción no disponible`
+    // until one is. The cache sits in front of whichever provider is wired here.
+    private val translationProvider: TranslationProvider = CachingTranslationProvider(NullTranslationProvider)
+
+    val assistantSpeechController: AssistantSpeechController =
+        AssistantSpeechController(speaker, translationProvider, assistantScope)
 
     /**
      * PIN pairing and token validation (ADR-0002). One instance for the process, shared by every

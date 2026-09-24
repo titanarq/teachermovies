@@ -3,10 +3,12 @@ package com.teachermovies.tv.player
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.teachermovies.assistant.AssistantSpeechController
 import com.teachermovies.assistant.CaptureResult
 import com.teachermovies.assistant.HiddenModeResult
 import com.teachermovies.assistant.HiddenSubtitleController
 import com.teachermovies.assistant.LineCaptureController
+import com.teachermovies.assistant.TranslationUiState
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.TorrentRepository
 import com.teachermovies.player.api.Player
@@ -15,6 +17,7 @@ import com.teachermovies.player.session.PlaybackSession
 import com.teachermovies.player.session.SessionResult
 import com.teachermovies.tv.format.Formatters
 import java.io.File
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -27,6 +30,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Everything the player screen draws, fully formatted (#78). [progress] (0..1) sizes the overlay's
@@ -56,10 +60,17 @@ data class PlayerUiState(
 /**
  * The captured-line overlay (#86): the English cue [text] the viewer froze and whether its audio
  * fragment is [replaying] right now.
+ *
+ * From the assistant's speech (#92): [speaking] while a spoken answer is being said, the Spanish
+ * [translation] of the line, and a short [message] (e.g. no voice available) shown for
+ * [PlayerViewModel.MESSAGE_TIMEOUT_MS].
  */
 data class AssistantOverlayState(
     val text: String,
     val replaying: Boolean,
+    val speaking: Boolean = false,
+    val translation: TranslationUiState = TranslationUiState.Idle,
+    val message: String? = null,
 )
 
 /**
@@ -73,6 +84,12 @@ data class AssistantOverlayState(
  * [AssistantAction]s arrive through [onAssistantAction], forwarded to [capture]. While a line is
  * captured the transport overlay is hidden and transport actions are ignored.
  *
+ * The spoken answers (#92) go through [speech]: opening an item prepares its speaker once on
+ * [prepareDispatcher] without waiting for it, [AssistantAction.SpeakOriginal] says the line again
+ * in English and [AssistantAction.TranslateLine] shows and says its Spanish translation. None of
+ * them touches the player, so the movie stays paused until [AssistantAction.DismissOverlay], which
+ * also resets [speech].
+ *
  * [closeScope] is where the session is closed if the ViewModel is cleared without an Exit (the
  * route left some other way): `viewModelScope` is already cancelled by then. It is the scope the
  * session itself runs in.
@@ -82,7 +99,9 @@ class PlayerViewModel(
     private val player: Player,
     private val hidden: HiddenSubtitleController,
     private val capture: LineCaptureController,
+    private val speech: AssistantSpeechController,
     private val closeScope: CoroutineScope? = null,
+    private val prepareDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
     private data class Local(
@@ -93,6 +112,7 @@ class PlayerViewModel(
         val tracksPanelOpen: Boolean = false,
         val assistantAvailable: Boolean = false,
         val message: String? = null,
+        val assistantMessage: String? = null,
     )
 
     private val local = MutableStateFlow(Local())
@@ -107,8 +127,16 @@ class PlayerViewModel(
         )
 
     private val assistant =
-        combine(capture.captured, capture.replaying) { line, replaying ->
-            line?.let { AssistantOverlayState(it.cue.text, replaying) }
+        combine(capture.captured, capture.replaying, speech.state, local) { line, replaying, speech, local ->
+            line?.let {
+                AssistantOverlayState(
+                    text = it.cue.text,
+                    replaying = replaying,
+                    speaking = speech.speaking,
+                    translation = speech.translation,
+                    message = local.assistantMessage,
+                )
+            }
         }
 
     private val panels = combine(tracks, assistant, ::Pair)
@@ -140,12 +168,15 @@ class PlayerViewModel(
     private var openJob: Job? = null
     private var hideJob: Job? = null
     private var messageJob: Job? = null
+    private var assistantMessageJob: Job? = null
     private var exiting = false
     private var closed = false
 
     /** Loads [id]; only the first call does anything (the screen may call it on every composition). */
     fun open(id: TorrentId) {
         if (openJob != null) return
+        // The speaker is optional: prepared once, off the main thread, never awaited by playback.
+        viewModelScope.launch { withContext(prepareDispatcher) { speech.prepare() } }
         openJob =
             viewModelScope.launch {
                 when (val result = session.open(id)) {
@@ -184,17 +215,47 @@ class PlayerViewModel(
     /**
      * An assistant key was pressed (#86): [AssistantAction.CaptureLine] pauses on the line just
      * spoken (or shows why it cannot), [AssistantAction.ReplayFragment] replays it,
-     * [AssistantAction.DismissOverlay] closes the overlay and resumes the movie, and
-     * [AssistantAction.Consumed] does nothing. Ignored once exiting.
+     * [AssistantAction.SpeakOriginal] says it again in English (or shows [NO_VOICE]),
+     * [AssistantAction.TranslateLine] translates and says it in Spanish (#92),
+     * [AssistantAction.DismissOverlay] closes the overlay, resets the speech and resumes the movie,
+     * and [AssistantAction.Consumed] does nothing. Ignored once exiting.
      */
     fun onAssistantAction(action: AssistantAction) {
         if (exiting) return
         when (action) {
             AssistantAction.CaptureLine -> captureLine()
             AssistantAction.ReplayFragment -> capture.replay()
-            AssistantAction.DismissOverlay -> capture.dismiss()
-            AssistantAction.SpeakOriginal, AssistantAction.TranslateLine, AssistantAction.Consumed -> Unit
+            AssistantAction.SpeakOriginal -> speakOriginal()
+            AssistantAction.TranslateLine -> capture.captured.value?.let(speech::translateAndSpeak)
+            AssistantAction.DismissOverlay -> dismissOverlay()
+            AssistantAction.Consumed -> Unit
         }
+    }
+
+    private fun speakOriginal() {
+        val line = capture.captured.value ?: return
+        if (!speech.speakOriginal(line)) showAssistantMessage(NO_VOICE)
+    }
+
+    private fun dismissOverlay() {
+        clearAssistantMessage()
+        speech.reset()
+        capture.dismiss()
+    }
+
+    private fun showAssistantMessage(text: String) {
+        assistantMessageJob?.cancel()
+        local.update { it.copy(assistantMessage = text) }
+        assistantMessageJob =
+            viewModelScope.launch {
+                delay(MESSAGE_TIMEOUT_MS)
+                local.update { it.copy(assistantMessage = null) }
+            }
+    }
+
+    private fun clearAssistantMessage() {
+        assistantMessageJob?.cancel()
+        local.update { it.copy(assistantMessage = null) }
     }
 
     private fun captureLine() {
@@ -223,7 +284,7 @@ class PlayerViewModel(
     fun back() {
         val now = local.value
         if (capture.captured.value != null) {
-            if (!exiting) capture.dismiss()
+            if (!exiting) dismissOverlay()
             return
         }
         if (now.tracksPanelOpen && errorOf(now, player.state.value) == null) closeTracks() else exit()
@@ -272,6 +333,8 @@ class PlayerViewModel(
 
     /** Leaves the assistant as it was before this movie: no capture, hidden mode off. */
     private fun stopAssistant() {
+        clearAssistantMessage()
+        speech.reset()
         capture.dismiss(resume = false)
         hidden.stop()
     }
@@ -310,6 +373,7 @@ class PlayerViewModel(
         private val repo: TorrentRepository,
         private val hidden: HiddenSubtitleController,
         private val capture: LineCaptureController,
+        private val speech: AssistantSpeechController,
         private val clock: () -> Long = System::currentTimeMillis,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -318,7 +382,7 @@ class PlayerViewModel(
                 "Unknown ViewModel class ${modelClass.name}"
             }
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-            return PlayerViewModel(PlaybackSession(player, repo, scope, clock), player, hidden, capture, scope) as T
+            return PlayerViewModel(PlaybackSession(player, repo, scope, clock), player, hidden, capture, speech, scope) as T
         }
     }
 
@@ -336,5 +400,8 @@ class PlayerViewModel(
 
         const val NO_SUBTITLES = "Esta película no tiene subtítulos en inglés"
         const val NO_LINE = "No hay ninguna frase que capturar"
+
+        /** Shown in the captured-line overlay when the English line cannot be spoken (#92). */
+        const val NO_VOICE = "Voz no disponible"
     }
 }
