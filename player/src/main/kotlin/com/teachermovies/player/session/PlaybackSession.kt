@@ -7,6 +7,8 @@ import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.policy.ResumePolicy
 import com.teachermovies.player.policy.TrackPolicy
+import com.teachermovies.player.streaming.StreamResult
+import com.teachermovies.player.streaming.StreamingPlaybackController
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -45,6 +47,9 @@ class PlaybackSession(
 
     @Volatile private var lastSavedAtMs = 0L
 
+    /** The controller supervising the item opened with [openStreaming]; null for a plain [open]. */
+    @Volatile private var streaming: StreamingPlaybackController? = null
+
     /**
      * Loads [id] into [player], closing any item this session had open first.
      *
@@ -61,20 +66,79 @@ class PlaybackSession(
         val file = File(item.mainFilePath)
         if (!file.isFile) return SessionResult.FileMissing(item.mainFilePath)
 
-        // The library does not store the media's length, so only the "barely started" rule applies
-        // here; the end-of-media rule is covered by storing 0 when playback ends.
-        player.open(file, ResumePolicy.startPosition(item.lastPositionMs, durationMs = null))
-        externalSubtitles(file).forEach { player.addExternalSubtitle(it, select = false) }
-
-        current = item
-        tracksApplied = false
-        lastSavedAtMs = clock()
-        job = scope.launch { watch(item) }
+        player.open(file, startPosition(item))
+        begin(item, file)
         return SessionResult.Opened(item)
     }
 
     /**
-     * Stops watching the player, saves the current position and tracks (`0` if playback had
+     * Plays [id] while it is still downloading, through [controller], closing any item this session
+     * had open first.
+     *
+     * The torrent's main file, its index in the torrent and its final size come from the
+     * repository; [controller] opens the file (as a growing one) at [ResumePolicy.startPosition] of
+     * the persisted position once the ranges it needs are on disk, and supervises it from then on.
+     * After that, everything [open] does for a finished item applies unchanged: external subtitles
+     * are added, [TrackPolicy] is applied once the tracks are known and progress is saved.
+     *
+     * Returns [SessionResult.NotFound] for an unknown [id], [SessionResult.FileMissing] when the
+     * torrent has no main file selected yet, and [SessionResult.StreamingFailed] when [controller]
+     * answers anything but [StreamResult.Opened]; the player is never opened in those cases.
+     * Suspends while [controller] waits for the ranges. [close] also stops [controller].
+     */
+    suspend fun openStreaming(
+        id: TorrentId,
+        controller: StreamingPlaybackController,
+    ): SessionResult {
+        close()
+        val torrent = repo.get(id) ?: return SessionResult.NotFound
+        val item = repo.getPlaybackItem(id)
+        val fileIndex = torrent.mainFileIndex
+        if (item == null || fileIndex == null) {
+            return SessionResult.FileMissing(item?.mainFilePath ?: torrent.savePath.orEmpty())
+        }
+        val file = File(item.mainFilePath)
+
+        val result =
+            controller.start(
+                id = id,
+                fileIndex = fileIndex,
+                file = file,
+                fileSizeBytes = item.sizeBytes,
+                // Not stored in the library; the controller uses the player's once it is parsed.
+                durationMs = 0L,
+                startPositionMs = startPosition(item),
+            )
+        when (result) {
+            StreamResult.Opened -> Unit
+            StreamResult.UnknownTorrent,
+            StreamResult.Unsupported,
+            is StreamResult.Failed,
+            -> return SessionResult.StreamingFailed(result)
+        }
+        streaming = controller
+        begin(item, file)
+        return SessionResult.Opened(item)
+    }
+
+    // The library does not store the media's length, so only the "barely started" rule applies
+    // here; the end-of-media rule is covered by storing 0 when playback ends.
+    private fun startPosition(item: LibraryItem): Long = ResumePolicy.startPosition(item.lastPositionMs, durationMs = null)
+
+    /** What follows opening [file], whoever opened it: subtitles, then watching the player. */
+    private fun begin(
+        item: LibraryItem,
+        file: File,
+    ) {
+        externalSubtitles(file).forEach { player.addExternalSubtitle(it, select = false) }
+        current = item
+        tracksApplied = false
+        lastSavedAtMs = clock()
+        job = scope.launch { watch(item) }
+    }
+
+    /**
+     * Stops watching the player (and the streaming controller, after [openStreaming]), saves the current position and tracks (`0` if playback had
      * ended) and releases the player. A no-op when nothing is open; [open] may be called again.
      */
     suspend fun close() {
@@ -82,6 +146,8 @@ class PlaybackSession(
         job?.cancelAndJoin()
         job = null
         current = null
+        streaming?.stop()
+        streaming = null
         val ended = player.state.value == PlayerState.Ended
         save(item, if (ended) 0L else player.positionMs.value)
         player.release()
