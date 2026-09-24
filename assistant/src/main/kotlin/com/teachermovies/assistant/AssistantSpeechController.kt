@@ -5,6 +5,7 @@ import com.teachermovies.assistant.speech.SpeakerAvailability
 import com.teachermovies.assistant.speech.SpeakerState
 import com.teachermovies.assistant.speech.SpeechLanguage
 import com.teachermovies.assistant.translation.TranslationProvider
+import com.teachermovies.assistant.translation.TranslationResult
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -76,6 +78,10 @@ class AssistantSpeechController(
     private var prepared = false
     private var speakingMirror: Job? = null
 
+    /** The line [TranslationUiState] belongs to, and the only translation coroutine, if any. */
+    private var translatedLine: CapturedLine? = null
+    private var translationJob: Job? = null
+
     /**
      * Initialises the speaker once. [SpeakerAvailability.EngineUnavailable] or
      * [SpeakerAvailability.MissingVoice] sets [AssistantSpeechState.speechAvailable] to `false`.
@@ -102,6 +108,39 @@ class AssistantSpeechController(
     fun speakOriginal(line: CapturedLine): Boolean = say(line.cue.text, SpeechLanguage.EN)
 
     /**
+     * Translates [line] into Spanish on [scope]: [TranslationUiState.Loading], then `Ready` or
+     * `Failed`. The same line while `Loading` or `Ready` does not reach the provider again; a
+     * different line cancels the in-flight translation and starts over. Never throws.
+     */
+    fun translate(line: CapturedLine) {
+        if (line == translatedLine) {
+            when (mutableState.value.translation) {
+                is TranslationUiState.Ready, TranslationUiState.Loading -> return
+                // Idle or Failed: a later attempt may succeed (Offline), so ask again.
+                else -> Unit
+            }
+        }
+        translationJob?.cancel()
+        translatedLine = line
+        mutableState.update { it.copy(translation = TranslationUiState.Loading) }
+        translationJob =
+            scope.launch {
+                val result =
+                    try {
+                        translations.translate(line.cue.text)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // The provider contract forbids this; treat a misbehaving one as refusing.
+                        TranslationResult.Unavailable(e.javaClass.simpleName)
+                    }
+                // A cancelled call that returned without suspending must not overwrite the new line.
+                if (!isActive || translatedLine != line) return@launch
+                mutableState.update { it.copy(translation = result.toUiState()) }
+            }
+    }
+
+    /**
      * Silences the speaker, cancels every coroutine this controller started and returns the state
      * to its defaults, keeping [AssistantSpeechState.speechAvailable].
      */
@@ -109,6 +148,9 @@ class AssistantSpeechController(
         speaker.stop()
         speakingMirror?.cancel()
         speakingMirror = null
+        translationJob?.cancel()
+        translationJob = null
+        translatedLine = null
         mutableState.update { AssistantSpeechState(speechAvailable = it.speechAvailable) }
     }
 
@@ -133,4 +175,11 @@ class AssistantSpeechController(
                 }
             }
     }
+
+    private fun TranslationResult.toUiState(): TranslationUiState =
+        when (this) {
+            is TranslationResult.Translated -> TranslationUiState.Ready(text)
+            TranslationResult.Offline -> TranslationUiState.Failed(TranslationFailure.OFFLINE)
+            is TranslationResult.Unavailable -> TranslationUiState.Failed(TranslationFailure.UNAVAILABLE)
+        }
 }
