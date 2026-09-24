@@ -28,11 +28,15 @@
   maps to `DownloadState.Error`); `InMemoryTorrentRepository` in
   `com.teachermovies.core.repo.fake` is the deterministic fake other modules' tests use (ADR-0003).
   It does not keep itself in sync with the torrent engine -- that mapping is #68.
-- DataStore-backed settings (HTTP port, download volume, auth token hash, assistant preferences):
+- DataStore-backed settings (HTTP port, download volume, auth token hash, first-run done,
+  `autostartOnBoot` -- open the app when the TV powers on, off by default -- assistant preferences):
   `SettingsRepository` is the only read/write path -- `settings: Flow<AppSettings>` plus one setter
   per field -- and `DataStoreSettingsRepository` implements it over DataStore Preferences, with
   `Context.settingsDataStore()` creating the production store (file name `settings`). A rejected
   write leaves the stored value untouched; `setHttpPort` is where the 1024..65535 rule lives.
+  `InMemorySettingsRepository` in `com.teachermovies.core.settings.fake` (main source set,
+  ADR-0003) is the deterministic fake over a `MutableStateFlow<AppSettings>` that other modules'
+  JVM tests use; it applies the same port rule.
 - Repository interfaces that other modules implement or consume.
 
 ## Boundaries
