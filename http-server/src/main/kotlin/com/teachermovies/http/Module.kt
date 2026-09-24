@@ -38,8 +38,8 @@ fun Application.module(deps: ServerDeps) {
         statusRoutes(deps)
         pairRoutes(deps.pairing)
         torrentReadRoutes(deps)
-        // Mutating /api/torrents routes are #60; every protected route goes inside
-        // `requireBearer(deps.pairing) { ... }` (ADR-0002).
+        // Every protected route goes inside `requireBearer(deps.pairing) { ... }` (ADR-0002).
+        torrentWriteRoutes(deps)
     }
 }
 

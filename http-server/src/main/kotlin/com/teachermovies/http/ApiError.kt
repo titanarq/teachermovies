@@ -4,13 +4,21 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
 import io.ktor.util.AttributeKey
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
-/** Body of every error response: `{"error":"<code>","message":"..."}`. */
+/**
+ * Body of every error response: `{"error":"<code>","message":"..."}`. [id] is set only where the
+ * error names a torrent the client may want to go to (409 `already_exists`, #60); when `null` it is
+ * left out of the JSON entirely, so every other error body keeps exactly two keys.
+ */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class ApiError(
     val error: String,
     val message: String,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val id: String? = null,
 )
 
 /**

@@ -226,6 +226,28 @@ class FakeTorrentEngineTest : TorrentEngineContractTest() {
             )
         }
 
+    @Test
+    fun controlCallsAreRecordedInOrder() =
+        runTest {
+            val engine = FakeTorrentEngine()
+            val id = (engine.addMagnet(validMagnet) as EngineResult.Ok).value
+
+            engine.setFilePriorities(id, mapOf(0 to FilePriority.Skip))
+            engine.pause(id)
+            engine.resume(id)
+            engine.remove(id, deleteFiles = true)
+
+            assertEquals(
+                listOf(
+                    "setFilePriorities(${id.value},{0=Skip})",
+                    "pause(${id.value})",
+                    "resume(${id.value})",
+                    "remove(${id.value},true)",
+                ),
+                engine.recordedCalls,
+            )
+        }
+
     private fun sha1Hex(bytes: ByteArray): String {
         val digest = MessageDigest.getInstance("SHA-1").digest(bytes)
         return digest.joinToString("") { "%02x".format(it) }

@@ -35,7 +35,11 @@ class FakeTorrentEngine : TorrentEngine {
 
     private val _recordedCalls = mutableListOf<String>()
 
-    /** Every [prioritizeWindow]/[clearWindow] call, in order, for assertions. */
+    /**
+     * Every [setFilePriorities], [pause], [resume], [remove], [prioritizeWindow] and [clearWindow]
+     * call, in order and whether or not it succeeded, for assertions (e.g. `"remove(<id>,true)"`,
+     * `"setFilePriorities(<id>,{0=Skip})"`).
+     */
     val recordedCalls: List<String> get() = _recordedCalls.toList()
 
     override suspend fun start(): EngineResult<Unit> {
@@ -75,6 +79,7 @@ class FakeTorrentEngine : TorrentEngine {
         id: TorrentId,
         priorities: Map<Int, FilePriority>,
     ): EngineResult<Unit> {
+        _recordedCalls += "setFilePriorities(${id.value},$priorities)"
         if (snapshotOf(id) == null) return EngineResult.Failure(EngineError.UnknownTorrent)
         val updated =
             filesByTorrent[id].orEmpty().map { file ->
@@ -86,12 +91,14 @@ class FakeTorrentEngine : TorrentEngine {
     }
 
     override suspend fun pause(id: TorrentId): EngineResult<Unit> {
+        _recordedCalls += "pause(${id.value})"
         if (snapshotOf(id) == null) return EngineResult.Failure(EngineError.UnknownTorrent)
         replaceSnapshot(id) { it.copy(state = DownloadState.Paused) }
         return EngineResult.Ok(Unit)
     }
 
     override suspend fun resume(id: TorrentId): EngineResult<Unit> {
+        _recordedCalls += "resume(${id.value})"
         val snapshot = snapshotOf(id) ?: return EngineResult.Failure(EngineError.UnknownTorrent)
         val next = if (snapshot.hasMetadata) DownloadState.Downloading else DownloadState.Queued
         replaceSnapshot(id) { it.copy(state = next) }
@@ -102,6 +109,7 @@ class FakeTorrentEngine : TorrentEngine {
         id: TorrentId,
         deleteFiles: Boolean,
     ): EngineResult<Unit> {
+        _recordedCalls += "remove(${id.value},$deleteFiles)"
         if (snapshotOf(id) == null) return EngineResult.Failure(EngineError.UnknownTorrent)
         _torrents.value = _torrents.value.filterNot { it.id == id }
         filesByTorrent.remove(id)

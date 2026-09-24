@@ -42,10 +42,10 @@ internal fun Route.torrentReadRoutes(deps: ServerDeps) {
     }
 }
 
-private fun ServerDeps.snapshotOf(id: TorrentId): TorrentSnapshot? = engine.torrents.value.firstOrNull { it.id == id }
+internal fun ServerDeps.snapshotOf(id: TorrentId): TorrentSnapshot? = engine.torrents.value.firstOrNull { it.id == id }
 
 /** Parses the `{id}` path parameter, responding 400 `invalid_id` and returning `null` if it is not a valid [TorrentId]. */
-private suspend fun ApplicationCall.torrentIdOrRespond(): TorrentId? =
+internal suspend fun ApplicationCall.torrentIdOrRespond(): TorrentId? =
     try {
         TorrentId(parameters["id"].orEmpty())
     } catch (_: IllegalArgumentException) {
@@ -53,6 +53,6 @@ private suspend fun ApplicationCall.torrentIdOrRespond(): TorrentId? =
         null
     }
 
-private suspend fun ApplicationCall.respondUnknownTorrent() {
+internal suspend fun ApplicationCall.respondUnknownTorrent() {
     respondApiError(HttpStatusCode.NotFound, ApiError("unknown_torrent", "No such torrent"))
 }
