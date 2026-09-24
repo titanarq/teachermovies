@@ -21,6 +21,7 @@ private val HTTP_PORT = intPreferencesKey("httpPort")
 private val DOWNLOAD_VOLUME_ID = stringPreferencesKey("downloadVolumeId")
 private val AUTH_TOKEN_HASHES = stringSetPreferencesKey("authTokenHashes")
 private val FIRST_RUN_COMPLETED = booleanPreferencesKey("firstRunCompleted")
+private val AUTOSTART_ON_BOOT = booleanPreferencesKey("autostartOnBoot")
 
 /** [SettingsRepository] over DataStore Preferences. */
 class DataStoreSettingsRepository(
@@ -33,6 +34,7 @@ class DataStoreSettingsRepository(
                 downloadVolumeId = preferences[DOWNLOAD_VOLUME_ID],
                 authTokenHashes = preferences[AUTH_TOKEN_HASHES] ?: emptySet(),
                 firstRunCompleted = preferences[FIRST_RUN_COMPLETED] ?: false,
+                autostartOnBoot = preferences[AUTOSTART_ON_BOOT] ?: false,
             )
         }
 
@@ -65,6 +67,10 @@ class DataStoreSettingsRepository(
 
     override suspend fun setFirstRunCompleted(done: Boolean) {
         dataStore.edit { preferences -> preferences[FIRST_RUN_COMPLETED] = done }
+    }
+
+    override suspend fun setAutostartOnBoot(enabled: Boolean) {
+        dataStore.edit { preferences -> preferences[AUTOSTART_ON_BOOT] = enabled }
     }
 }
 

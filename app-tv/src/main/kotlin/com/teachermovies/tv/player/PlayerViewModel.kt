@@ -26,7 +26,8 @@ import kotlinx.coroutines.launch
 /**
  * Everything the player screen draws, fully formatted (#78). [progress] (0..1) sizes the overlay's
  * progress bar; [error] replaces the picture with a message; [exited] tells the host the session is
- * closed (position saved) and it can go back to Biblioteca.
+ * closed (position saved) and it can go back to Biblioteca. [tracksPanel] is the audio/subtitle
+ * side panel (#79), null while it is closed.
  */
 data class PlayerUiState(
     val title: String = "",
@@ -37,6 +38,7 @@ data class PlayerUiState(
     val overlayVisible: Boolean = true,
     val error: String? = null,
     val exited: Boolean = false,
+    val tracksPanel: TracksPanelState? = null,
 )
 
 /**
@@ -60,12 +62,23 @@ class PlayerViewModel(
         val overlayVisible: Boolean = true,
         val error: String? = null,
         val exited: Boolean = false,
+        val tracksPanelOpen: Boolean = false,
     )
 
     private val local = MutableStateFlow(Local())
 
+    private val tracks =
+        combine(
+            player.audioTracks,
+            player.subtitleTracks,
+            player.selectedAudioId,
+            player.selectedSubtitleId,
+            TracksPanelState::of,
+        )
+
     val uiState: StateFlow<PlayerUiState> =
-        combine(local, player.state, player.positionMs, player.durationMs) { local, state, position, duration ->
+        combine(local, player.state, player.positionMs, player.durationMs, tracks) { local, state, position, duration, tracks ->
+            val error = errorOf(local, state)
             PlayerUiState(
                 title = local.title,
                 positionText = Formatters.playbackTime(position),
@@ -73,8 +86,10 @@ class PlayerViewModel(
                 progress = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f,
                 isPlaying = state == PlayerState.Playing,
                 overlayVisible = local.overlayVisible,
-                error = local.error ?: (state as? PlayerState.Error)?.let { "$PLAYBACK_ERROR_PREFIX${it.message}" },
+                error = error,
                 exited = local.exited,
+                // An error replaces the picture, panel included.
+                tracksPanel = tracks.takeIf { local.tracksPanelOpen && error == null },
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, PlayerUiState())
 
@@ -109,11 +124,35 @@ class PlayerViewModel(
             PlayerAction.Play -> player.play()
             PlayerAction.Pause -> player.pause()
             is PlayerAction.SeekBy -> player.seekBy(action.deltaMs)
-            // The track panel is #79; for now the key only brings up the overlay.
-            PlayerAction.ShowTracks -> Unit
-            PlayerAction.Exit -> exit()
+            PlayerAction.ShowTracks -> local.update { it.copy(tracksPanelOpen = true) }
+            PlayerAction.Exit -> back()
             null -> Unit
         }
+    }
+
+    /** BACK: closes the track panel without changing anything if it is open, otherwise [exit]s. */
+    fun back() {
+        val now = local.value
+        if (now.tracksPanelOpen && errorOf(now, player.state.value) == null) closeTracks() else exit()
+    }
+
+    /** Makes audio track [id] the active one and closes the panel; the session persists it. */
+    fun selectAudio(id: String) {
+        if (exiting) return
+        player.selectAudio(id)
+        closeTracks()
+    }
+
+    /** Makes subtitle track [id] the active one (null = `Desactivados`) and closes the panel. */
+    fun selectSubtitle(id: String?) {
+        if (exiting) return
+        player.selectSubtitle(id)
+        closeTracks()
+    }
+
+    /** Closes the track panel without changing the selection. */
+    fun closeTracks() {
+        local.update { it.copy(tracksPanelOpen = false) }
     }
 
     /** Closes the session (saving the position) and then reports [PlayerUiState.exited]. */
@@ -121,6 +160,7 @@ class PlayerViewModel(
         if (exiting) return
         exiting = true
         hideJob?.cancel()
+        closeTracks()
         viewModelScope.launch {
             // Let a pending open finish so close() sees the item it has to save.
             openJob?.join()
@@ -129,6 +169,11 @@ class PlayerViewModel(
             local.update { it.copy(exited = true) }
         }
     }
+
+    private fun errorOf(
+        local: Local,
+        state: PlayerState,
+    ): String? = local.error ?: (state as? PlayerState.Error)?.let { "$PLAYBACK_ERROR_PREFIX${it.message}" }
 
     private fun showOverlay() {
         local.update { it.copy(overlayVisible = true) }

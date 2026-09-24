@@ -63,4 +63,7 @@
     <string name="file_selection_not_ready">Esperando metadata…</string>
     <string name="file_selection_loading">Cargando archivos…</string>
     <string name="file_selection_empty">Este torrent no tiene archivos.</string>
+    <string name="player_tracks_audio">Audio</string>
+    <string name="player_tracks_subtitles">Subtítulos</string>
+    <string name="player_tracks_no_audio">Sin pistas de audio</string>
 </resources>
