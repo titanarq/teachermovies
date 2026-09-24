@@ -48,13 +48,14 @@ sealed interface TranslationUiState {
 
 /**
  * What [AssistantSpeechController] exposes to the player screen. [speaking] mirrors the speaker
- * saying something; [speechAvailable] is `false` once [AssistantSpeechController.prepare] found
- * no engine or a missing voice, and then the assistant degrades to text on screen.
+ * saying something; [speechAvailable] is the set of languages that can still be spoken (every
+ * [SpeechLanguage] until [AssistantSpeechController.prepare] finds otherwise). A language missing
+ * from it degrades to text on screen, independently of the other one.
  */
 data class AssistantSpeechState(
     val speaking: Boolean = false,
     val translation: TranslationUiState = TranslationUiState.Idle,
-    val speechAvailable: Boolean = true,
+    val speechAvailable: Set<SpeechLanguage> = SpeechLanguage.entries.toSet(),
 )
 
 /**
@@ -86,9 +87,10 @@ class AssistantSpeechController(
     private var speakWhenReady = false
 
     /**
-     * Initialises the speaker once. [SpeakerAvailability.EngineUnavailable] or
-     * [SpeakerAvailability.MissingVoice] sets [AssistantSpeechState.speechAvailable] to `false`.
-     * Never throws (cancellation aside); later calls return without touching the engine.
+     * Initialises the speaker once and sets [AssistantSpeechState.speechAvailable]:
+     * [SpeakerAvailability.Ready] -> every language, [SpeakerAvailability.MissingVoice] -> every
+     * language except the missing ones, [SpeakerAvailability.EngineUnavailable] (or a throwing
+     * engine) -> none. Never throws (cancellation aside); later calls return without touching the engine.
      */
     suspend fun prepare() {
         prepareMutex.withLock {
@@ -103,7 +105,8 @@ class AssistantSpeechController(
                     SpeakerAvailability.EngineUnavailable
                 }
             prepared = true
-            mutableState.update { it.copy(speechAvailable = availability == SpeakerAvailability.Ready) }
+            val available = availability.availableLanguages()
+            mutableState.update { it.copy(speechAvailable = available) }
         }
     }
 
@@ -202,7 +205,7 @@ class AssistantSpeechController(
         text: String,
         language: SpeechLanguage,
     ): Boolean {
-        if (!mutableState.value.speechAvailable) return false
+        if (language !in mutableState.value.speechAvailable) return false
         val accepted = speaker.speak(text, language)
         if (accepted) followSpeaker()
         return accepted
@@ -219,6 +222,13 @@ class AssistantSpeechController(
                 }
             }
     }
+
+    private fun SpeakerAvailability.availableLanguages(): Set<SpeechLanguage> =
+        when (this) {
+            SpeakerAvailability.Ready -> SpeechLanguage.entries.toSet()
+            is SpeakerAvailability.MissingVoice -> SpeechLanguage.entries.toSet() - languages
+            SpeakerAvailability.EngineUnavailable -> emptySet()
+        }
 
     private fun TranslationResult.toUiState(): TranslationUiState =
         when (this) {
