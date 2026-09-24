@@ -23,6 +23,11 @@ kotlin {
 
 dependencies {
     implementation(project(":core-model"))
+    // `api`, not `implementation`: `HiddenSubtitleController`'s constructor takes a `Player`, so
+    // anything wiring the assistant compiles against it (the same way `:http-server` depends on
+    // `:torrent`). Only the public `com.teachermovies.player.api` package is used from here; no
+    // `org.videolan` type is referenced in `:assistant` (ADR-0001 §2, AGENTS.md).
+    api(project(":player"))
     // `api`, not `implementation`: `SubtitleEngine.currentSubtitle` is a `StateFlow` and `load`'s
     // caller drives it off a `CoroutineScope` (same reasoning as `:torrent` and `:player`).
     api(libs.kotlinx.coroutines.core)
