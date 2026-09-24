@@ -28,6 +28,7 @@ class DataStoreSettingsRepositoryTest {
         assertNull(settings.downloadVolumeId)
         assertTrue(settings.authTokenHashes.isEmpty())
         assertFalse(settings.firstRunCompleted)
+        assertFalse(settings.autostartOnBoot)
     }
 
     @Test
@@ -122,6 +123,46 @@ class DataStoreSettingsRepositoryTest {
 
         repository.setFirstRunCompleted(false)
         assertFalse(repository.settings.first().firstRunCompleted)
+    }
+
+    @Test
+    fun autostartOnBootIsOffByDefault() = runTest {
+        assertFalse(newRepository().settings.first().autostartOnBoot)
+    }
+
+    @Test
+    fun setAutostartOnBootIsWhatSettingsEmitsNext() = runTest {
+        val repository = newRepository()
+
+        repository.setAutostartOnBoot(true)
+
+        assertTrue(repository.settings.first().autostartOnBoot)
+    }
+
+    @Test
+    fun setAutostartOnBootCanBeTurnedBackOff() = runTest {
+        val repository = newRepository()
+        repository.setAutostartOnBoot(true)
+
+        repository.setAutostartOnBoot(false)
+
+        assertFalse(repository.settings.first().autostartOnBoot)
+    }
+
+    @Test
+    fun togglingAutostartOnBootLeavesTheOtherSettingsAlone() = runTest {
+        val repository = newRepository()
+        repository.setHttpPort(9000)
+        repository.setDownloadVolumeId("usb-1")
+        repository.addAuthTokenHash("hash-a")
+        repository.setFirstRunCompleted(true)
+        val before = repository.settings.first()
+
+        repository.setAutostartOnBoot(true)
+        assertEquals(before.copy(autostartOnBoot = true), repository.settings.first())
+
+        repository.setAutostartOnBoot(false)
+        assertEquals(before, repository.settings.first())
     }
 
     @Test

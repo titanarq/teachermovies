@@ -37,6 +37,10 @@ class InMemorySettingsRepository(
     override suspend fun setFirstRunCompleted(done: Boolean) {
         state.update { it.copy(firstRunCompleted = done) }
     }
+
+    override suspend fun setAutostartOnBoot(enabled: Boolean) {
+        state.update { it.copy(autostartOnBoot = enabled) }
+    }
 }
 
 /** A deterministic [SecureRandom]: every byte it produces comes from a counter. */
