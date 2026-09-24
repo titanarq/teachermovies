@@ -118,7 +118,7 @@ gh api -X PUT repos/titanarq/teachermovies/interaction-limits -f limit=collabora
   is silent. Both the wrapper and `clean_stale_worker.sh` are host-owned, outside `agent_os/`.
   Same removal note as above once agent-os#18 is fixed upstream.
 
-- to report (not yet filed upstream, seen 2026-09-24 control-plane check): under concurrent
+- reported upstream: titanarq/agent-os#70. Under concurrent
   worker/planner/refiner/validator load, `gh`'s GraphQL-backed subcommands
   (`issues.py validate`/`gh issue view --json`, `gh pr checks`, `gh pr diff --name-only`,
   `gh label list`, `gh pr list --json`) intermittently fail with "API rate limit already exceeded
@@ -131,7 +131,7 @@ gh api -X PUT repos/titanarq/teachermovies/interaction-limits -f limit=collabora
   rather than a real quota exhaustion; needs reproduction with request timing before filing
   upstream.
 
-- to report (not yet filed upstream, seen 2026-09-24 control-plane check): `scripts/clean_stale_worker.sh`
+- reported upstream: titanarq/agent-os#71. `scripts/clean_stale_worker.sh`
   refuses on a squash-merged issue. Its `ahead=$(git log --oneline origin/main..HEAD)` guard assumes
   the worker's stage commits reach `origin/main` unchanged, but the merge convention actually used
   (`gh pr merge N --merge`) still produces a squash on at least one path -- confirmed on #83/PR #141
@@ -160,7 +160,7 @@ gh api -X PUT repos/titanarq/teachermovies/interaction-limits -f limit=collabora
   already established nothing on it is missing from `main`). Confirm the result looks idle with
   `git -C <worktree> status --short --branch`.
 
-- to report (not yet filed upstream, seen 2026-09-24 control-plane check): a refiner/control-plane
+- reported upstream: titanarq/agent-os#72. A refiner/control-plane
   round-trip lost a human answer. On #84, a prior control-plane pass (2026-09-24T10:36) answered the
   refiner's parked/rewrite/keep question citing the dated decision on #29 and returned #84 to
   `status:refine`; by 13:09 `roedor-planner` reported the issue back in the refine queue asking the

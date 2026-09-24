@@ -120,6 +120,31 @@ abstract class TorrentRepositoryContractTest {
         }
 
     @Test
+    fun getPlaybackItemIncludesADownloadInProgressWithMainFile() =
+        runTest {
+            repository.upsert(torrent('a', state = DownloadState.Downloading), mainFilePath = "a.mkv", now = 1L)
+            repository.updatePlayback(id('a'), 42_000L, "1", "2")
+
+            val item = repository.getPlaybackItem(id('a'))
+
+            assertEquals("a.mkv", item?.mainFilePath)
+            assertEquals(42_000L, item?.lastPositionMs)
+            assertEquals("1", item?.audioTrackId)
+            assertEquals("2", item?.subtitleTrackId)
+            assertEquals(0L, item?.completedAtEpochMs)
+            assertNull(repository.getLibraryItem(id('a')))
+        }
+
+    @Test
+    fun getPlaybackItemIsNullWithoutAMainFileOrForAnUnknownId() =
+        runTest {
+            repository.upsert(torrent('a', state = DownloadState.Downloading), mainFilePath = null, now = 1L)
+
+            assertNull(repository.getPlaybackItem(id('a')))
+            assertNull(repository.getPlaybackItem(id('b')))
+        }
+
+    @Test
     fun completedAtEpochMsIsSetOnlyTheFirstTimeStateBecomesCompleted() =
         runTest {
             repository.upsert(torrent('a', state = DownloadState.Downloading), mainFilePath = null, now = 1L)

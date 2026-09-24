@@ -33,6 +33,11 @@ class RoomTorrentRepository(
             ?.takeIf { it.state == DownloadState.Completed.name && it.mainFilePath != null }
             ?.toLibraryItem()
 
+    override suspend fun getPlaybackItem(id: TorrentId): LibraryItem? =
+        dao.get(id.value)
+            ?.takeIf { it.mainFilePath != null }
+            ?.toLibraryItem()
+
     override suspend fun upsert(
         torrent: Torrent,
         mainFilePath: String?,

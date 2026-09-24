@@ -33,5 +33,26 @@ internal object VlcMediaOptions {
             null
         }
 
+    /**
+     * Every option the `Media` for one [VlcPlayer.open] gets, in a stable order: [startTime] when
+     * [startPositionMs] is past the beginning, then -- for a [growing] file, one the torrent engine
+     * is still writing -- `:file-caching=<fileCachingMs>`, a larger read cache so a read that
+     * reaches bytes not yet downloaded waits instead of hitting what looks like the end of the file,
+     * and `:no-input-fast-seek`, which makes a seek decode its way to the exact position rather than
+     * jump to a keyframe index a partial file may not have yet.
+     */
+    fun forMedia(
+        startPositionMs: Long,
+        growing: Boolean,
+        fileCachingMs: Int,
+    ): List<String> =
+        buildList {
+            startTime(startPositionMs)?.let(::add)
+            if (growing) {
+                add(":file-caching=$fileCachingMs")
+                add(":no-input-fast-seek")
+            }
+        }
+
     private const val MILLIS_IN_A_SECOND = 1000.0
 }

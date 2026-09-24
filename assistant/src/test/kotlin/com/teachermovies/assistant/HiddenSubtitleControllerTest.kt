@@ -1,5 +1,7 @@
 package com.teachermovies.assistant
 
+import com.teachermovies.player.api.SubtitleExtraction
+import com.teachermovies.player.api.SubtitleFormat
 import com.teachermovies.player.api.Track
 import com.teachermovies.player.fake.FakePlayer
 import java.io.File
@@ -20,6 +22,9 @@ class HiddenSubtitleControllerTest {
     private val mediaFile: File
         get() = File(tempFolder.root, "movie.mkv")
 
+    private val cacheDir: File
+        get() = File(tempFolder.root, "cache")
+
     private fun writeSubtitle(
         path: String,
         text: String = SRT,
@@ -38,14 +43,14 @@ class HiddenSubtitleControllerTest {
             player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-1", "English", "en")))
             player.selectSubtitle("sub-1")
             val engine = SubtitleEngine(player.positionMs, backgroundScope)
-            val controller = HiddenSubtitleController(player, engine, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
             player.emitPosition(1_500L)
             runCurrent()
 
             val result = controller.start(mediaFile)
             runCurrent()
 
-            assertEquals(HiddenModeResult.Started, result)
+            assertEquals(HiddenModeResult.Started(SubtitleSource.SIDECAR), result)
             assertTrue(controller.active.value)
             assertNull(player.selectedSubtitleId.value)
             // The track reached the engine: the cue covering the current position resolves at once.
@@ -58,7 +63,7 @@ class HiddenSubtitleControllerTest {
             writeSubtitle("movie.en.srt")
             val player = FakePlayer()
             val engine = SubtitleEngine(player.positionMs, backgroundScope)
-            val controller = HiddenSubtitleController(player, engine, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
 
             controller.start(mediaFile)
             runCurrent()
@@ -83,9 +88,9 @@ class HiddenSubtitleControllerTest {
             writeSubtitle("movie.en.srt")
             val player = FakePlayer()
             val engine = SubtitleEngine(player.positionMs, backgroundScope)
-            val controller = HiddenSubtitleController(player, engine, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
 
-            assertEquals(HiddenModeResult.Started, controller.start(mediaFile))
+            assertEquals(HiddenModeResult.Started(SubtitleSource.SIDECAR), controller.start(mediaFile))
             runCurrent()
 
             player.emitPosition(1_500L)
@@ -108,7 +113,7 @@ class HiddenSubtitleControllerTest {
             val player = FakePlayer()
             player.selectSubtitle("sub-1")
             val engine = SubtitleEngine(player.positionMs, backgroundScope)
-            val controller = HiddenSubtitleController(player, engine, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
 
             val result = controller.start(mediaFile)
             runCurrent()
@@ -126,7 +131,7 @@ class HiddenSubtitleControllerTest {
             val player = FakePlayer()
             player.selectSubtitle("sub-1")
             val engine = SubtitleEngine(player.positionMs, backgroundScope)
-            val controller = HiddenSubtitleController(player, engine, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
 
             val result = controller.start(mediaFile)
             runCurrent()
@@ -143,7 +148,7 @@ class HiddenSubtitleControllerTest {
             writeSubtitle("movie.en.srt")
             val player = FakePlayer()
             val engine = SubtitleEngine(player.positionMs, backgroundScope)
-            val controller = HiddenSubtitleController(player, engine, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
 
             controller.start(mediaFile)
             runCurrent()
@@ -163,7 +168,178 @@ class HiddenSubtitleControllerTest {
             assertEquals("sub-1", player.selectedSubtitleId.value)
         }
 
+    @Test
+    fun `a sidecar file wins over an embedded English track`() =
+        runTest {
+            writeSubtitle("movie.en.srt")
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-1", "English", "en")))
+            player.emitExtractionText(OTHER_SRT, SubtitleFormat.SRT)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            player.emitPosition(1_500L)
+            runCurrent()
+
+            val result = controller.start(mediaFile)
+            runCurrent()
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.SIDECAR), result)
+            assertEquals("Hello there.", engine.currentSubtitle.value?.text)
+            assertTrue(player.extractionCalls.isEmpty())
+        }
+
+    @Test
+    fun `without a sidecar the embedded English track is extracted and followed`() =
+        runTest {
+            val player = FakePlayer()
+            player.emitTracks(
+                audio = emptyList(),
+                subs = listOf(Track("sub-fr", "Francais", "fr"), Track("sub-en", "English", "eng")),
+            )
+            player.selectSubtitle("sub-en")
+            player.emitExtractionText(SRT, SubtitleFormat.SRT)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+
+            val result = controller.start(mediaFile)
+            runCurrent()
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.EMBEDDED), result)
+            assertTrue(controller.active.value)
+            assertNull(player.selectedSubtitleId.value)
+            assertEquals(listOf("sub-en"), player.extractionCalls)
+            val cached = File(cacheDir, "subtitles/movie.sub-en.srt")
+            assertTrue(cached.isFile && cached.length() > 0)
+
+            player.emitPosition(1_500L)
+            runCurrent()
+            assertEquals("Hello there.", engine.currentSubtitle.value?.text)
+
+            player.emitPosition(5_700L)
+            runCurrent()
+            assertEquals("Second cue.", engine.currentSubtitle.value?.text)
+
+            // Re-assertion works the same as for a sidecar.
+            player.selectSubtitle("sub-fr")
+            runCurrent()
+            assertNull(player.selectedSubtitleId.value)
+        }
+
+    @Test
+    fun `a second start for the same media reuses the cache file`() =
+        runTest {
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-1", "English", "en")))
+            player.emitExtractionText(ASS, SubtitleFormat.ASS)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.EMBEDDED), controller.start(mediaFile))
+            controller.stop()
+            assertTrue(File(cacheDir, "subtitles/movie.sub-1.ass").isFile)
+
+            // A later extraction would fail: the cached file must be what the second start reads.
+            player.emitExtraction(SubtitleExtraction.Failed("must not be called"))
+            player.emitPosition(1_500L)
+            runCurrent()
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.EMBEDDED), controller.start(mediaFile))
+            runCurrent()
+
+            assertEquals(listOf("sub-1"), player.extractionCalls)
+            assertEquals("From ASS.", engine.currentSubtitle.value?.text)
+        }
+
+    @Test
+    fun `a failed extraction gives Unreadable and leaves the player's selection alone`() =
+        runTest {
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-1", "English", "en")))
+            player.selectSubtitle("sub-1")
+            player.emitExtraction(SubtitleExtraction.Failed("corrupt cluster"))
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+
+            val result = controller.start(mediaFile)
+            runCurrent()
+
+            assertTrue("was $result", result is HiddenModeResult.Unreadable)
+            assertTrue((result as HiddenModeResult.Unreadable).reason.contains("failed"))
+            assertFalse(controller.active.value)
+            assertEquals("sub-1", player.selectedSubtitleId.value)
+            assertNull(engine.currentSubtitle.value)
+        }
+
+    @Test
+    fun `an image-based embedded track gives Unreadable naming it`() =
+        runTest {
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-1", "English PGS", "en")))
+            player.emitExtraction(SubtitleExtraction.NotTextBased)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+
+            val result = controller.start(mediaFile)
+
+            assertTrue("was $result", result is HiddenModeResult.Unreadable)
+            assertTrue((result as HiddenModeResult.Unreadable).reason.contains("image-based"))
+            assertFalse(controller.active.value)
+        }
+
+    @Test
+    fun `an extracted track without cues gives Unreadable`() =
+        runTest {
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-1", "English", "en")))
+            player.emitExtractionText("no cues here", SubtitleFormat.SRT)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+
+            val result = controller.start(mediaFile)
+
+            assertTrue("was $result", result is HiddenModeResult.Unreadable)
+            assertFalse(controller.active.value)
+        }
+
+    @Test
+    fun `no sidecar and no English embedded track gives NoSubtitleFile`() =
+        runTest {
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-1", "Espanol", "spa")))
+            player.selectSubtitle("sub-1")
+            player.emitExtractionText(SRT, SubtitleFormat.SRT)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+
+            val result = controller.start(mediaFile)
+            runCurrent()
+
+            assertEquals(HiddenModeResult.NoSubtitleFile, result)
+            assertFalse(controller.active.value)
+            assertEquals("sub-1", player.selectedSubtitleId.value)
+            assertTrue(player.extractionCalls.isEmpty())
+        }
+
     private companion object {
+        val OTHER_SRT =
+            """
+            1
+            00:00:01,000 --> 00:00:04,000
+            From the container.
+
+            """.trimIndent()
+
+        val ASS =
+            """
+            [Script Info]
+            ScriptType: v4.00+
+
+            [Events]
+            Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+            Dialogue: 0,0:00:01.00,0:00:04.00,Default,,0,0,0,,From ASS.
+
+            """.trimIndent()
+
         val SRT =
             """
             1

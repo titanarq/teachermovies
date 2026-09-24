@@ -151,11 +151,13 @@ class PlayerViewModel(
                 when (val result = session.open(id)) {
                     is SessionResult.Opened -> {
                         local.update { it.copy(title = result.item.title) }
-                        val available = hidden.start(File(result.item.mainFilePath)) == HiddenModeResult.Started
+                        val available = hidden.start(File(result.item.mainFilePath)) is HiddenModeResult.Started
                         local.update { it.copy(assistantAvailable = available) }
                     }
                     SessionResult.NotFound -> local.update { it.copy(error = NOT_FOUND) }
                     is SessionResult.FileMissing -> local.update { it.copy(error = FILE_MISSING) }
+                    // Only `openStreaming` answers this; the screen does not stream yet (#78).
+                    is SessionResult.StreamingFailed -> local.update { it.copy(error = STREAMING_FAILED) }
                 }
             }
         showOverlay()
@@ -326,6 +328,7 @@ class PlayerViewModel(
 
         const val FILE_MISSING = "El archivo no está disponible (¿se ha desconectado el disco?)"
         const val NOT_FOUND = "Esta película ya no está en la biblioteca"
+        const val STREAMING_FAILED = "No se puede reproducir mientras se descarga"
         const val PLAYBACK_ERROR_PREFIX = "No se puede reproducir: "
 
         /** How long an assistant message stays in the transport overlay. */
