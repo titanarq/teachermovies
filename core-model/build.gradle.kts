@@ -22,5 +22,12 @@ kotlin {
 }
 
 dependencies {
+    // `api`, not `implementation`: `Flow` in the public contract of `SettingsRepository` and
+    // `DataStore<Preferences>` in the constructor of the production implementation are both things
+    // a consumer compiles against when it wires DI (ADR-0003).
+    api(libs.kotlinx.coroutines.core)
+    api(libs.androidx.datastore.preferences)
+
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
