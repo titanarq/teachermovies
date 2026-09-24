@@ -14,7 +14,7 @@ sealed interface PlayerAction {
     /** Seek [deltaMs] relative to the current position (negative = back). */
     data class SeekBy(val deltaMs: Long) : PlayerAction
 
-    /** Open the audio/subtitle track panel (#79; until then it only shows the overlay). */
+    /** Open the audio/subtitle track panel (#79). */
     data object ShowTracks : PlayerAction
 
     /** Close the session (position saved) and go back to Biblioteca. */

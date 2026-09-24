@@ -8,6 +8,7 @@ import com.teachermovies.core.model.Torrent
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
 import com.teachermovies.player.api.PlayerState
+import com.teachermovies.player.api.Track
 import com.teachermovies.player.fake.FakePlayer
 import com.teachermovies.player.session.PlaybackSession
 import java.io.File
@@ -232,5 +233,123 @@ class PlayerViewModelTest {
 
             assertEquals(PlayerState.Idle, player.state.value)
             assertEquals(42_000L, repo.getLibraryItem(id)?.lastPositionMs)
+        }
+
+    private val english = Track("a1", "English", "eng")
+    private val spanish = Track("a2", "Castellano", "spa")
+    private val subEn = Track("s1", "English", "eng")
+    private val subEs = Track("s2", "", "spa")
+
+    /** Opens the movie and lets the session apply its track policy (first audio, subtitles off). */
+    private fun TestScope.openedWithTracks(): PlayerViewModel {
+        val vm = openedViewModel()
+        player.emitTracks(audio = listOf(english, spanish), subs = listOf(subEn, subEs))
+        runCurrent()
+        return vm
+    }
+
+    @Test
+    fun showTracksOpensThePanelWithBothListsAndTheCurrentSelectionMarked() =
+        runTest(dispatcher) {
+            seed(movieFile())
+            val vm = openedWithTracks()
+            player.selectSubtitle("s2")
+            runCurrent()
+            assertNull(vm.uiState.value.tracksPanel)
+
+            vm.onAction(PlayerAction.ShowTracks)
+            runCurrent()
+
+            val panel = requireNotNull(vm.uiState.value.tracksPanel)
+            assertEquals(
+                listOf(TrackOption("a1", "English", true), TrackOption("a2", "Castellano (spa)", false)),
+                panel.audio,
+            )
+            assertEquals(
+                listOf(
+                    TrackOption(null, "Desactivados", false),
+                    TrackOption("s1", "English", false),
+                    TrackOption("s2", "spa", true),
+                ),
+                panel.subtitles,
+            )
+        }
+
+    @Test
+    fun selectingAnAudioTrackAppliesItClosesThePanelAndIsPersisted() =
+        runTest(dispatcher) {
+            seed(movieFile())
+            val vm = openedWithTracks()
+            vm.onAction(PlayerAction.ShowTracks)
+            runCurrent()
+
+            vm.selectAudio("a2")
+            runCurrent()
+
+            assertEquals("a2", player.selectedAudioId.value)
+            assertNull(vm.uiState.value.tracksPanel)
+            assertEquals("a2", repo.getLibraryItem(id)?.audioTrackId)
+        }
+
+    @Test
+    fun selectingDesactivadosTurnsSubtitlesOffAndIsPersisted() =
+        runTest(dispatcher) {
+            seed(movieFile())
+            val vm = openedWithTracks()
+            player.selectSubtitle("s1")
+            runCurrent()
+            assertEquals("s1", repo.getLibraryItem(id)?.subtitleTrackId)
+            vm.onAction(PlayerAction.ShowTracks)
+            runCurrent()
+
+            vm.selectSubtitle(null)
+            runCurrent()
+
+            assertNull(player.selectedSubtitleId.value)
+            assertNull(vm.uiState.value.tracksPanel)
+            assertNull(repo.getLibraryItem(id)?.subtitleTrackId)
+        }
+
+    @Test
+    fun backClosesThePanelWithoutChangingAnythingAndASecondBackExits() =
+        runTest(dispatcher) {
+            seed(movieFile())
+            val vm = openedWithTracks()
+            vm.onAction(PlayerAction.ShowTracks)
+            runCurrent()
+
+            vm.back()
+            runCurrent()
+
+            assertNull(vm.uiState.value.tracksPanel)
+            assertFalse(vm.uiState.value.exited)
+            assertEquals("a1", player.selectedAudioId.value)
+            assertNull(player.selectedSubtitleId.value)
+
+            vm.onAction(PlayerAction.Exit)
+            runCurrent()
+            assertTrue(vm.uiState.value.exited)
+        }
+
+    @Test
+    fun thePanelFollowsTrackChangesWhileOpenAndHidesOnError() =
+        runTest(dispatcher) {
+            seed(movieFile())
+            val vm = openedViewModel()
+            vm.onAction(PlayerAction.ShowTracks)
+            runCurrent()
+            assertEquals(emptyList<TrackOption>(), vm.uiState.value.tracksPanel?.audio)
+            assertEquals(listOf(TrackOption(null, "Desactivados", true)), vm.uiState.value.tracksPanel?.subtitles)
+
+            player.emitTracks(audio = listOf(english), subs = emptyList())
+            runCurrent()
+            assertEquals(listOf(TrackOption("a1", "English", true)), vm.uiState.value.tracksPanel?.audio)
+
+            player.fail("codec")
+            runCurrent()
+            assertNull(vm.uiState.value.tracksPanel)
+            vm.back()
+            runCurrent()
+            assertTrue("BACK exits when the error hides the panel", vm.uiState.value.exited)
         }
 }
