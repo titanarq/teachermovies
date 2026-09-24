@@ -270,11 +270,52 @@ class MatroskaSubtitlesTest {
     }
 
     @Test
-    fun webVttInsideMatroskaIsUnsupported() {
-        val file = write(mkv(listOf(trackEntry(3, TYPE_SUBTITLE, "S_TEXT/WEBVTT")), cluster(0, simpleBlock(3, 0, "Hi"))))
+    fun webVttBecomesSrtKeepingTheTextAndDroppingSettingsAndStyling() {
+        // CodecPrivate carries the WEBVTT header and a STYLE block; neither reaches the SRT.
+        val header = "WEBVTT\n\nSTYLE\n::cue { color: yellow }\n".toByteArray()
+        val file =
+            write(
+                mkv(
+                    listOf(video, trackEntry(3, TYPE_SUBTITLE, "S_TEXT/WEBVTT", language = "eng", codecPrivate = header)),
+                    cluster(
+                        0,
+                        blockGroup(3, 1_250, "<v Bob>Hello, <c.yellow>world</c></v>!", duration = 1_000),
+                        videoFrame(2_000),
+                        blockGroup(3, 3_000, "<i.loud>Tom &amp; Jerry</i>\n<b>&lt;3</b> <00:00:03.500>later", duration = 2_000),
+                        simpleBlock(3, 6_000, "No duration"),
+                    ),
+                ),
+            )
+        val out = destination
+
+        assertEquals(SubtitleExtraction.Extracted(out, SubtitleFormat.SRT), MatroskaSubtitles.extract(file, 3, out))
+        assertEquals(
+            """
+            1
+            00:00:01,250 --> 00:00:02,250
+            Hello, world!
+
+            2
+            00:00:03,000 --> 00:00:05,000
+            <i>Tom & Jerry</i>
+            <b><3</b> later
+
+            3
+            00:00:06,000 --> 00:00:11,000
+            No duration
+
+
+            """.trimIndent(),
+            out.readText(),
+        )
+    }
+
+    @Test
+    fun anotherTextCodecIsUnsupported() {
+        val file = write(mkv(listOf(trackEntry(3, TYPE_SUBTITLE, "S_TEXT/USF")), cluster(0, simpleBlock(3, 0, "Hi"))))
 
         assertEquals(
-            SubtitleExtraction.Failed("unsupported subtitle codec S_TEXT/WEBVTT"),
+            SubtitleExtraction.Failed("unsupported subtitle codec S_TEXT/USF"),
             MatroskaSubtitles.extract(file, 3, destination),
         )
         assertFalse(destination.exists())
