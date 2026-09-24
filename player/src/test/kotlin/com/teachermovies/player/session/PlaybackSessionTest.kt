@@ -5,12 +5,15 @@ import com.teachermovies.core.model.Torrent
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
 import com.teachermovies.player.api.PlayerState
+import com.teachermovies.player.api.Track
 import com.teachermovies.player.fake.FakePlayer
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -117,5 +120,146 @@ class PlaybackSessionTest {
                 player.subtitleTracks.value.map { it.name },
             )
             assertEquals(null, player.selectedSubtitleId.value)
+        }
+
+    private val audioEs = Track("a1", "Spanish", "spa")
+    private val audioEn = Track("a2", "English 5.1", "eng")
+    private val subEn = Track("s1", "English", "eng")
+    private val subEs = Track("s2", "Spanish", "spa")
+
+    private suspend fun persisted() = checkNotNull(repo.getLibraryItem(id))
+
+    @Test
+    fun persistedTracksAreReappliedWhenTracksFirstAppear() =
+        runTest {
+            seed(movieFile(), audioTrackId = "a1", subtitleTrackId = "s2")
+            session().open(id)
+            runCurrent()
+            assertNull(player.selectedAudioId.value)
+
+            player.emitTracks(audio = listOf(audioEs, audioEn), subs = listOf(subEn, subEs))
+            runCurrent()
+
+            assertEquals("a1", player.selectedAudioId.value)
+            assertEquals("s2", player.selectedSubtitleId.value)
+        }
+
+    @Test
+    fun withoutPersistedTracksEnglishAudioIsPickedAndSubtitlesStayOff() =
+        runTest {
+            seed(movieFile())
+            session().open(id)
+            runCurrent()
+
+            player.emitTracks(audio = listOf(audioEs, audioEn), subs = listOf(subEn))
+            runCurrent()
+
+            assertEquals("a2", player.selectedAudioId.value)
+            assertNull(player.selectedSubtitleId.value)
+        }
+
+    @Test
+    fun trackChangeIsSaved() =
+        runTest {
+            seed(movieFile())
+            session().open(id)
+            runCurrent()
+            player.emitTracks(audio = listOf(audioEs, audioEn), subs = listOf(subEn))
+            runCurrent()
+            player.emitPosition(42_000L)
+
+            player.selectSubtitle("s1")
+            runCurrent()
+
+            val item = persisted()
+            assertEquals("a2", item.audioTrackId)
+            assertEquals("s1", item.subtitleTrackId)
+            assertEquals(42_000L, item.lastPositionMs)
+        }
+
+    @Test
+    fun progressIsSavedEveryFiveSecondsWhilePlaying() =
+        runTest {
+            seed(movieFile(), audioTrackId = "a1")
+            session().open(id)
+            player.play()
+            runCurrent()
+
+            now += 1_000L
+            player.emitPosition(1_000L)
+            runCurrent()
+            assertEquals(0L, persisted().lastPositionMs)
+
+            now += 4_000L
+            player.emitPosition(5_000L)
+            runCurrent()
+            assertEquals(5_000L, persisted().lastPositionMs)
+            // Tracks not reported yet: the persisted choice is written back, not cleared.
+            assertEquals("a1", persisted().audioTrackId)
+
+            now += 1_000L
+            player.emitPosition(6_000L)
+            runCurrent()
+            assertEquals(5_000L, persisted().lastPositionMs)
+
+            now += 4_000L
+            player.emitPosition(10_000L)
+            runCurrent()
+            assertEquals(10_000L, persisted().lastPositionMs)
+        }
+
+    @Test
+    fun pauseSavesThePosition() =
+        runTest {
+            seed(movieFile())
+            session().open(id)
+            player.play()
+            runCurrent()
+            player.emitPosition(2_000L)
+            runCurrent()
+
+            player.pause()
+            runCurrent()
+
+            assertEquals(2_000L, persisted().lastPositionMs)
+        }
+
+    @Test
+    fun endResetsThePositionToZero() =
+        runTest {
+            seed(movieFile(), positionMs = 600_000L)
+            session().open(id)
+            player.emitDuration(7_200_000L)
+            player.play()
+            runCurrent()
+
+            player.end()
+            runCurrent()
+
+            assertEquals(0L, persisted().lastPositionMs)
+        }
+
+    @Test
+    fun closeSavesThePositionAndReleasesThePlayer() =
+        runTest {
+            seed(movieFile())
+            val session = session()
+            session.open(id)
+            player.play()
+            runCurrent()
+            player.emitPosition(3_000L)
+
+            session.close()
+
+            assertEquals(3_000L, persisted().lastPositionMs)
+            assertEquals(PlayerState.Idle, player.state.value)
+
+            // Nothing is watched any more: later player events write nothing.
+            player.open(File("other.mkv"), 0L)
+            player.play()
+            now += 10_000L
+            player.emitPosition(9_000L)
+            runCurrent()
+            assertEquals(3_000L, persisted().lastPositionMs)
         }
 }
