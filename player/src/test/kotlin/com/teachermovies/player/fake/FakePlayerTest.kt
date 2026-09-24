@@ -55,6 +55,24 @@ class FakePlayerTest {
     }
 
     @Test
+    fun openRecordsAnOrdinaryFileAsNotGrowingByDefault() {
+        assertNull(player.lastOpen)
+
+        player.open(movie, startPositionMs = 95_000L)
+
+        assertEquals(FakePlayer.OpenCall(movie, 95_000L, growing = false), player.lastOpen)
+    }
+
+    @Test
+    fun openRecordsAGrowingFile() {
+        player.open(movie, startPositionMs = 12_000L, growing = true)
+
+        assertEquals(FakePlayer.OpenCall(movie, 12_000L, growing = true), player.lastOpen)
+        assertEquals(PlayerState.Opening, player.state.value)
+        assertEquals(12_000L, player.positionMs.value)
+    }
+
+    @Test
     fun playAndPauseMoveTheStateDirectly() {
         player.open(movie)
         player.play()

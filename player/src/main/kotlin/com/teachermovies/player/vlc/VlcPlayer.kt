@@ -114,6 +114,7 @@ class VlcPlayer(
     override fun open(
         file: File,
         startPositionMs: Long,
+        growing: Boolean,
     ) {
         val player = mediaPlayer()
         unload(player)
