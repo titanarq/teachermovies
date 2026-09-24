@@ -175,6 +175,28 @@
   overlay is hidden while it is visible and the player root takes focus back when it closes. The
   player root consults `AssistantKeyMapper` before `RemoteKeyMapper`.
 
+## Asistente: escuchar y traducir la frase (#92)
+- `AssistantAction` gains `SpeakOriginal` and `TranslateLine`. Overlay open: DPAD_RIGHT ->
+  `SpeakOriginal`, DPAD_LEFT -> `TranslateLine` (the #86 mappings are unchanged; the rest is still
+  `Consumed`). Overlay closed: both keys stay null, so RIGHT/LEFT keep seeking via `RemoteKeyMapper`.
+- `AssistantOverlayState(text, replaying, speaking, translation: TranslationUiState, message)`:
+  `speaking` and `translation` come from `AssistantSpeechController.state`; `message` is a transient
+  overlay notice (3 s).
+- `PlayerViewModel(session, player, hidden, capture, speech: AssistantSpeechController, closeScope,
+  prepareDispatcher = Dispatchers.Default)`; `Factory(player, repo, hidden, capture, speech)`.
+  `open` prepares the speaker once on `prepareDispatcher`, never awaited by playback; an unavailable
+  speaker only removes the spoken answers. `SpeakOriginal` -> `speakOriginal(line)`, `false` ->
+  `Voz no disponible` for 3 s and nothing else. `TranslateLine` -> `translateAndSpeak(line)`.
+  `DismissOverlay` (and BACK, exit, clear) also calls `reset()`. None of these keys resumes the movie.
+- `AppContainer`: `speaker = AndroidTextToSpeechSpeaker(application)`, translation provider
+  `CachingTranslationProvider(NullTranslationProvider)` (no provider is configurable yet, #31),
+  `assistantSpeechController` on the assistant's main-thread scope.
+- `AssistantOverlay` under the English line: `Traduciendo…` (`Loading`), the Spanish text in amber
+  (`Ready`), `Sin conexión para traducir` (`Failed(OFFLINE)`), `Traducción no disponible`
+  (`Failed(UNAVAILABLE)`), nothing (`Idle`) -- `translationLine(state)`; then the message, `Hablando…`
+  while `speaking`, `Repitiendo…` while replaying, and the hint
+  `OK Repetir · DERECHA Escuchar · IZQUIERDA Traducir · ATRÁS Cerrar`. Focus behaviour is that of #86.
+
 ## HTTP server hosting and pairing PIN (#66)
 - `AppContainer.pairingManager: PairingManager` (`SecureRandom`, wall clock) and
   `AppContainer.httpServerController: HttpServerController` over `LocalHttpServer`, on the
