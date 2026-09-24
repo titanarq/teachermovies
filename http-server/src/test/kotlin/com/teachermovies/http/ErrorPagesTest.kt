@@ -26,6 +26,7 @@ class ErrorPagesTest {
             appVersion = "test",
             clock = { 0L },
             pairing = PairingManager(InMemorySettingsRepository(), SecureRandom(), { 0L }),
+            subtitles = FakeSubtitleStore(),
             allowTestRemoteHeader = true,
         )
 

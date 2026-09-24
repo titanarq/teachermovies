@@ -47,6 +47,7 @@ class PairRouteTest {
             appVersion = "test",
             clock = clock,
             pairing = pairing,
+            subtitles = FakeSubtitleStore(),
             allowTestRemoteHeader = true,
         )
 

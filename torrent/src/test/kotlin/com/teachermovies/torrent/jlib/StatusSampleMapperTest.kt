@@ -7,6 +7,7 @@ import com.teachermovies.torrent.api.TorrentFileInfo
 import com.teachermovies.torrent.policy.RawPhase
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -188,4 +189,28 @@ class StatusSampleMapperTest {
         path: String,
         size: Long,
     ) = TorrentFileInfo(index = index, path = path, sizeBytes = size, priority = FilePriority.Normal, downloadedBytes = 0)
+
+    @Test
+    fun anAllowedMoveIsNotUnexpected() {
+        assertFalse(StatusSampleMapper.isUnexpectedTransition(DownloadState.Queued, DownloadState.Verifying))
+    }
+
+    @Test
+    fun aSelfMoveIsNotUnexpected() {
+        assertFalse(StatusSampleMapper.isUnexpectedTransition(DownloadState.Downloading, DownloadState.Downloading))
+        assertFalse(StatusSampleMapper.isUnexpectedTransition(DownloadState.FetchingMetadata, DownloadState.FetchingMetadata))
+    }
+
+    @Test
+    fun aMoveTheTableRejectsIsUnexpected() {
+        assertTrue(StatusSampleMapper.isUnexpectedTransition(DownloadState.Downloading, DownloadState.FetchingMetadata))
+    }
+
+    @Test
+    fun applyPublishesARejectedMoveAnyway() {
+        val completed = StatusSampleMapper.apply(pending, downloading.copy(phase = RawPhase.Seeding))
+        assertEquals(DownloadState.Completed, completed.state)
+        val refetching = StatusSampleMapper.apply(completed, downloading.copy(phase = RawPhase.DownloadingMetadata))
+        assertEquals(DownloadState.FetchingMetadata, refetching.state)
+    }
 }

@@ -39,4 +39,23 @@
     <string name="engine_status_running">en marcha</string>
     <string name="engine_status_error">error</string>
     <string name="first_run_continue">Continuar</string>
+    <!-- Descargas (#70). -->
+    <string name="downloads_free_space">Espacio libre: %1$s</string>
+    <string name="downloads_free_space_unknown">Espacio libre: sin volumen</string>
+    <string name="downloads_empty">No hay descargas. Envía un magnet desde el móvil a %1$s</string>
+    <string name="downloads_empty_no_address">http://IP:puerto</string>
+    <string name="downloads_eta">ETA %1$s</string>
+    <string name="downloads_ratio">ratio %1$s</string>
+    <plurals name="downloads_peers">
+        <item quantity="one">%1$d peer</item>
+        <item quantity="other">%1$d peers</item>
+    </plurals>
+    <string name="downloads_action_choose_files">Elegir archivos</string>
+    <string name="downloads_action_delete">Borrar</string>
+    <string name="downloads_action_cancel">Cancelar</string>
+    <string name="downloads_confirm_delete">¿Borrar también los archivos?</string>
+    <string name="downloads_confirm_yes">Sí</string>
+    <string name="downloads_confirm_no">No</string>
+    <string name="downloads_choose_files_pending">La elección de archivos aún no está disponible.</string>
+    <string name="downloads_close">Cerrar</string>
 </resources>
