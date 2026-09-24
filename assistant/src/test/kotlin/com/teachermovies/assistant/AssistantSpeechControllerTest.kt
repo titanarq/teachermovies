@@ -68,19 +68,30 @@ class AssistantSpeechControllerTest {
 
             f.controller.prepare()
 
-            assertTrue(f.controller.state.value.speechAvailable)
+            assertEquals(setOf(SpeechLanguage.EN, SpeechLanguage.ES), f.controller.state.value.speechAvailable)
             assertEquals(SpeakerAvailability.Ready, f.speaker.availability.value)
         }
 
     @Test
-    fun `prepare with MissingVoice makes speech unavailable`() =
+    fun `prepare with MissingVoice removes only the missing languages`() =
         runTest {
             val f = fixture()
             f.speaker.nextAvailability = SpeakerAvailability.MissingVoice(setOf(SpeechLanguage.ES))
 
             f.controller.prepare()
 
-            assertFalse(f.controller.state.value.speechAvailable)
+            assertEquals(setOf(SpeechLanguage.EN), f.controller.state.value.speechAvailable)
+        }
+
+    @Test
+    fun `prepare with every voice missing makes speech unavailable`() =
+        runTest {
+            val f = fixture()
+            f.speaker.nextAvailability = SpeakerAvailability.MissingVoice(setOf(SpeechLanguage.EN, SpeechLanguage.ES))
+
+            f.controller.prepare()
+
+            assertEquals(emptySet<SpeechLanguage>(), f.controller.state.value.speechAvailable)
         }
 
     @Test
@@ -91,7 +102,7 @@ class AssistantSpeechControllerTest {
 
             f.controller.prepare()
 
-            assertFalse(f.controller.state.value.speechAvailable)
+            assertEquals(emptySet<SpeechLanguage>(), f.controller.state.value.speechAvailable)
         }
 
     @Test
@@ -103,7 +114,7 @@ class AssistantSpeechControllerTest {
 
             f.controller.prepare()
 
-            assertTrue(f.controller.state.value.speechAvailable)
+            assertEquals(setOf(SpeechLanguage.EN, SpeechLanguage.ES), f.controller.state.value.speechAvailable)
             assertEquals(SpeakerAvailability.Ready, f.speaker.availability.value)
         }
 
@@ -173,12 +184,12 @@ class AssistantSpeechControllerTest {
     fun `reset keeps speechAvailable`() =
         runTest {
             val f = fixture()
-            f.speaker.nextAvailability = SpeakerAvailability.EngineUnavailable
+            f.speaker.nextAvailability = SpeakerAvailability.MissingVoice(setOf(SpeechLanguage.EN))
             f.controller.prepare()
 
             f.controller.reset()
 
-            assertEquals(AssistantSpeechState(speechAvailable = false), f.controller.state.value)
+            assertEquals(AssistantSpeechState(speechAvailable = setOf(SpeechLanguage.ES)), f.controller.state.value)
         }
 
     @Test
@@ -443,22 +454,65 @@ class AssistantSpeechControllerTest {
 
             assertTrue(f.speaker.spoken.isEmpty())
             assertEquals(
-                AssistantSpeechState(translation = TranslationUiState.Ready("Hola."), speechAvailable = false),
+                AssistantSpeechState(translation = TranslationUiState.Ready("Hola."), speechAvailable = emptySet()),
                 f.controller.state.value,
             )
             assertEquals(0, f.activeCoroutines)
         }
 
     @Test
-    fun `with a missing voice nothing is spoken even in English`() =
+    fun `with the Spanish voice missing English is spoken, Spanish refused, translation Ready`() =
         runTest {
             val f = fixture()
             f.speaker.nextAvailability = SpeakerAvailability.MissingVoice(setOf(SpeechLanguage.ES))
             f.controller.prepare()
 
+            assertTrue(f.controller.speakOriginal(hello))
+            f.speaker.finishCurrentUtterance()
+            f.controller.translateAndSpeak(hello)
+            settle()
+            assertFalse(f.controller.speakTranslation())
+
+            assertEquals(listOf("Hello." to SpeechLanguage.EN), f.speaker.spoken)
+            assertEquals(TranslationUiState.Ready("Hola."), f.controller.state.value.translation)
+            assertFalse(f.controller.state.value.speaking)
+        }
+
+    @Test
+    fun `with the English voice missing Spanish is spoken, English refused`() =
+        runTest {
+            val f = fixture()
+            f.speaker.nextAvailability = SpeakerAvailability.MissingVoice(setOf(SpeechLanguage.EN))
+            f.controller.prepare()
+
             assertFalse(f.controller.speakOriginal(hello))
+            assertTrue(f.speaker.spoken.isEmpty())
+            f.controller.translateAndSpeak(hello)
+            settle()
+
+            assertEquals(listOf("Hola." to SpeechLanguage.ES), f.speaker.spoken)
+            assertEquals(TranslationUiState.Ready("Hola."), f.controller.state.value.translation)
+            assertTrue(f.controller.speakTranslation())
+        }
+
+    @Test
+    fun `with every voice missing nothing is spoken but translation still works`() =
+        runTest {
+            val f = fixture()
+            f.speaker.nextAvailability = SpeakerAvailability.MissingVoice(setOf(SpeechLanguage.EN, SpeechLanguage.ES))
+            f.controller.prepare()
+
+            assertFalse(f.controller.speakOriginal(hello))
+            f.controller.translateAndSpeak(hello)
+            settle()
+            assertFalse(f.controller.speakTranslation())
 
             assertTrue(f.speaker.spoken.isEmpty())
+            assertEquals(
+                AssistantSpeechState(translation = TranslationUiState.Ready("Hola."), speechAvailable = emptySet()),
+                f.controller.state.value,
+            )
+            assertEquals(0, f.activeCoroutines)
         }
 
     @Test
