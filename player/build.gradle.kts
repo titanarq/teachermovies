@@ -31,8 +31,8 @@ dependencies {
     // Supervised playback of a still-downloading file (`StreamingPlaybackController`) needs the
     // public types of :torrent (`TorrentEngine`, `RangeReadiness`); this follows the same
     // `app-tv -> feature modules -> core-model` direction :http-server already depends under
-    // (AGENTS.md). No jlibtorrent type is reachable through it: :torrent keeps jlibtorrent as its
-    // own `implementation` dependency.
+    // (AGENTS.md). Only its `api` package is used; :torrent keeps its native BitTorrent library
+    // as its own `implementation` dependency.
     implementation(project(":torrent"))
 
     // `implementation`, never `api`: no `org.videolan` type crosses this module's boundary
