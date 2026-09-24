@@ -154,6 +154,29 @@ registered -- any fork PR could run arbitrary code on this machine. Deregister f
   rather than a real quota exhaustion; needs reproduction with request timing before filing
   upstream.
 
+- to report (not yet filed upstream, seen 2026-09-24 control-plane check): `scripts/clean_stale_worker.sh`
+  refuses on a squash-merged issue. Its `ahead=$(git log --oneline origin/main..HEAD)` guard assumes
+  the worker's stage commits reach `origin/main` unchanged, but the merge convention actually used
+  (`gh pr merge N --merge`) still produces a squash on at least one path -- confirmed on #83/PR #141
+  (squash commit `42eb7bb` on `main`; the worktree's 3 stage commits are content-identical but
+  different SHAs, so the script reports "HEAD has commits not on origin/main, refusing" even though
+  the issue is closed and nothing is actually unmerged). Ran read-only (exits before touching the
+  worktree), so no state was changed by checking this. Same failure mode will hit
+  `clean_stale_workers_if_closed.sh` on its own timer once `origin/main` is fetched there too.
+  Workaround for now: compare diff content (`git diff origin/main...HEAD` -- should be empty) rather
+  than commit ancestry before trusting the refusal; do not force the script past it by hand.
+
+- to report (not yet filed upstream, seen 2026-09-24 control-plane check): a refiner/control-plane
+  round-trip lost a human answer. On #84, a prior control-plane pass (2026-09-24T10:36) answered the
+  refiner's parked/rewrite/keep question citing the dated decision on #29 and returned #84 to
+  `status:refine`; by 13:09 `roedor-planner` reported the issue back in the refine queue asking the
+  *same already-answered question* again, because (its own account) the refiner's self-cleared
+  "pending refine" marker did not stick, so the guard's wake tick kept re-proposing #84, and a
+  later control-plane pass re-added the refine marker without noticing the question was already
+  settled. Net effect: an answered `blocked-on-human` doubt can resurface as if never answered.
+  Re-applied the same decision by hand this round; needs reproduction of the marker-clearing path
+  before filing upstream.
+
 ## Refiner
 
 `planner.refiner_unattended` is `false`: the refiner runs only by hand, attended:
