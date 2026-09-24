@@ -5,7 +5,15 @@ import org.junit.Test
 
 class MainActivityTest {
     @Test
-    fun activityStubIsCompiledIntoTheModuleNamespace() {
+    fun mainActivityIsCompiledIntoTheModuleNamespace() {
         assertEquals("com.teachermovies.tv", MainActivity::class.java.packageName)
+    }
+
+    @Test
+    fun mainActivityIsAComponentActivitySoItCanHostTheComposeShell() {
+        assertEquals(
+            "androidx.activity.ComponentActivity",
+            MainActivity::class.java.superclass?.name,
+        )
     }
 }
