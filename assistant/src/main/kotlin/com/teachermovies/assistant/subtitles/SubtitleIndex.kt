@@ -20,8 +20,16 @@ class SubtitleIndex(track: SubtitleTrack) {
      * is found directly by the same binary search, with no extra scan.
      */
     fun cueAt(positionMs: Long): SubtitleCue? {
-        if (cues.isEmpty()) return null
+        val cue = cueAtOrBefore(positionMs) ?: return null
+        return if (positionMs < cue.endMs) cue else null
+    }
 
+    /**
+     * The cue containing [positionMs] or, when [positionMs] falls in a gap or after the last cue,
+     * the last cue whose [SubtitleCue.startMs] is `<= positionMs`; `null` before the first cue or
+     * for an empty track. Same binary search and same overlap rule as [cueAt].
+     */
+    fun cueAtOrBefore(positionMs: Long): SubtitleCue? {
         var low = 0
         var high = cues.size - 1
         var candidate = -1
@@ -34,9 +42,6 @@ class SubtitleIndex(track: SubtitleTrack) {
                 high = mid - 1
             }
         }
-
-        if (candidate == -1) return null
-        val cue = cues[candidate]
-        return if (positionMs < cue.endMs) cue else null
+        return if (candidate == -1) null else cues[candidate]
     }
 }

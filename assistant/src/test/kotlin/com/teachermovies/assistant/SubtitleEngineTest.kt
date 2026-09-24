@@ -108,4 +108,69 @@ class SubtitleEngineTest {
 
             assertEquals(track.cues[0], engine.currentSubtitle.value)
         }
+
+    private val captureTrack =
+        SubtitleTrack(
+            cues =
+                listOf(
+                    cue(0, startMs = 1_000L, endMs = 2_000L),
+                    cue(1, startMs = 10_000L, endMs = 11_000L),
+                ),
+        )
+
+    @Test
+    fun `cueForCapture returns the cue containing the position`() =
+        runTest {
+            val engine = SubtitleEngine(MutableStateFlow(0L), backgroundScope)
+            engine.load(captureTrack)
+
+            assertEquals(captureTrack.cues[0], engine.cueForCapture(1_500L))
+            assertEquals(captureTrack.cues[1], engine.cueForCapture(10_000L))
+        }
+
+    @Test
+    fun `cueForCapture returns the previous cue in a gap no longer than maxGapMs`() =
+        runTest {
+            val engine = SubtitleEngine(MutableStateFlow(0L), backgroundScope)
+            engine.load(captureTrack)
+
+            assertEquals(captureTrack.cues[0], engine.cueForCapture(2_000L))
+            assertEquals(captureTrack.cues[0], engine.cueForCapture(4_500L))
+            // Exactly the default maxGapMs (3_000) after the end still counts.
+            assertEquals(captureTrack.cues[0], engine.cueForCapture(5_000L))
+        }
+
+    @Test
+    fun `cueForCapture returns null in a gap longer than maxGapMs, also after the last cue`() =
+        runTest {
+            val engine = SubtitleEngine(MutableStateFlow(0L), backgroundScope)
+            engine.load(captureTrack)
+
+            assertNull(engine.cueForCapture(5_001L))
+            assertNull(engine.cueForCapture(20_000L))
+        }
+
+    @Test
+    fun `cueForCapture honours a custom maxGapMs`() =
+        runTest {
+            val engine = SubtitleEngine(MutableStateFlow(0L), backgroundScope, maxGapMs = 500L)
+            engine.load(captureTrack)
+
+            assertEquals(captureTrack.cues[0], engine.cueForCapture(2_500L))
+            assertNull(engine.cueForCapture(2_501L))
+        }
+
+    @Test
+    fun `cueForCapture returns null before the first cue, for an empty track and with no track`() =
+        runTest {
+            val engine = SubtitleEngine(MutableStateFlow(0L), backgroundScope)
+
+            assertNull(engine.cueForCapture(1_500L))
+
+            engine.load(captureTrack)
+            assertNull(engine.cueForCapture(999L))
+
+            engine.load(SubtitleTrack(cues = emptyList()))
+            assertNull(engine.cueForCapture(1_500L))
+        }
 }
