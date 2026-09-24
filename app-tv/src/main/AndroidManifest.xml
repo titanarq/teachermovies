@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Skeleton manifest (#37): the launcher intent filters, banner, icon, theme and <application>
+     attributes arrive with the Compose-for-TV shell (#44), so MainActivity is deliberately
+     unexported and unreachable from the TV home screen until then. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name=".MainActivity"
+            android:exported="false" />
+    </application>
+</manifest>
