@@ -31,6 +31,9 @@ dependencies {
     // `api`, not `implementation`: `SubtitleEngine.currentSubtitle` is a `StateFlow` and `load`'s
     // caller drives it off a `CoroutineScope` (same reasoning as `:torrent` and `:player`).
     api(libs.kotlinx.coroutines.core)
+    // Official Anthropic Java SDK behind `AnthropicTranslationProvider` (#90). `implementation`: no
+    // SDK type appears in this module's public API.
+    implementation(libs.anthropic.java)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
