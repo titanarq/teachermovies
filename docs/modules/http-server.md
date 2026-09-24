@@ -123,7 +123,11 @@
   `staticResources`; vanilla JS, no build step, no external resources. The page pairs with
   `POST /api/pair` when `localStorage` holds no token, sends `Authorization: Bearer` on every
   protected call (a 401 clears the token and shows the PIN form), follows `/api/events?token=` and
-  falls back to polling `GET /api/torrents` every 3 s when the stream fails.
+  falls back to polling `GET /api/torrents` every 3 s when the stream fails. Each download row
+  (#64) also has `SUBIR SUBTÍTULO` (file input `.srt,.ass,.ssa,.vtt` -> multipart
+  `POST /api/subtitles` with `torrentId` + `file`) and `BORRAR` (a `<dialog>` with the checkbox
+  `Borrar también los archivos` -> `DELETE /api/torrents/{id}?deleteFiles=true|false`); results
+  are shown inline in Spanish, a 4xx shows the server's error `message`.
 
 ## Boundaries
 - Talks to `TorrentEngine` and repositories through interfaces only. No UPnP, nothing exposed to the Internet. Never log tokens/PINs.

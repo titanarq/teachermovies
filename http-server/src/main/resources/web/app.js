@@ -43,6 +43,25 @@
     );
   }
 
+  /** Resolves to {code, message} from a JSON error body; message is '' when absent. */
+  function readApiError(res) {
+    return res.json().then(
+      function (body) {
+        return {
+          code: (body && body.error) || ('http_' + res.status),
+          message: (body && typeof body.message === 'string') ? body.message : '',
+        };
+      },
+      function () { return { code: 'http_' + res.status, message: '' }; }
+    );
+  }
+
+  /** Spanish failure text; a 4xx shows the server's `message` (or its code when it sent none). */
+  function failureText(prefix, res, err) {
+    if (res.status >= 400 && res.status < 500) return prefix + ': ' + (err.message || err.code) + '.';
+    return prefix + ' (error ' + res.status + ').';
+  }
+
   /** fetch() to a protected /api route with the bearer token; a 401 re-opens pairing. */
   function api(path, options) {
     options = options || {};
@@ -231,10 +250,36 @@
     button.type = 'button';
     button.className = 'btn';
     button.addEventListener('click', function () { toggle(id, button); });
+    var actions = document.createElement('div');
+    actions.className = 'row-actions';
+    var subInput = document.createElement('input');
+    subInput.type = 'file';
+    subInput.accept = SUBTITLE_ACCEPT;
+    subInput.hidden = true;
+    var subButton = document.createElement('button');
+    subButton.type = 'button';
+    subButton.className = 'btn';
+    subButton.textContent = 'SUBIR SUBTÍTULO';
+    var delButton = document.createElement('button');
+    delButton.type = 'button';
+    delButton.className = 'btn btn-danger';
+    delButton.textContent = 'BORRAR';
+    var msg = document.createElement('p');
+    msg.className = 'msg';
+    msg.setAttribute('role', 'status');
+    msg.setAttribute('aria-live', 'polite');
+    subButton.addEventListener('click', function () { subInput.click(); });
+    subInput.addEventListener('change', function () { uploadSubtitle(id, subInput, subButton, msg); });
+    delButton.addEventListener('click', function () { askDelete(id, delButton, msg); });
+    actions.appendChild(subButton);
+    actions.appendChild(delButton);
+    actions.appendChild(subInput);
     li.appendChild(name);
     li.appendChild(bar);
     li.appendChild(stats);
     li.appendChild(button);
+    li.appendChild(actions);
+    li.appendChild(msg);
     return { li: li, name: name, fill: fill, pct: p, speed: speed, size: size, button: button };
   }
 
@@ -283,6 +328,90 @@
         if (!(e instanceof Unauthorized)) setMsg($('send-msg'), 'No se pudo contactar con la TV.', 'error');
       })
       .then(function () { button.disabled = false; });
+  }
+
+  // ---- per-row actions: subtitle upload and delete (#64) ------------------------------------
+
+  var SUBTITLE_ACCEPT = '.srt,.ass,.ssa,.vtt';
+  var SUBTITLE_EXT = /\.(srt|ass|ssa|vtt)$/i;
+
+  function uploadSubtitle(id, input, button, msg) {
+    var file = input.files && input.files[0];
+    if (!file) return;
+    if (!SUBTITLE_EXT.test(file.name)) {
+      setMsg(msg, 'Elige un subtítulo .srt, .ass, .ssa o .vtt.', 'error');
+      input.value = '';
+      return;
+    }
+    var form = new FormData();
+    form.append('torrentId', id);
+    form.append('file', file, file.name);
+    button.disabled = true;
+    setMsg(msg, 'Subiendo subtítulo…', '');
+    // No Content-Type header: the browser sets multipart/form-data with its boundary.
+    api('/api/subtitles', { method: 'POST', body: form })
+      .then(function (res) {
+        if (res.status === 201) {
+          setMsg(msg, 'Subtítulo enviado a la TV.', 'ok');
+          return;
+        }
+        return readApiError(res).then(function (err) {
+          setMsg(msg, failureText('No se pudo subir el subtítulo', res, err), 'error');
+        });
+      })
+      .catch(function (e) {
+        if (!(e instanceof Unauthorized)) setMsg(msg, 'No se pudo contactar con la TV.', 'error');
+      })
+      .then(function () {
+        button.disabled = false;
+        input.value = '';
+      });
+  }
+
+  /** Confirm dialog with the `Borrar también los archivos` checkbox; resolves to null on cancel. */
+  function confirmDelete(name) {
+    var dialog = $('del-dialog');
+    if (!dialog || typeof dialog.showModal !== 'function') {
+      // Old browsers without <dialog>: two plain confirms stand in for the checkbox.
+      if (!window.confirm('¿Borrar «' + name + '» de la TV?')) return Promise.resolve(null);
+      return Promise.resolve({ deleteFiles: window.confirm('¿Borrar también los archivos?') });
+    }
+    $('del-name').textContent = name; // textContent: names come from the network
+    $('del-files').checked = false;
+    return new Promise(function (resolve) {
+      dialog.addEventListener('close', function onClose() {
+        dialog.removeEventListener('close', onClose);
+        resolve(dialog.returnValue === 'ok' ? { deleteFiles: $('del-files').checked } : null);
+      });
+      dialog.returnValue = '';
+      dialog.showModal();
+    });
+  }
+
+  function askDelete(id, button, msg) {
+    var row = rows[id];
+    var name = (row && row.name.textContent) || id;
+    confirmDelete(name).then(function (choice) {
+      if (!choice) return;
+      button.disabled = true;
+      setMsg(msg, 'Borrando…', '');
+      var path = '/api/torrents/' + encodeURIComponent(id) + '?deleteFiles=' + (choice.deleteFiles ? 'true' : 'false');
+      return api(path, { method: 'DELETE' })
+        .then(function (res) {
+          if (res.status === 204) {
+            setMsg($('send-msg'), choice.deleteFiles ? 'Descarga y archivos borrados.' : 'Descarga borrada.', 'ok');
+            refreshIfPolling();
+            return;
+          }
+          return readApiError(res).then(function (err) {
+            setMsg(msg, failureText('No se pudo borrar', res, err), 'error');
+          });
+        })
+        .catch(function (e) {
+          if (!(e instanceof Unauthorized)) setMsg(msg, 'No se pudo contactar con la TV.', 'error');
+        })
+        .then(function () { button.disabled = false; });
+    });
   }
 
   // ---- live updates: SSE, falling back to polling -------------------------------------------

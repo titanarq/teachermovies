@@ -69,6 +69,29 @@ class WebUiRouteTest {
         }
 
     @Test
+    fun `app js uploads subtitles and deletes downloads through the api`() =
+        testApplication {
+            application { module(deps()) }
+            val body = lanClient().get("/static/app.js").bodyAsText()
+
+            assertTrue(body.contains("api('/api/subtitles', { method: 'POST', body: form })"))
+            assertTrue(body.contains("'?deleteFiles='"))
+            assertTrue(body.contains("{ method: 'DELETE' }"))
+            assertTrue(body.contains("SUBIR SUBTÍTULO"))
+            assertTrue(body.contains("'.srt,.ass,.ssa,.vtt'"))
+        }
+
+    @Test
+    fun `index html has the delete dialog with the delete-files checkbox`() =
+        testApplication {
+            application { module(deps()) }
+            val body = lanClient().get("/").bodyAsText()
+
+            assertTrue(body.contains("id=\"del-dialog\""))
+            assertTrue(body.contains("Borrar también los archivos"))
+        }
+
+    @Test
     fun `app css is served as css`() =
         testApplication {
             application { module(deps()) }
