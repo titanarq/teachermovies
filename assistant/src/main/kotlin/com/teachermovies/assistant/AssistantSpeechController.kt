@@ -82,6 +82,9 @@ class AssistantSpeechController(
     private var translatedLine: CapturedLine? = null
     private var translationJob: Job? = null
 
+    /** Set by [translateAndSpeak]: say the translation in Spanish as soon as it is `Ready`. */
+    private var speakWhenReady = false
+
     /**
      * Initialises the speaker once. [SpeakerAvailability.EngineUnavailable] or
      * [SpeakerAvailability.MissingVoice] sets [AssistantSpeechState.speechAvailable] to `false`.
@@ -113,15 +116,31 @@ class AssistantSpeechController(
      * different line cancels the in-flight translation and starts over. Never throws.
      */
     fun translate(line: CapturedLine) {
+        request(line, speak = false)
+    }
+
+    private fun request(
+        line: CapturedLine,
+        speak: Boolean,
+    ) {
         if (line == translatedLine) {
             when (mutableState.value.translation) {
-                is TranslationUiState.Ready, TranslationUiState.Loading -> return
+                is TranslationUiState.Ready -> {
+                    if (speak) speakTranslation()
+                    return
+                }
+                TranslationUiState.Loading -> {
+                    if (speak) speakWhenReady = true
+                    return
+                }
                 // Idle or Failed: a later attempt may succeed (Offline), so ask again.
                 else -> Unit
             }
         }
         translationJob?.cancel()
         translatedLine = line
+        // Set before launching: an immediate dispatcher may finish the coroutine right away.
+        speakWhenReady = speak
         mutableState.update { it.copy(translation = TranslationUiState.Loading) }
         translationJob =
             scope.launch {
@@ -136,8 +155,32 @@ class AssistantSpeechController(
                     }
                 // A cancelled call that returned without suspending must not overwrite the new line.
                 if (!isActive || translatedLine != line) return@launch
-                mutableState.update { it.copy(translation = result.toUiState()) }
+                val uiState = result.toUiState()
+                mutableState.update { it.copy(translation = uiState) }
+                if (speakWhenReady) {
+                    speakWhenReady = false
+                    if (uiState is TranslationUiState.Ready) say(uiState.text, SpeechLanguage.ES)
+                }
             }
+    }
+
+    /**
+     * Says the `Ready` translation in Spanish and returns what [Speaker.speak] returned; `false`
+     * and nothing else happens unless [AssistantSpeechState.translation] is `Ready`.
+     */
+    fun speakTranslation(): Boolean {
+        val translation = mutableState.value.translation
+        if (translation !is TranslationUiState.Ready) return false
+        return say(translation.text, SpeechLanguage.ES)
+    }
+
+    /**
+     * [translate]s [line] (reusing a `Ready` result for the same line) and says the result in
+     * Spanish as soon as it arrives. On `Failed` nothing is said and the failure stays in the
+     * state for the screen to show; without speech only the text is shown.
+     */
+    fun translateAndSpeak(line: CapturedLine) {
+        request(line, speak = true)
     }
 
     /**
@@ -151,6 +194,7 @@ class AssistantSpeechController(
         translationJob?.cancel()
         translationJob = null
         translatedLine = null
+        speakWhenReady = false
         mutableState.update { AssistantSpeechState(speechAvailable = it.speechAvailable) }
     }
 

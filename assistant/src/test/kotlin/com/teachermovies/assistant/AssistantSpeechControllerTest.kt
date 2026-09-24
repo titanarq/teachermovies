@@ -316,4 +316,165 @@ class AssistantSpeechControllerTest {
             assertEquals(AssistantSpeechState(), f.controller.state.value)
             assertEquals(0, f.activeCoroutines)
         }
+
+    @Test
+    fun `speakTranslation does nothing before Ready and speaks Spanish after`() =
+        runTest {
+            val f = fixture()
+            f.controller.prepare()
+            f.translations.delayMs = 100
+
+            assertFalse(f.controller.speakTranslation()) // Idle
+            f.controller.translate(hello)
+            assertFalse(f.controller.speakTranslation()) // Loading
+            assertTrue(f.speaker.spoken.isEmpty())
+
+            settle()
+            assertTrue(f.controller.speakTranslation())
+            assertEquals(listOf("Hola." to SpeechLanguage.ES), f.speaker.spoken)
+            assertTrue(f.controller.state.value.speaking)
+        }
+
+    @Test
+    fun `speakTranslation does nothing after a failure`() =
+        runTest {
+            val f = fixture()
+            f.controller.prepare()
+            f.translations.nextResult = TranslationResult.Offline
+            f.controller.translate(hello)
+            settle()
+
+            assertFalse(f.controller.speakTranslation())
+            assertTrue(f.speaker.spoken.isEmpty())
+        }
+
+    @Test
+    fun `translateAndSpeak speaks the translation as soon as it arrives`() =
+        runTest {
+            val f = fixture()
+            f.controller.prepare()
+            f.translations.delayMs = 100
+
+            f.controller.translateAndSpeak(hello)
+            runCurrent()
+            assertTrue(f.speaker.spoken.isEmpty())
+
+            settle()
+            assertEquals(TranslationUiState.Ready("Hola."), f.controller.state.value.translation)
+            assertEquals(listOf("Hola." to SpeechLanguage.ES), f.speaker.spoken)
+            assertTrue(f.controller.state.value.speaking)
+        }
+
+    @Test
+    fun `translateAndSpeak reuses a Ready result for the same line`() =
+        runTest {
+            val f = fixture()
+            f.controller.prepare()
+            f.controller.translate(hello)
+            settle()
+
+            f.controller.translateAndSpeak(hello)
+            settle()
+
+            assertEquals(listOf("Hello."), f.translations.requests)
+            assertEquals(listOf("Hola." to SpeechLanguage.ES), f.speaker.spoken)
+        }
+
+    @Test
+    fun `translateAndSpeak while the same line is Loading speaks once it arrives without a second call`() =
+        runTest {
+            val f = fixture()
+            f.controller.prepare()
+            f.translations.delayMs = 100
+            f.controller.translate(hello)
+
+            f.controller.translateAndSpeak(hello)
+            settle()
+
+            assertEquals(listOf("Hello."), f.translations.requests)
+            assertEquals(listOf("Hola." to SpeechLanguage.ES), f.speaker.spoken)
+        }
+
+    @Test
+    fun `translateAndSpeak on failure speaks nothing and keeps the failure`() =
+        runTest {
+            val f = fixture()
+            f.controller.prepare()
+            f.translations.nextResult = TranslationResult.Unavailable("refused")
+
+            f.controller.translateAndSpeak(hello)
+            settle()
+
+            assertTrue(f.speaker.spoken.isEmpty())
+            assertEquals(
+                TranslationUiState.Failed(TranslationFailure.UNAVAILABLE),
+                f.controller.state.value.translation,
+            )
+            assertFalse(f.controller.state.value.speaking)
+        }
+
+    @Test
+    fun `a line switched away from is never spoken`() =
+        runTest {
+            val f = fixture()
+            f.controller.prepare()
+            f.translations.delayMs = 100
+            f.controller.translateAndSpeak(hello)
+            advanceTimeBy(50)
+
+            f.controller.translate(bye)
+            settle()
+
+            assertTrue(f.speaker.spoken.isEmpty())
+            assertEquals(TranslationUiState.Ready("Adiós."), f.controller.state.value.translation)
+        }
+
+    @Test
+    fun `without speech every speaking call returns false but translation still works`() =
+        runTest {
+            val f = fixture()
+            f.speaker.nextAvailability = SpeakerAvailability.EngineUnavailable
+            f.controller.prepare()
+
+            assertFalse(f.controller.speakOriginal(hello))
+            f.controller.translateAndSpeak(hello)
+            settle()
+            assertFalse(f.controller.speakTranslation())
+
+            assertTrue(f.speaker.spoken.isEmpty())
+            assertEquals(
+                AssistantSpeechState(translation = TranslationUiState.Ready("Hola."), speechAvailable = false),
+                f.controller.state.value,
+            )
+            assertEquals(0, f.activeCoroutines)
+        }
+
+    @Test
+    fun `with a missing voice nothing is spoken even in English`() =
+        runTest {
+            val f = fixture()
+            f.speaker.nextAvailability = SpeakerAvailability.MissingVoice(setOf(SpeechLanguage.ES))
+            f.controller.prepare()
+
+            assertFalse(f.controller.speakOriginal(hello))
+
+            assertTrue(f.speaker.spoken.isEmpty())
+        }
+
+    @Test
+    fun `reset clears everything after speaking a translation`() =
+        runTest {
+            val f = fixture()
+            f.controller.prepare()
+            f.controller.translateAndSpeak(hello)
+            settle()
+            assertTrue(f.controller.state.value.speaking)
+
+            f.controller.reset()
+            settle()
+
+            assertEquals(AssistantSpeechState(), f.controller.state.value)
+            assertEquals(0, f.activeCoroutines)
+            assertFalse(f.controller.speakTranslation())
+        }
 }
