@@ -162,6 +162,7 @@ class AppContainer(application: Application) {
             clock = System::currentTimeMillis,
             pairing = pairingManager,
             subtitles = LayoutSubtitleStore { id -> SubtitleLayoutResolver.layoutFor(id, torrentEngine.torrents.value) },
+            library = torrentRepository,
         )
 
     /**

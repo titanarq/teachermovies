@@ -2,6 +2,7 @@ package com.teachermovies.http
 
 import com.teachermovies.core.model.DownloadState
 import com.teachermovies.core.model.TorrentId
+import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
 import com.teachermovies.http.auth.InMemorySettingsRepository
 import com.teachermovies.http.auth.PairingManager
 import com.teachermovies.http.auth.lanClient
@@ -51,6 +52,7 @@ class TorrentWriteRoutesTest {
             clock = { 0L },
             pairing = pairing,
             subtitles = FakeSubtitleStore(),
+            library = InMemoryTorrentRepository(),
             allowTestRemoteHeader = true,
         )
 
