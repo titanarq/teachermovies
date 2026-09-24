@@ -45,7 +45,8 @@ data class VolumeRow(
  * persisted volume is not mounted (a USB drive unplugged). [portError] is true after the last
  * [SettingsViewModel.changePort] was rejected, until a valid one succeeds. [serverUrl] is
  * `http://<lan-ip>:<port>` (null without a LAN address), [pin] the pairing PIN and [serverState]
- * the embedded HTTP server's state (#66).
+ * the embedded HTTP server's state (#66). [autostartOnBoot] mirrors the persisted "Arrancar al
+ * encender la TV" switch (#126), off by default.
  */
 data class SettingsUiState(
     val httpPort: Int = AppSettings().httpPort,
@@ -56,6 +57,7 @@ data class SettingsUiState(
     val serverUrl: String? = null,
     val pin: String = "",
     val serverState: ServerState = ServerState.Stopped,
+    val autostartOnBoot: Boolean = AppSettings().autostartOnBoot,
 )
 
 /**
@@ -121,6 +123,11 @@ class SettingsViewModel(
         viewModelScope.launch { settings.setDownloadVolumeId(id) }
     }
 
+    /** Persists whether the app starts its services by itself when the TV boots (#126). */
+    fun setAutostartOnBoot(enabled: Boolean) {
+        viewModelScope.launch { settings.setAutostartOnBoot(enabled) }
+    }
+
     /** Re-reads the attached volumes and their free space, and the PIN. */
     fun refreshVolumes() {
         currentPin.value = pin()
@@ -145,6 +152,7 @@ class SettingsViewModel(
             selectedVolumeId = selectedId,
             volumeMissing = selection is VolumeSelection.PersistedMissing,
             portError = error,
+            autostartOnBoot = appSettings.autostartOnBoot,
         )
     }
 
