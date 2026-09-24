@@ -153,7 +153,7 @@ class AppContainer(application: Application) {
     private val subtitleEngine: SubtitleEngine = SubtitleEngine(player.positionMs, assistantScope)
 
     val hiddenSubtitleController: HiddenSubtitleController =
-        HiddenSubtitleController(player, subtitleEngine, assistantScope)
+        HiddenSubtitleController(player, subtitleEngine, assistantScope, cacheDir = application.cacheDir)
 
     val lineCaptureController: LineCaptureController = LineCaptureController(player, subtitleEngine, assistantScope)
 

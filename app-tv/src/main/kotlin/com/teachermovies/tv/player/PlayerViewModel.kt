@@ -151,7 +151,7 @@ class PlayerViewModel(
                 when (val result = session.open(id)) {
                     is SessionResult.Opened -> {
                         local.update { it.copy(title = result.item.title) }
-                        val available = hidden.start(File(result.item.mainFilePath)) == HiddenModeResult.Started
+                        val available = hidden.start(File(result.item.mainFilePath)) is HiddenModeResult.Started
                         local.update { it.copy(assistantAvailable = available) }
                     }
                     SessionResult.NotFound -> local.update { it.copy(error = NOT_FOUND) }

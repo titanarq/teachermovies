@@ -66,7 +66,7 @@ class PlayerViewModelTest {
     /** The real assistant controllers (#83, #85) over [player], on the test's background scope. */
     private fun TestScope.viewModel(): PlayerViewModel {
         val engine = SubtitleEngine(player.positionMs, backgroundScope)
-        hidden = HiddenSubtitleController(player, engine, backgroundScope)
+        hidden = HiddenSubtitleController(player, engine, backgroundScope, tmp.newFolder("cache"))
         capture = LineCaptureController(player, engine, backgroundScope)
         return PlayerViewModel(
             PlaybackSession(player, repo, backgroundScope, clock = { 0L }),
