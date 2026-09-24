@@ -32,7 +32,7 @@ fun Application.module(deps: ServerDeps) {
             )
         }
         status(HttpStatusCode.NotFound) { call, status ->
-            if (call.request.path().isApiPath()) {
+            if (!call.hasApiErrorResponse() && call.request.path().isApiPath()) {
                 call.respond(status, ApiError("not_found", "No such endpoint"))
             }
         }
@@ -40,7 +40,9 @@ fun Application.module(deps: ServerDeps) {
     routing {
         statusRoutes(deps)
         pairRoutes(deps.pairing)
-        // Every other /api/* route goes inside `requireBearer(deps.pairing) { ... }` (ADR-0002).
+        torrentReadRoutes(deps)
+        // Mutating /api/torrents routes are #60; every protected route goes inside
+        // `requireBearer(deps.pairing) { ... }` (ADR-0002).
     }
 }
 
