@@ -43,6 +43,11 @@ jobs:
           chmod +x gradlew
           ./gradlew --console=plain --no-daemon --max-workers=2 assembleDebug
 
+      # Formatting (#38): rules in the root .editorconfig; fix locally with `./gradlew ktlintFormat`.
+      - name: ktlint
+        if: steps.gradle-present.outputs.present == 'true'
+        run: ./gradlew --console=plain ktlintCheck
+
       - name: unit tests (scripts/test.sh)
         if: steps.gradle-present.outputs.present == 'true'
         run: bash scripts/test.sh
