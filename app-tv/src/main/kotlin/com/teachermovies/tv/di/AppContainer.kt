@@ -15,6 +15,9 @@ import com.teachermovies.http.LocalHttpServer
 import com.teachermovies.http.RunningServer
 import com.teachermovies.http.ServerDeps
 import com.teachermovies.http.auth.PairingManager
+import com.teachermovies.player.api.Player
+import com.teachermovies.player.api.VideoSurfaceHost
+import com.teachermovies.player.vlc.VlcPlayer
 import com.teachermovies.storage.AndroidStorageVolumeProvider
 import com.teachermovies.storage.FileSpaceProvider
 import com.teachermovies.storage.SpaceInfo
@@ -45,7 +48,8 @@ import kotlinx.coroutines.runBlocking
  * interfaces so a caller can never reach through to a concrete type.
  *
  * What is wired is what exists. [httpServerController] runs the embedded HTTP API (#66), started
- * by `TeacherMoviesApp`. [torrentEngine] is the jlibtorrent engine, registered in
+ * by `TeacherMoviesApp`. [player] and [videoSurfaceHost] are the same `VlcPlayer`, the only
+ * place an `org.videolan`-backed type is named. [torrentEngine] is the jlibtorrent engine, registered in
  * [TorrentEngineHolder] so `TorrentService` drives the same instance; this is the only place a
  * `com.teachermovies.torrent.jlib` type is named. No fake is wired in production code (ADR-0003
  * rule 3).
@@ -130,6 +134,14 @@ class AppContainer(application: Application) {
             }
         return volume?.let { spaceProvider.spaceOf(it.root) }
     }
+
+    // One libVLC player for the process, handed out as both halves of its contract (ADR-0003,
+    // `docs/modules/player.md`); the player screen (#78) opens and releases it per movie.
+    private val vlcPlayer = VlcPlayer(application)
+
+    val player: Player = vlcPlayer
+
+    val videoSurfaceHost: VideoSurfaceHost = vlcPlayer
 
     /**
      * PIN pairing and token validation (ADR-0002). One instance for the process, shared by every

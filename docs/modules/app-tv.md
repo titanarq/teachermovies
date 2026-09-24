@@ -95,9 +95,32 @@
   calls `onPlay(id)`. No movies -> `Tu biblioteca está vacía`, nothing focusable (focus stays on
   the tab row). The shell takes it as the `libraryContent` slot.
 - Navigation: `MainUiState.route: AppRoute` is `Shell` or `Player(id)` (`player/{id}`);
-  `MainViewModel.openPlayer(id)` / `closePlayer()`. `MainActivity` shows `PlayerPlaceholderScreen`
-  (`Reproductor pendiente`, BACK -> `closePlayer`) instead of the shell for `Player`; the real
-  player replaces it in #78.
+  `MainViewModel.openPlayer(id)` / `closePlayer()`. `MainActivity` shows the player route (#78)
+  instead of the shell for `Player`.
+
+## Reproductor (#78)
+- `com.teachermovies.tv.player.RemoteKeyMapper.map(keyCode): PlayerAction?` (pure):
+  DPAD_CENTER/ENTER/MEDIA_PLAY_PAUSE/SPACE -> `TogglePlayPause`; MEDIA_PLAY -> `Play`; MEDIA_PAUSE ->
+  `Pause`; DPAD_LEFT/RIGHT -> `SeekBy(∓10 000)`; MEDIA_REWIND/FAST_FORWARD -> `SeekBy(∓30 000)`;
+  DPAD_UP/MENU -> `ShowTracks` (panel is #79; for now only the overlay); BACK -> `Exit`; others null.
+- `PlayerViewModel(session: PlaybackSession, player: Player, closeScope: CoroutineScope? = null)`
+  exposes `StateFlow<PlayerUiState(title, positionText, durationText, progress, isPlaying,
+  overlayVisible, error, exited)>` (times via `Formatters.playbackTime`, `1:05` / `1:02:05`).
+  `open(id)` (first call only), `onAction(PlayerAction?)` (any key, even unmapped, shows the overlay
+  for 4 s; actions are forwarded to `Player`; ignored once exiting), `exit()` (closes the session --
+  position saved, player released -- then `exited = true`). `error`: `FileMissing` ->
+  `El archivo no está disponible (¿se ha desconectado el disco?)`, `NotFound` -> `Esta película ya
+  no está en la biblioteca`, `PlayerState.Error(m)` -> `No se puede reproducir: m`. Cleared without
+  `exit()`, it closes the session on `closeScope`. `PlayerViewModel.Factory(player, repo)` builds the
+  session on its own main-thread scope.
+- `PlayerRoute(id, factory, surfaceHost, onExit)`: the ViewModel lives in a route-local
+  `ViewModelStore` cleared when the route leaves composition (keyed by `route.route`, so each play is
+  a fresh session). `PlayerScreen`: black full-screen `AndroidView(FrameLayout)` attached through
+  `VideoSurfaceHost` (detached on dispose); the root box takes focus and consumes mapped keys
+  (key-down and key-up), unmapped keys pass through; bottom overlay with title, progress bar and
+  position/duration; `onExit` -> `MainViewModel.closePlayer()` back to Biblioteca.
+- `AppContainer.player: Player` and `AppContainer.videoSurfaceHost: VideoSurfaceHost` are the same
+  `VlcPlayer` (the only `com.teachermovies.player.vlc` import in the app).
 
 ## HTTP server hosting and pairing PIN (#66)
 - `AppContainer.pairingManager: PairingManager` (`SecureRandom`, wall clock) and
