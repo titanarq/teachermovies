@@ -212,7 +212,7 @@ class DownloadsViewModel(
         }
 
     /**
-     * `Pausar`/`Reanudar` is enabled only while the row allows it (an Error row allows neither);
+     * `Pausar`/`Reanudar` is enabled only while the row allows it (an Error row offers `Pausar`);
      * `Elegir archivos` once the file list is known, i.e. not while fetching metadata.
      */
     private fun actionsFor(row: DownloadRow): DownloadsDialog.Actions =

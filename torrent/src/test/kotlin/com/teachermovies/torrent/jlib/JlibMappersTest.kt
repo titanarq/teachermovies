@@ -90,10 +90,11 @@ class JlibMappersTest {
     }
 
     @Test
-    fun metadataNeverForcesAnIllegalTransition() {
+    fun metadataFollowsTheCoreModelTransitionTable() {
+        // #145: Completed -> Downloading is legal (a skipped file un-skipped), so the gate lets it through.
         val completed = JlibMappers.addedSnapshot(id, "m", true, 1, "/p").copy(state = DownloadState.Completed)
 
-        assertEquals(DownloadState.Completed, JlibMappers.withMetadata(completed, "m", 1, "/p").state)
+        assertEquals(DownloadState.Downloading, JlibMappers.withMetadata(completed, "m", 1, "/p").state)
     }
 
     @Test

@@ -9,24 +9,30 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
-import com.teachermovies.tv.di.AppContainer
 import com.teachermovies.torrent.service.TorrentService
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.map
+import com.teachermovies.tv.di.AppContainer
+import com.teachermovies.tv.ui.AppRoute
 import com.teachermovies.tv.ui.MainShell
 import com.teachermovies.tv.ui.MainViewModel
 import com.teachermovies.tv.ui.downloads.DownloadsScreen
 import com.teachermovies.tv.ui.downloads.DownloadsViewModel
 import com.teachermovies.tv.ui.firstrun.FirstRunRoute
 import com.teachermovies.tv.ui.firstrun.FirstRunViewModel
+import com.teachermovies.tv.ui.library.LibraryRoute
+import com.teachermovies.tv.ui.library.LibraryViewModel
+import com.teachermovies.tv.ui.player.PlayerPlaceholderScreen
 import com.teachermovies.tv.ui.settings.SettingsRoute
 import com.teachermovies.tv.ui.settings.SettingsViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 
 /**
  * The single entry point, reached from the TV home screen through the `LEANBACK_LAUNCHER` filter in
@@ -68,6 +74,10 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private val libraryViewModel: LibraryViewModel by viewModels {
+        LibraryViewModel.Factory(repo = (application as TeacherMoviesApp).container.torrentRepository)
+    }
+
     private val firstRunViewModel: FirstRunViewModel by viewModels {
         val container = (application as TeacherMoviesApp).container
         FirstRunViewModel.Factory(
@@ -95,12 +105,24 @@ class MainActivity : ComponentActivity() {
                     false -> FirstRunRoute(viewModel = firstRunViewModel)
                     true -> {
                         val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
-                        MainShell(
-                            uiState = uiState,
-                            onSelect = mainViewModel::select,
-                            downloadsContent = { modifier -> DownloadsScreen(viewModel = downloadsViewModel, modifier = modifier) },
-                            settingsContent = { modifier -> SettingsRoute(viewModel = settingsViewModel, modifier = modifier) },
-                        )
+                        when (val route = uiState.route) {
+                            is AppRoute.Player ->
+                                PlayerPlaceholderScreen(
+                                    id = route.id,
+                                    onBack = mainViewModel::closePlayer,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            AppRoute.Shell ->
+                                MainShell(
+                                    uiState = uiState,
+                                    onSelect = mainViewModel::select,
+                                    libraryContent = { modifier ->
+                                        LibraryRoute(viewModel = libraryViewModel, onPlay = mainViewModel::openPlayer, modifier = modifier)
+                                    },
+                                    downloadsContent = { modifier -> DownloadsScreen(viewModel = downloadsViewModel, modifier = modifier) },
+                                    settingsContent = { modifier -> SettingsRoute(viewModel = settingsViewModel, modifier = modifier) },
+                                )
+                        }
                     }
                 }
             }

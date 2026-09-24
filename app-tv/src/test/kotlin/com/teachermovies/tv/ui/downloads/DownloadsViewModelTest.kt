@@ -178,21 +178,22 @@ class DownloadsViewModelTest {
     }
 
     @Test
-    fun anErrorRowDisablesPauseResumeAndFocusesChooseFiles() {
+    fun anErrorRowOffersPauseBecauseTheStateMachineAllowsIt() {
         val viewModel = DownloadsViewModel(engine, sync) { null }
         val id = downloadingTorrent()
         engine.fail(id, "disk full")
 
         viewModel.openActions(id)
 
+        // `Error -> Paused` is a legal move since #145, and canPause mirrors canTransitionTo.
         val dialog = viewModel.uiState.value.dialog as DownloadsDialog.Actions
-        assertFalse(dialog.items.first { it.action == DownloadAction.PauseResume }.enabled)
-        assertEquals(DownloadAction.ChooseFiles, dialog.focused)
+        assertTrue(dialog.items.first { it.action == DownloadAction.PauseResume }.enabled)
+        assertEquals("Pausar", dialog.pauseResumeLabel)
+        assertEquals(DownloadAction.PauseResume, dialog.focused)
 
         viewModel.onAction(DownloadAction.PauseResume)
 
-        assertEquals(DownloadState.Error, viewModel.uiState.value.rows.single().state)
-        assertTrue(viewModel.uiState.value.dialog is DownloadsDialog.Actions)
+        assertEquals(DownloadState.Paused, viewModel.uiState.value.rows.single().state)
     }
 
     @Test

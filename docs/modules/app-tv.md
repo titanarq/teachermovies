@@ -71,8 +71,9 @@
   `openActions(id)`, `onAction(DownloadAction)` (`PauseResume` / `ChooseFiles` / `Delete` / `Cancel`;
   disabled ones are ignored), `confirmDelete(deleteFiles)`, `dismissDialog()` (keeps `selectedRowId`).
   The dialog is rebuilt from the current row on every update and closes when the row disappears.
-- Actions: `Pausar`/`Reanudar` is enabled when `canPause || canResume` (disabled for `Error`); a
-  `Completed` row offers `Pausar`, which stops seeding. `Elegir archivos` is disabled while fetching
+- Actions: `Pausar`/`Reanudar` is enabled when `canPause || canResume` (an `Error` row offers
+  `Pausar`, since `DownloadState` allows `Error -> Paused` after #145); a `Completed` row offers
+  `Pausar`, which stops seeding. `Elegir archivos` is disabled while fetching
   metadata; its dialog content is #71 (a placeholder until then). `Borrar` asks
   `¿Borrar también los archivos?` (Sí = delete files, No = keep them, Cancelar), focus on Cancelar.
 - `DownloadsScreen(viewModel)`: `Espacio libre: X` header, `LazyColumn` of tv `ListItem`s (name,
@@ -83,6 +84,20 @@
 - The shell takes the section as the `downloadsContent` slot. `AppContainer.downloadVolumeSpace()`
   is the free space of the volume `VolumeSelector` picks (persisted id cached, never blocks);
   `MainActivity` derives `serverUrl` from the settings' port and `LanAddressResolver`.
+
+## Biblioteca (#72)
+- `LibraryViewModel(repo: TorrentRepository)` exposes `StateFlow<LibraryUiState(items: List<LibraryCard>)>`
+  mapped from `observeLibrary()` (newest completed first). `LibraryCard(id, title, sizeText,
+  resumeText?)`: `sizeText` is `Formatters.bytes(sizeBytes)`, `resumeText` is
+  `"Continuar en " + Formatters.eta(lastPositionMs / 1000)` when `lastPositionMs > 0`, else null.
+- `LibraryScreen`: `LazyVerticalGrid` of tv `Card`s (title, ▶ `100 %`, size, optional resume text);
+  DOWN from the tab row enters on the first card (`focusRestorer`, then the last focused card); OK
+  calls `onPlay(id)`. No movies -> `Tu biblioteca está vacía`, nothing focusable (focus stays on
+  the tab row). The shell takes it as the `libraryContent` slot.
+- Navigation: `MainUiState.route: AppRoute` is `Shell` or `Player(id)` (`player/{id}`);
+  `MainViewModel.openPlayer(id)` / `closePlayer()`. `MainActivity` shows `PlayerPlaceholderScreen`
+  (`Reproductor pendiente`, BACK -> `closePlayer`) instead of the shell for `Player`; the real
+  player replaces it in #78.
 
 ## Boundaries
 - Depends on feature modules' public interfaces only; contains no torrent, HTTP or VLC logic itself.
