@@ -37,3 +37,7 @@ captures/
 *.keystore
 keystore.properties
 *.egg-info/
+
+# Private keys / certificates
+*.pem
+*.p12
