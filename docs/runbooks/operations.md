@@ -70,6 +70,17 @@ subtree is pulled.
   same two `--deselect` lines before merging. Remove both the workaround and this note once
   agent-os#17 is fixed and the subtree is pulled.
 
+- agent-os#18 `worker_task.sh start` reads a finished run's leftover `scratchpad/progress.log`
+  (untracked in the worker worktree) as uncommitted work and refuses the next dispatch on that
+  backend, so the first dispatch after every completed issue fails. Workaround (decision A on
+  #1, 2026-09-24): once the issue's PR is merged and the issue closed, run
+  `scripts/clean_stale_worker.sh <backend>`. It refuses if there is any other uncommitted file
+  or any commit on HEAD not on `origin/main`; otherwise it archives the diary to
+  `.cache/stale_diaries/`, detaches the worktree at `origin/main` (the idle shape `start`
+  expects; it re-branches with `checkout -B` from there) and deletes that issue's own merged
+  local branches. Remove the script and this note once agent-os#18 is fixed and the subtree is
+  pulled.
+
 ## Refiner
 
 `planner.refiner_unattended` is `false`: the refiner runs only by hand, attended:
