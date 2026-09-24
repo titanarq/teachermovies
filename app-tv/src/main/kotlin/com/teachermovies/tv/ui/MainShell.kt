@@ -20,7 +20,6 @@ import androidx.tv.material3.TabRow
 import androidx.tv.material3.Text
 import com.teachermovies.tv.ui.downloads.DownloadsScreen
 import com.teachermovies.tv.ui.library.LibraryScreen
-import com.teachermovies.tv.ui.settings.SettingsScreen
 
 /**
  * The shell: a tab row over the selected section. State is hoisted, so the shell is a pure function
@@ -31,11 +30,15 @@ import com.teachermovies.tv.ui.settings.SettingsScreen
  * focus search between them -- `TabRow` adds no key handling), BACK from a section's content
  * returns focus to that section's tab, and BACK from the tab row has nothing left to intercept and
  * so reaches the activity, which finishes.
+ *
+ * A section that needs a ViewModel arrives as a slot ([settingsContent]), so the shell stays free
+ * of the object graph: `MainActivity` binds it.
  */
 @Composable
 fun MainShell(
     uiState: MainUiState,
     onSelect: (Destination) -> Unit,
+    settingsContent: @Composable (Modifier) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val destinations = Destination.entries
@@ -69,7 +72,7 @@ fun MainShell(
             when (uiState.selected) {
                 Destination.Library -> LibraryScreen(modifier = Modifier.fillMaxSize())
                 Destination.Downloads -> DownloadsScreen(modifier = Modifier.fillMaxSize())
-                Destination.Settings -> SettingsScreen(modifier = Modifier.fillMaxSize())
+                Destination.Settings -> settingsContent(Modifier.fillMaxSize())
             }
         }
     }
