@@ -99,11 +99,137 @@ class LineCaptureControllerTest {
         }
 
     @Test
+    fun `replay with nothing captured returns false and does nothing`() =
+        runTest {
+            val f = fixture()
+            f.player.emitPosition(20_000L)
+            f.player.pause()
+
+            assertFalse(f.controller.replay())
+            runCurrent()
+
+            assertFalse(f.controller.replaying.value)
+            assertEquals(20_000L, f.player.positionMs.value)
+            assertEquals(PlayerState.Paused, f.player.state.value)
+            assertEquals(0, f.activeWatchers)
+        }
+
+    @Test
+    fun `replay seeks to startMs minus preRollMs and plays`() =
+        runTest {
+            val f = fixture()
+            f.player.emitPosition(11_000L)
+            f.controller.capture()
+
+            assertTrue(f.controller.replay())
+            runCurrent()
+
+            assertEquals(first.startMs - 300L, f.player.positionMs.value)
+            assertEquals(PlayerState.Playing, f.player.state.value)
+            assertTrue(f.controller.replaying.value)
+            assertEquals(1, f.activeWatchers)
+        }
+
+    @Test
+    fun `replay never seeks before zero`() =
+        runTest {
+            val f = fixture()
+            val early = SubtitleCue(index = 0, startMs = 100L, endMs = 900L, text = "Hi.")
+            f.engine.load(SubtitleTrack(cues = listOf(early)))
+            f.player.emitPosition(500L)
+            f.controller.capture()
+
+            f.controller.replay()
+
+            assertEquals(0L, f.player.positionMs.value)
+        }
+
+    @Test
+    fun `the watcher pauses and returns to capturedAtMs once the position passes endMs plus tailMs`() =
+        runTest {
+            val f = fixture()
+            f.player.emitPosition(13_000L)
+            f.controller.capture()
+            f.controller.replay()
+            runCurrent()
+
+            f.player.emitPosition(first.endMs + 199L)
+            runCurrent()
+            assertTrue(f.controller.replaying.value)
+            assertEquals(PlayerState.Playing, f.player.state.value)
+
+            f.player.emitPosition(first.endMs + 200L)
+            runCurrent()
+
+            assertFalse(f.controller.replaying.value)
+            assertEquals(PlayerState.Paused, f.player.state.value)
+            assertEquals(13_000L, f.player.positionMs.value)
+            assertEquals(0, f.activeWatchers)
+            // The capture survives the replay, so the line can be replayed again.
+            assertEquals(CapturedLine(first, capturedAtMs = 13_000L), f.controller.captured.value)
+        }
+
+    @Test
+    fun `the watcher also ends the replay when playback ends or fails`() =
+        runTest {
+            val f = fixture()
+            f.player.emitPosition(11_000L)
+            f.controller.capture()
+
+            f.controller.replay()
+            runCurrent()
+            f.player.fail("codec")
+            runCurrent()
+
+            assertFalse(f.controller.replaying.value)
+            assertEquals(11_000L, f.player.positionMs.value)
+            assertEquals(0, f.activeWatchers)
+
+            f.controller.replay()
+            runCurrent()
+            f.player.end()
+            runCurrent()
+
+            assertFalse(f.controller.replaying.value)
+            assertEquals(11_000L, f.player.positionMs.value)
+            assertEquals(PlayerState.Paused, f.player.state.value)
+            assertEquals(0, f.activeWatchers)
+        }
+
+    @Test
+    fun `a second replay restarts the fragment with a single watcher`() =
+        runTest {
+            val f = fixture()
+            f.player.emitPosition(11_000L)
+            f.controller.capture()
+            f.controller.replay()
+            runCurrent()
+            f.player.emitPosition(11_500L)
+            runCurrent()
+
+            assertTrue(f.controller.replay())
+            runCurrent()
+
+            assertEquals(first.startMs - 300L, f.player.positionMs.value)
+            assertEquals(PlayerState.Playing, f.player.state.value)
+            assertTrue(f.controller.replaying.value)
+            assertEquals(1, f.activeWatchers)
+
+            f.player.emitPosition(first.endMs + 200L)
+            runCurrent()
+
+            assertFalse(f.controller.replaying.value)
+            assertEquals(11_000L, f.player.positionMs.value)
+            assertEquals(0, f.activeWatchers)
+        }
+
+    @Test
     fun `dismiss restores the captured position and resumes playback`() =
         runTest {
             val f = fixture()
             f.player.emitPosition(11_000L)
             f.controller.capture()
+            f.controller.replay()
             runCurrent()
             f.player.emitPosition(10_500L)
             runCurrent()
@@ -124,6 +250,7 @@ class LineCaptureControllerTest {
             val f = fixture()
             f.player.emitPosition(11_000L)
             f.controller.capture()
+            f.controller.replay()
             runCurrent()
 
             f.controller.dismiss(resume = false)

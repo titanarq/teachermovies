@@ -2,11 +2,15 @@ package com.teachermovies.assistant
 
 import com.teachermovies.assistant.subtitles.SubtitleCue
 import com.teachermovies.player.api.Player
+import com.teachermovies.player.api.PlayerState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * A line the viewer froze with [LineCaptureController.capture].
@@ -64,6 +68,31 @@ class LineCaptureController(
         val cue = engine.cueForCapture(positionMs) ?: return CaptureResult.NoLine
         mutableCaptured.value = CapturedLine(cue, capturedAtMs = positionMs)
         return CaptureResult.Captured
+    }
+
+    /**
+     * Plays the captured line's fragment from its beginning, restarting it when a replay is
+     * already running. Returns `false`, doing nothing, when nothing is captured.
+     */
+    fun replay(): Boolean {
+        val line = mutableCaptured.value ?: return false
+        cancelWatcher()
+
+        val endMs = line.cue.endMs + tailMs
+        player.seekTo(maxOf(0L, line.cue.startMs - preRollMs))
+        player.play()
+        mutableReplaying.value = true
+
+        watcher =
+            scope.launch {
+                combine(player.positionMs, player.state) { position, state ->
+                    position >= endMs || state is PlayerState.Ended || state is PlayerState.Error
+                }.first { finished -> finished }
+                player.pause()
+                player.seekTo(line.capturedAtMs)
+                mutableReplaying.value = false
+            }
+        return true
     }
 
     /**
