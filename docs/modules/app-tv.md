@@ -155,6 +155,9 @@
   Overlay closed: DPAD_DOWN/CAPTIONS -> `CaptureLine`, others null (fall through to
   `RemoteKeyMapper`). Overlay open: DPAD_CENTER/ENTER/MEDIA_PLAY_PAUSE -> `ReplayFragment`;
   BACK/DPAD_DOWN/CAPTIONS -> `DismissOverlay`; everything else `Consumed` (swallowed, no effect).
+  Volume keys (VOLUME_UP/DOWN/MUTE) are null in both modes and pass through the open overlay
+  (key-down and key-up not consumed), so the system still changes the TV volume; the player root
+  maps no key while the overlay is open, so nothing reaches `RemoteKeyMapper` behind it (#178).
   Only this mapper and the hint line change if the key assignment of #30 changes.
 - `PlayerUiState` gains `assistant: AssistantOverlayState(text, replaying)?` (from
   `LineCaptureController.captured` cue text and `.replaying`; null when nothing is captured or an
