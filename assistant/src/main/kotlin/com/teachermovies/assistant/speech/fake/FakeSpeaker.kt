@@ -16,7 +16,10 @@ import kotlinx.coroutines.flow.asStateFlow
  * [finishCurrentUtterance] or [failCurrentUtterance] (or [stop]).
  */
 class FakeSpeaker : Speaker {
-    /** What the next [prepare] returns. */
+    /**
+     * What the next [prepare] returns; [speak] then applies the same per-language rule as the real
+     * speaker ([SpeechRequests.allows]).
+     */
     var nextAvailability: SpeakerAvailability = SpeakerAvailability.Ready
 
     private val mutableState = MutableStateFlow<SpeakerState>(SpeakerState.Idle)
@@ -46,7 +49,7 @@ class FakeSpeaker : Speaker {
         language: SpeechLanguage,
     ): Boolean {
         if (isShutDown) return false
-        if (mutableAvailability.value != SpeakerAvailability.Ready) return false
+        if (!SpeechRequests.allows(mutableAvailability.value, language)) return false
         if (!SpeechRequests.isSpeakable(text)) return false
         mutableSpoken += text to language
         mutableState.value = SpeakerState.Speaking(text, language)
