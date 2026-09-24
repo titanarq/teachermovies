@@ -9,6 +9,8 @@ import com.teachermovies.player.policy.ResumePolicy
 import com.teachermovies.player.policy.TrackPolicy
 import com.teachermovies.player.streaming.StreamResult
 import com.teachermovies.player.streaming.StreamingPlaybackController
+import com.teachermovies.torrent.api.EngineError
+import com.teachermovies.torrent.api.EngineResult
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -75,15 +77,19 @@ class PlaybackSession(
      * Plays [id] while it is still downloading, through [controller], closing any item this session
      * had open first.
      *
-     * The torrent's main file, its index in the torrent and its final size come from the
-     * repository; [controller] opens the file (as a growing one) at [ResumePolicy.startPosition] of
+     * The torrent's main file and its index in the torrent come from the repository, and the main
+     * file's final size from [StreamingPlaybackController.fileSizeBytes] (the engine's file list --
+     * never the torrent's `totalBytes`, which for a multi-file torrent includes its other files);
+     * [controller] opens the file (as a growing one) at [ResumePolicy.startPosition] of
      * the persisted position once the ranges it needs are on disk, and supervises it from then on.
      * After that, everything [open] does for a finished item applies unchanged: external subtitles
      * are added, [TrackPolicy] is applied once the tracks are known and progress is saved.
      *
      * Returns [SessionResult.NotFound] for an unknown [id], [SessionResult.FileMissing] when the
-     * torrent has no main file selected yet, and [SessionResult.StreamingFailed] when [controller]
-     * answers anything but [StreamResult.Opened]; the player is never opened in those cases.
+     * torrent has no main file selected yet or the main file's size is not known yet (metadata still
+     * arriving), and [SessionResult.StreamingFailed] when [controller]
+     * answers anything but [StreamResult.Opened] (or the engine fails the size lookup with
+     * `UnknownTorrent`/`Unsupported`/`Io`); the player is never opened in those cases.
      * Suspends while [controller] waits for the ranges. [close] also stops [controller].
      */
     suspend fun openStreaming(
@@ -98,13 +104,31 @@ class PlaybackSession(
             return SessionResult.FileMissing(item?.mainFilePath ?: torrent.savePath.orEmpty())
         }
         val file = File(item.mainFilePath)
+        // The main file's own size, not the torrent's `totalBytes` (item.sizeBytes): a multi-file
+        // torrent also counts its sample, subtitles and extras there.
+        val fileSizeBytes =
+            when (val size = controller.fileSizeBytes(id, fileIndex)) {
+                is EngineResult.Ok -> size.value
+                is EngineResult.Failure ->
+                    return when (val error = size.error) {
+                        EngineError.NotReady -> SessionResult.FileMissing(item.mainFilePath)
+                        EngineError.UnknownTorrent -> SessionResult.StreamingFailed(StreamResult.UnknownTorrent)
+                        EngineError.Unsupported -> SessionResult.StreamingFailed(StreamResult.Unsupported)
+                        is EngineError.Io -> SessionResult.StreamingFailed(StreamResult.Failed(error.message))
+                        // `files` never answers these; mapped all the same so nothing throws.
+                        EngineError.InvalidMagnet,
+                        EngineError.InvalidTorrentFile,
+                        is EngineError.AlreadyExists,
+                        -> SessionResult.StreamingFailed(StreamResult.Failed(error.toString()))
+                    }
+            }
 
         val result =
             controller.start(
                 id = id,
                 fileIndex = fileIndex,
                 file = file,
-                fileSizeBytes = item.sizeBytes,
+                fileSizeBytes = fileSizeBytes,
                 // Not stored in the library; the controller uses the player's once it is parsed.
                 durationMs = 0L,
                 startPositionMs = startPosition(item),

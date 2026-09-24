@@ -148,6 +148,29 @@ class StreamingPlaybackController(
     }
 
     /**
+     * The size in bytes of file [fileIndex] of torrent [id], as the engine's file list reports it --
+     * the growing file's final size to pass to [start], which for a multi-file torrent is not the
+     * torrent's `totalBytes`.
+     *
+     * Answers [EngineError.NotReady] while the size is not known (metadata still arriving: no such
+     * index in the list yet, or a size of `0`) and passes every other engine failure through.
+     */
+    suspend fun fileSizeBytes(
+        id: TorrentId,
+        fileIndex: Int,
+    ): EngineResult<Long> =
+        when (val result = engine.files(id)) {
+            is EngineResult.Ok ->
+                result.value
+                    .firstOrNull { it.index == fileIndex }
+                    ?.sizeBytes
+                    ?.takeIf { it > 0L }
+                    ?.let { EngineResult.Ok(it) }
+                    ?: EngineResult.Failure(EngineError.NotReady)
+            is EngineResult.Failure -> result
+        }
+
+    /**
      * Cancels both loops, clears the engine's window and publishes [StreamState.Idle]. A no-op on
      * a controller that supervises nothing.
      */
