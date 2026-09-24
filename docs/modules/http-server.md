@@ -25,7 +25,8 @@
 - `fun Application.module(deps: ServerDeps)` holds all plugins and routing; tests run it in-process
   with `testApplication { application { module(fakeDeps) } }`.
 - `ServerDeps(engine: TorrentEngine, space: () -> SpaceInfo?, appVersion: String, clock: () -> Long,
-  pairing: PairingManager, subtitles: SubtitleStore, allowTestRemoteHeader: Boolean = false)`,
+  pairing: PairingManager, subtitles: SubtitleStore, library: TorrentRepository,
+  allowTestRemoteHeader: Boolean = false)`,
   extended by later issues. `allowTestRemoteHeader` is test-only (#59) and must stay `false` in
   production.
 - `com.teachermovies.http.auth.LanAddressPolicy.isAllowed(address: String): Boolean` (#59): whether
@@ -91,6 +92,10 @@
   package `com.teachermovies.http`); `LayoutSubtitleStore(layoutFor: (String) -> DownloadLayout?)`
   sanitises `fileName` to `[A-Za-z0-9._-]` (rejecting a name that sanitises to empty, `"."` or
   `".."`) and writes to `DownloadLayout.resolveInTorrent(id, "subs/<sanitized name>")`.
+- `GET /api/library` (#73, `LibraryRoutes.kt`), wrapped in `requireBearer` (401 without a valid
+  token) -> 200 `[LibraryItemDto(id, title, sizeBytes, completedAt, lastPositionMs)]`, newest
+  completed first (the order of `ServerDeps.library.observeLibrary()`); `completedAt` is ISO-8601
+  UTC (`2026-09-24T10:00:00Z`). No file system path is ever exposed. Mapped by `LibraryItem.toDto()`.
 - Errors are JSON `{"error":"<code>","message":"..."}` (StatusPages); `ApiError.id` is present
   only on `already_exists`: unknown `/api/*` route -> 404
   `not_found`; any uncaught exception -> 500 `internal`, never with a stack trace or exception
