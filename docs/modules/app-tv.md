@@ -122,6 +122,25 @@
 - `AppContainer.player: Player` and `AppContainer.videoSurfaceHost: VideoSurfaceHost` are the same
   `VlcPlayer` (the only `com.teachermovies.player.vlc` import in the app).
 
+## HTTP server hosting and pairing PIN (#66)
+- `AppContainer.pairingManager: PairingManager` (`SecureRandom`, wall clock) and
+  `AppContainer.httpServerController: HttpServerController` over `LocalHttpServer`, on the
+  application scope. Each (re)start gets fresh `ServerDeps`: `torrentEngine`,
+  `space = downloadVolumeSpace` (the `FileSpaceProvider` of the selected volume), the package
+  `versionName` (or `"unknown"`), and a `LayoutSubtitleStore` whose layout comes from
+  `SubtitleLayoutResolver.layoutFor(id, engine.torrents.value)` (volume root read back from the
+  torrent's `savePath` = `<root>/Movies/<id>`; null when unknown or not yet known).
+- `TeacherMoviesApp.onCreate` calls `httpServerController.start()`; the foreground `TorrentService`
+  keeps the process alive. The manifest declares `INTERNET` (no cleartext config: server only).
+- `FirstRunViewModel(..., lan, pin: () -> String, serverState: StateFlow<ServerState>, pinTicks)` and
+  `SettingsViewModel(settings, volumes, space, pin, serverState, serverUrl: Flow<String?> = flowOf(null), pinTicks)`;
+  both UI states gain `pin` and `serverState` (Settings also `serverUrl`). The PIN is re-read on
+  creation, on `refresh()`/`refreshVolumes()`, on every `serverState` change and on every
+  `pinTicks` emission (default `pinRefreshTicker()`, every 15 s).
+- `ui.server.ServerPinAndStatus` shows `PIN 482916` and, when not running, `Servidor detenido`,
+  `Error: puerto en uso` (`ServerStatusLabel.of`: a failure reason containing "in use"/`EADDRINUSE`)
+  or `Error: <reason>`. Plain text only; focus order on both screens is unchanged.
+
 ## Boundaries
 - Depends on feature modules' public interfaces only; contains no torrent, HTTP or VLC logic itself.
 - All screens fully usable with the D-pad; focus order and initial focus are acceptance criteria.

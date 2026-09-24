@@ -10,6 +10,10 @@
         android:name="android.hardware.touchscreen"
         android:required="false" />
 
+    <!-- The embedded HTTP server (#66) listens for phones on the LAN. The app only serves HTTP, it
+         never makes cleartext requests, so no network security config is needed. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:name=".TeacherMoviesApp"
         android:banner="@drawable/tv_banner"
