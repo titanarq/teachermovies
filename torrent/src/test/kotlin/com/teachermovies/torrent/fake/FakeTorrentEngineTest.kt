@@ -6,6 +6,7 @@ import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.EngineStatus
 import com.teachermovies.torrent.api.FilePriority
+import com.teachermovies.torrent.api.TorrentEngineContractTest
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -14,10 +15,12 @@ import org.junit.Test
 import java.security.MessageDigest
 
 /**
- * Exercises [FakeTorrentEngine]'s test controls and [FakeTorrentEngine.recordedCalls]. Stage 2
- * makes this class also extend `TorrentEngineContractTest`, the shared behavioural contract.
+ * [TorrentEngineContractTest] proves [FakeTorrentEngine] satisfies the shared contract; the tests
+ * below cover what is specific to it: its test controls and [FakeTorrentEngine.recordedCalls].
  */
-class FakeTorrentEngineTest {
+class FakeTorrentEngineTest : TorrentEngineContractTest() {
+    override fun createEngine(): FakeTorrentEngine = FakeTorrentEngine()
+
     private val validMagnet = "magnet:?xt=urn:btih:${"a".repeat(40)}&dn=Movie"
     private val validTorrentFile = "d8:announce...".toByteArray()
 
