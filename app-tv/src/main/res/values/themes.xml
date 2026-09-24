@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The window is a Compose for TV surface, so the platform theme only has to stay out of the
+         way: no action bar, dark background like the rest of the TV home screen. -->
+    <style name="Theme.TeacherMovies" parent="@android:style/Theme.Material.NoActionBar" />
+</resources>

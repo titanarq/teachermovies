@@ -1,11 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Skeleton manifest (#37): the launcher intent filters, banner, icon, theme and <application>
-     attributes arrive with the Compose-for-TV shell (#44), so MainActivity is deliberately
-     unexported and unreachable from the TV home screen until then. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application>
+
+    <!-- The app is built for Android TV but must also install and run where there is no leanback
+         launcher and no touchscreen, so neither feature is required. -->
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
+    <application
+        android:name=".TeacherMoviesApp"
+        android:banner="@drawable/tv_banner"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.TeacherMovies">
+
+        <!-- Two filters: `LEANBACK_LAUNCHER` puts the app on the Android TV home screen, `LAUNCHER`
+             on an ordinary launcher, so a phone or tablet build is reachable while developing. -->
         <activity
             android:name=".MainActivity"
-            android:exported="false" />
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
