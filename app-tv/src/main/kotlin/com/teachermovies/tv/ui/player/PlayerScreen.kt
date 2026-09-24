@@ -39,6 +39,8 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.player.api.VideoSurfaceHost
+import com.teachermovies.tv.player.AssistantAction
+import com.teachermovies.tv.player.AssistantKeyMapper
 import com.teachermovies.tv.player.PlayerUiState
 import com.teachermovies.tv.player.PlayerViewModel
 import com.teachermovies.tv.player.RemoteKeyMapper
@@ -65,13 +67,35 @@ fun PlayerRoute(
     PlayerScreen(
         state = state,
         surfaceHost = surfaceHost,
-        onKey = { keyCode -> RemoteKeyMapper.map(keyCode).also(viewModel::onAction) != null },
+        onKey = { keyCode -> dispatchKey(keyCode, viewModel) },
+        onAssistantAction = viewModel::onAssistantAction,
         onBack = viewModel::back,
         onSelectAudio = viewModel::selectAudio,
         onSelectSubtitle = viewModel::selectSubtitle,
         modifier = modifier,
     )
 }
+
+/**
+ * Key dispatch on the player screen with the captured-line overlay closed (#86): the assistant
+ * mapping goes first and the transport mapping of #78 only gets keys it leaves (null). Returns
+ * whether the key was a player key.
+ */
+private fun dispatchKey(
+    keyCode: Int,
+    viewModel: PlayerViewModel,
+): Boolean {
+    val assistant = AssistantKeyMapper.map(keyCode, overlayOpen = false)
+    if (assistant != null) {
+        viewModel.onAssistantAction(assistant)
+        return true
+    }
+    return RemoteKeyMapper.map(keyCode).also(viewModel::onAction) != null
+}
+
+/** Whether [keyCode] is a player key with the captured-line overlay closed (either mapping). */
+private fun isPlayerKey(keyCode: Int): Boolean =
+    AssistantKeyMapper.map(keyCode, overlayOpen = false) != null || RemoteKeyMapper.map(keyCode) != null
 
 /**
  * Full-screen video with the transport overlay. The root box holds focus for the whole route, so
@@ -82,18 +106,25 @@ fun PlayerRoute(
  * While [PlayerUiState.tracksPanel] is open (#79) the root box maps no key, so the D-pad and OK
  * reach the panel's lists and BACK reaches [BackHandler] ([onBack] then closes the panel); focus
  * returns to the root box when the panel closes.
+ *
+ * While [PlayerUiState.assistant] is set (#86) [AssistantOverlay] holds focus and handles every key
+ * through [onAssistantAction]; the transport overlay is hidden; focus returns to the root box when
+ * it closes. [PlayerUiState.message] is shown in the transport overlay.
  */
 @Composable
 fun PlayerScreen(
     state: PlayerUiState,
     surfaceHost: VideoSurfaceHost,
     onKey: (keyCode: Int) -> Boolean,
+    onAssistantAction: (AssistantAction) -> Unit,
     onBack: () -> Unit,
     onSelectAudio: (String) -> Unit,
     onSelectSubtitle: (String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val panelOpen = state.tracksPanel != null
+    val assistant = state.assistant
+    val assistantOpen = assistant != null
     val focus = remember { FocusRequester() }
     BackHandler(onBack = onBack)
     Box(
@@ -103,10 +134,10 @@ fun PlayerScreen(
                 .focusRequester(focus)
                 .onKeyEvent { event ->
                     when {
-                        panelOpen -> false
+                        panelOpen || assistantOpen -> false
                         event.type == KeyEventType.KeyDown -> onKey(event.key.nativeKeyCode)
                         // Swallow the key-up of a player key so nothing else reacts to it.
-                        event.type == KeyEventType.KeyUp -> RemoteKeyMapper.map(event.key.nativeKeyCode) != null
+                        event.type == KeyEventType.KeyUp -> isPlayerKey(event.key.nativeKeyCode)
                         else -> false
                     }
                 }.focusable(),
@@ -125,6 +156,12 @@ fun PlayerScreen(
                 color = Color.White,
                 modifier = Modifier.align(Alignment.Center).padding(48.dp),
             )
+        } else if (assistant != null) {
+            AssistantOverlay(
+                state = assistant,
+                onAction = onAssistantAction,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         } else if (state.overlayVisible) {
             TransportOverlay(state = state, modifier = Modifier.align(Alignment.BottomCenter))
         }
@@ -139,7 +176,7 @@ fun PlayerScreen(
             )
         }
     }
-    LaunchedEffect(panelOpen) { if (!panelOpen) focus.requestFocus() }
+    LaunchedEffect(panelOpen, assistantOpen) { if (!panelOpen && !assistantOpen) focus.requestFocus() }
 }
 
 @Composable
@@ -156,6 +193,7 @@ private fun TransportOverlay(
                 .padding(horizontal = 48.dp, vertical = 24.dp),
     ) {
         Text(text = state.title, style = MaterialTheme.typography.headlineSmall, color = Color.White)
+        state.message?.let { Text(text = it, style = MaterialTheme.typography.titleMedium, color = Color.White) }
         Box(
             modifier =
                 Modifier
