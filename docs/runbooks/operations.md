@@ -58,6 +58,17 @@ subtree is pulled.
   `issues.py update N --title`).
 - agent-os#16 `worker_task.sh start` rejects hyphenated branch prefixes such as `agent-os/37-...`;
   the planner retries with `task/<issue>-<slug>`.
+- agent-os#17 `_the_projects_package()` (`agent_os/tests/test_agent_task.py`) assumes the host
+  root has exactly one top-level Python package; teachermovies has none (Android/Kotlin host), so
+  `test_a_role_that_runs_tests_gets_a_worktree_of_its_own_and_pythonpath_at_it` and
+  `test_the_environment_the_driver_exports_resolves_the_worktrees_copy_and_not_the_main_checkouts`
+  fail unconditionally. Workaround (host-owned, outside `agent_os/`):
+  `.github/workflows/ci-agent-os.yml`'s "the mechanism's own suite" step `--deselect`s those two
+  tests, commented `# workaround titanarq/agent-os#17`. That file is only ever *copied as-is if
+  absent* by `agent-os-install` (AGENT_OS.md §4.3/§5 step 6), so a reinstall will not overwrite it
+  and silently drop the deselect -- but if the file is ever deleted and regenerated, re-apply the
+  same two `--deselect` lines before merging. Remove both the workaround and this note once
+  agent-os#17 is fixed and the subtree is pulled.
 
 ## Refiner
 

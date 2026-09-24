@@ -26,4 +26,11 @@ jobs:
       # No database, no network, no real backend: the same subset `agent_os/tests/conftest.py`
       # keeps separate from the host's own fixtures, and the run a second host can also make.
       - name: the mechanism's own suite
-        run: agent_os/.venv/bin/pytest agent_os/tests -q
+        # workaround titanarq/agent-os#17 — remove when fixed
+        # _the_projects_package() assumes the host root has exactly one top-level Python
+        # package; teachermovies (Android/Kotlin host, no top-level package) has none, so
+        # these two pre-existing agent_os tests fail here regardless of the host PR's diff.
+        run: |
+          agent_os/.venv/bin/pytest agent_os/tests -q \
+            --deselect agent_os/tests/test_agent_task.py::test_a_role_that_runs_tests_gets_a_worktree_of_its_own_and_pythonpath_at_it \
+            --deselect agent_os/tests/test_agent_task.py::test_the_environment_the_driver_exports_resolves_the_worktrees_copy_and_not_the_main_checkouts
