@@ -30,7 +30,9 @@ jobs:
         # _the_projects_package() assumes the host root has exactly one top-level Python
         # package; teachermovies (Android/Kotlin host, no top-level package) has none, so
         # these two pre-existing agent_os tests fail here regardless of the host PR's diff.
+        # Node ids below are relative to agent_os/'s own pyproject.toml (rootdir/testpaths),
+        # not to the invocation path -- i.e. "tests/..." not "agent_os/tests/...".
         run: |
           agent_os/.venv/bin/pytest agent_os/tests -q \
-            --deselect agent_os/tests/test_agent_task.py::test_a_role_that_runs_tests_gets_a_worktree_of_its_own_and_pythonpath_at_it \
-            --deselect agent_os/tests/test_agent_task.py::test_the_environment_the_driver_exports_resolves_the_worktrees_copy_and_not_the_main_checkouts
+            --deselect tests/test_agent_task.py::test_a_role_that_runs_tests_gets_a_worktree_of_its_own_and_pythonpath_at_it \
+            --deselect tests/test_agent_task.py::test_the_environment_the_driver_exports_resolves_the_worktrees_copy_and_not_the_main_checkouts
