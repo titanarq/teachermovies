@@ -112,7 +112,7 @@ internal object SubtitleWriter {
     private fun eventsHeader(header: String): String {
         val lines =
             header
-                .removePrefix("")
+                .removePrefix("\uFEFF")
                 .trimEnd('\u0000')
                 .normalizeNewlines()
                 .trimEnd('\n')

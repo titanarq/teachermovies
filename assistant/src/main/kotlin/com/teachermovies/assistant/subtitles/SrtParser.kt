@@ -52,7 +52,7 @@ class SrtParser : SubtitleParser {
             millis.toLong()
 
     private companion object {
-        const val BOM = ""
+        const val BOM = "\uFEFF"
         val BLANK_LINES_REGEX = Regex("\n{2,}")
 
         // Groups: 1-4 = start H/M/S/mmm, 5-8 = end H/M/S/mmm.

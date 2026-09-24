@@ -83,7 +83,7 @@ class AssParser : SubtitleParser {
             .trim()
 
     private companion object {
-        const val BOM = ""
+        const val BOM = "\uFEFF"
         val TIME_REGEX = Regex("""(\d+):(\d{2}):(\d{2})\.(\d{2})""")
         val OVERRIDE_BLOCK_REGEX = Regex("""\{[^}]*}""")
     }

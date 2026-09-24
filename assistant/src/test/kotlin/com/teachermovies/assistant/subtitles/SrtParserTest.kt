@@ -39,7 +39,7 @@ class SrtParserTest {
 
     @Test
     fun `strips a leading BOM`() {
-        val srt = "1\n00:00:01,000 --> 00:00:02,000\nHello.\n"
+        val srt = "\uFEFF1\n00:00:01,000 --> 00:00:02,000\nHello.\n"
 
         val track = parser.parse(srt)
 
