@@ -6,12 +6,21 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.PlayerState
+import com.teachermovies.player.api.SubtitleExtraction
 import com.teachermovies.player.api.Track
 import com.teachermovies.player.api.VideoSurfaceHost
+import com.teachermovies.player.mkv.MatroskaSubtitles
+import com.teachermovies.player.mkv.MkvTrackMapping
+import com.teachermovies.player.mkv.MkvTracksResult
 import java.io.File
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withTimeoutOrNull
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -43,6 +52,8 @@ import org.videolan.libvlc.util.VLCVideoLayout
  */
 class VlcPlayer(
     context: Context,
+    /** Longest [extractTextSubtitle] may read the media for before it gives up with `Failed`. */
+    private val extractionTimeout: Duration = 2.minutes,
 ) : Player,
     VideoSurfaceHost {
     // The application context: this player outlives any activity that created it, and `LibVLC` only
@@ -69,6 +80,10 @@ class VlcPlayer(
     private var mediaPlayer: MediaPlayer? = null
     private var media: Media? = null
     private var videoLayout: VLCVideoLayout? = null
+
+    /** The file passed to the current [open], which [extractTextSubtitle] reads; null once released. */
+    @Volatile
+    private var openedFile: File? = null
 
     // region VideoSurfaceHost
 
@@ -111,6 +126,7 @@ class VlcPlayer(
                 VlcMediaOptions.startTime(startPositionMs)?.let(::addOption)
             }
         media = loaded
+        openedFile = file
         player.setMedia(loaded)
         resetFlows(startPositionMs)
         mutableState.value = PlayerState.Opening
@@ -182,6 +198,33 @@ class VlcPlayer(
         }
     }
 
+    /**
+     * Reads the embedded track straight out of the file with [MatroskaSubtitles] -- libVLC 3 has no
+     * SRT/ASS muxer (#115) -- on [Dispatchers.IO] under [extractionTimeout]. It only reads the
+     * file passed to [open]; the playback `MediaPlayer` and its flows are never touched.
+     */
+    override suspend fun extractTextSubtitle(
+        trackId: String,
+        destination: File,
+    ): SubtitleExtraction {
+        val file = openedFile ?: return SubtitleExtraction.TrackNotFound
+        val vlcTracks = mutableSubtitleTracks.value
+        if (vlcTracks.none { it.id == trackId }) return SubtitleExtraction.TrackNotFound
+        return withTimeoutOrNull(extractionTimeout) {
+            runInterruptible(Dispatchers.IO) {
+                when (val tracks = MatroskaSubtitles.textTracks(file)) {
+                    MkvTracksResult.NotMatroska -> SubtitleExtraction.Failed("not a Matroska file")
+                    is MkvTracksResult.Failed -> SubtitleExtraction.Failed(tracks.reason)
+                    is MkvTracksResult.Tracks ->
+                        when (val number = MkvTrackMapping.resolve(trackId, vlcTracks, tracks.tracks)) {
+                            null -> SubtitleExtraction.TrackNotFound
+                            else -> MatroskaSubtitles.extract(file, number, destination)
+                        }
+                }
+            }
+        } ?: SubtitleExtraction.Failed("timed out")
+    }
+
     override fun release() {
         detach()
         mediaPlayer?.let { player ->
@@ -191,6 +234,7 @@ class VlcPlayer(
         libVlc?.release()
         mediaPlayer = null
         libVlc = null
+        openedFile = null
         resetFlows(0L)
         mutableState.value = PlayerState.Idle
     }

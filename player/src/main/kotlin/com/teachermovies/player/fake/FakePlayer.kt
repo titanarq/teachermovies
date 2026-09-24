@@ -2,6 +2,8 @@ package com.teachermovies.player.fake
 
 import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.PlayerState
+import com.teachermovies.player.api.SubtitleExtraction
+import com.teachermovies.player.api.SubtitleFormat
 import com.teachermovies.player.api.Track
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +27,14 @@ class FakePlayer : Player {
     private val mutableSubtitleTracks = MutableStateFlow<List<Track>>(emptyList())
     private val mutableSelectedAudioId = MutableStateFlow<String?>(null)
     private val mutableSelectedSubtitleId = MutableStateFlow<String?>(null)
+
+    private var extractionOutcome: ExtractionOutcome =
+        ExtractionOutcome.Result(SubtitleExtraction.Failed("no extraction configured"))
+    private val recordedExtractionCalls = mutableListOf<String>()
+
+    /** Every `trackId` [extractTextSubtitle] was called with, in call order. */
+    val extractionCalls: List<String>
+        get() = recordedExtractionCalls.toList()
 
     override val state: StateFlow<PlayerState> = mutableState.asStateFlow()
     override val positionMs: StateFlow<Long> = mutablePositionMs.asStateFlow()
@@ -91,6 +101,28 @@ class FakePlayer : Player {
     }
 
     /**
+     * [SubtitleExtraction.TrackNotFound] when [trackId] is not one of [subtitleTracks]; otherwise the
+     * outcome set by [emitExtractionText] or [emitExtraction] (a `Failed` until one of them is
+     * called). Every call is recorded in [extractionCalls].
+     */
+    override suspend fun extractTextSubtitle(
+        trackId: String,
+        destination: File,
+    ): SubtitleExtraction {
+        recordedExtractionCalls += trackId
+        if (mutableSubtitleTracks.value.none { it.id == trackId }) {
+            return SubtitleExtraction.TrackNotFound
+        }
+        return when (val outcome = extractionOutcome) {
+            is ExtractionOutcome.Result -> outcome.result
+            is ExtractionOutcome.Text -> {
+                destination.writeText(outcome.text)
+                SubtitleExtraction.Extracted(destination, outcome.format)
+            }
+        }
+    }
+
+    /**
      * Back to [PlayerState.Idle], leaving the emitted position, duration and tracks alone so a
      * test can still assert on what the media was after the screen released the player.
      */
@@ -121,6 +153,30 @@ class FakePlayer : Player {
     fun end() {
         mutablePositionMs.value = mutableDurationMs.value
         mutableState.value = PlayerState.Ended
+    }
+
+    /** Makes later extractions of a known track write [text] to `destination` and return `Extracted`. */
+    fun emitExtractionText(
+        text: String,
+        format: SubtitleFormat,
+    ) {
+        extractionOutcome = ExtractionOutcome.Text(text, format)
+    }
+
+    /** Makes later extractions of a known track return [result] unchanged. */
+    fun emitExtraction(result: SubtitleExtraction) {
+        extractionOutcome = ExtractionOutcome.Result(result)
+    }
+
+    private sealed interface ExtractionOutcome {
+        data class Text(
+            val text: String,
+            val format: SubtitleFormat,
+        ) : ExtractionOutcome
+
+        data class Result(
+            val result: SubtitleExtraction,
+        ) : ExtractionOutcome
     }
 
     /** Simulates a playback failure, as a missing codec or an unreadable file would. */

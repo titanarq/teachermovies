@@ -1,11 +1,17 @@
 package com.teachermovies.player.fake
 
 import com.teachermovies.player.api.PlayerState
+import com.teachermovies.player.api.SubtitleExtraction
+import com.teachermovies.player.api.SubtitleFormat
 import com.teachermovies.player.api.Track
 import java.io.File
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 /**
  * The fake is the `Player` every test above `:player` programs against, so what it does here is the
@@ -14,6 +20,9 @@ import org.junit.Test
  * selected.
  */
 class FakePlayerTest {
+    @get:Rule
+    val tmp = TemporaryFolder()
+
     private val player = FakePlayer()
     private val movie = File("/volume/Movies/a1b2c3/Movie.2023.1080p.mkv")
 
@@ -241,4 +250,57 @@ class FakePlayerTest {
         assertEquals(listOf(Track("a1", "English 5.1", "eng")), player.audioTracks.value)
         assertEquals("a1", player.selectedAudioId.value)
     }
+
+    @Test
+    fun extractingAnUnknownTrackIsTrackNotFound() =
+        runTest {
+            player.open(movie)
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("3", "English", "eng")))
+            player.emitExtractionText("1\n00:00:01,000 --> 00:00:02,000\nHi\n", SubtitleFormat.SRT)
+
+            val result = player.extractTextSubtitle("9", tmp.root.resolve("out.srt"))
+
+            assertEquals(SubtitleExtraction.TrackNotFound, result)
+            assertFalse(tmp.root.resolve("out.srt").exists())
+        }
+
+    @Test
+    fun extractingWritesTheConfiguredTextToTheDestination() =
+        runTest {
+            val text = "1\n00:00:01,000 --> 00:00:02,000\nHi\n"
+            val destination = tmp.root.resolve("out.srt")
+            player.open(movie)
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("3", "English", "eng")))
+            player.emitExtractionText(text, SubtitleFormat.SRT)
+
+            val result = player.extractTextSubtitle("3", destination)
+
+            assertEquals(SubtitleExtraction.Extracted(destination, SubtitleFormat.SRT), result)
+            assertEquals(text, destination.readText())
+        }
+
+    @Test
+    fun extractingReturnsAConfiguredFailureUnchanged() =
+        runTest {
+            player.open(movie)
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("4", "Signs", "eng")))
+            player.emitExtraction(SubtitleExtraction.NotTextBased)
+            assertEquals(SubtitleExtraction.NotTextBased, player.extractTextSubtitle("4", tmp.root.resolve("a.srt")))
+
+            player.emitExtraction(SubtitleExtraction.Failed("no cues"))
+            assertEquals(SubtitleExtraction.Failed("no cues"), player.extractTextSubtitle("4", tmp.root.resolve("b.srt")))
+        }
+
+    @Test
+    fun extractionCallsRecordsEveryTrackIdInOrder() =
+        runTest {
+            player.open(movie)
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("3", "English", "eng")))
+
+            player.extractTextSubtitle("3", tmp.root.resolve("a.srt"))
+            player.extractTextSubtitle("7", tmp.root.resolve("b.srt"))
+            player.extractTextSubtitle("3", tmp.root.resolve("c.srt"))
+
+            assertEquals(listOf("3", "7", "3"), player.extractionCalls)
+        }
 }
