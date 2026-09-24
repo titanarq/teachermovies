@@ -45,6 +45,7 @@ fun Application.module(deps: ServerDeps) {
         subtitleRoutes(deps)
         libraryRoutes(deps)
         eventsRoutes(deps)
+        webUiRoutes()
         // Every protected route goes inside `requireBearer(deps.pairing) { ... }` (ADR-0002).
     }
 }

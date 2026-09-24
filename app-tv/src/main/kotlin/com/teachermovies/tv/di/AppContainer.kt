@@ -3,6 +3,9 @@ package com.teachermovies.tv.di
 import android.app.Application
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import com.teachermovies.assistant.HiddenSubtitleController
+import com.teachermovies.assistant.LineCaptureController
+import com.teachermovies.assistant.SubtitleEngine
 import com.teachermovies.core.db.TeacherMoviesDatabase
 import com.teachermovies.core.repo.RoomTorrentRepository
 import com.teachermovies.core.repo.TorrentRepository
@@ -142,6 +145,17 @@ class AppContainer(application: Application) {
     val player: Player = vlcPlayer
 
     val videoSurfaceHost: VideoSurfaceHost = vlcPlayer
+
+    // The English-learning assistant (#86) follows the one [player] on the main thread, where the
+    // player screen drives it; built once, started and stopped per movie by the player screen.
+    private val assistantScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    private val subtitleEngine: SubtitleEngine = SubtitleEngine(player.positionMs, assistantScope)
+
+    val hiddenSubtitleController: HiddenSubtitleController =
+        HiddenSubtitleController(player, subtitleEngine, assistantScope)
+
+    val lineCaptureController: LineCaptureController = LineCaptureController(player, subtitleEngine, assistantScope)
 
     /**
      * PIN pairing and token validation (ADR-0002). One instance for the process, shared by every
