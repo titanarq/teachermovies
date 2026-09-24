@@ -30,8 +30,17 @@
   The volume is the one `VolumeSelector` picks; the folder is its `DownloadLayout.moviesDir()`.
 - `MainActivity` shows `FirstRunScreen` instead of the shell while `firstRunCompleted == false`.
   `Continuar` is its only focusable element and has initial focus; BACK leaves the app.
-- Until #55, `AppContainer.torrentEngine` is `NotWiredTorrentEngine` (always `Stopped`, every call
-  `NotReady`), not a fake.
+
+## Torrent engine wiring (#55)
+- `AppContainer.torrentEngine: TorrentEngine` is a `JLibTorrentEngine` (the only
+  `com.teachermovies.torrent.jlib` import in the app) with `stateDir = filesDir/torrent-state`,
+  `Dispatchers.IO`, and registered in `TorrentEngineHolder` when the container is built.
+- `SavePathProviderFactory.create(volumes, space, persistedVolumeId, fallbackRoot)` returns
+  `DownloadLayout(selectedVolume.root).torrentDir(id.value)`; the volume is re-selected by
+  `VolumeSelector` on every call (missing persisted volume -> its fallback; no volume at all ->
+  `fallbackRoot` = `filesDir`).
+- `MainActivity.onCreate` calls `TorrentService.start(this)` and, on API 33+, requests
+  `POST_NOTIFICATIONS` once (remembered in the activity's preferences; denial is not an error).
 
 ## Boundaries
 - Depends on feature modules' public interfaces only; contains no torrent, HTTP or VLC logic itself.

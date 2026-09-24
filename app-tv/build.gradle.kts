@@ -52,6 +52,9 @@ dependencies {
     // `ComponentActivity` + `setContent` + `viewModels()` + `BackHandler` for the launcher activity.
     implementation(libs.androidx.activity.compose)
 
+    // `ContextCompat.checkSelfPermission` for the one-time POST_NOTIFICATIONS request (#55).
+    implementation(libs.androidx.core.ktx)
+
     // `MainViewModel : ViewModel`, lifecycle-aware collection of its `StateFlow`, and the
     // `MutableStateFlow` behind it (AGENTS.md: coroutines + `StateFlow` is the concurrency model).
     implementation(libs.androidx.lifecycle.viewmodel.ktx)

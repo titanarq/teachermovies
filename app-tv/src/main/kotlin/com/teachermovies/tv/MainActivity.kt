@@ -1,12 +1,19 @@
 package com.teachermovies.tv
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
+import com.teachermovies.torrent.service.TorrentService
 import com.teachermovies.tv.ui.MainShell
 import com.teachermovies.tv.ui.MainViewModel
 import com.teachermovies.tv.ui.firstrun.FirstRunRoute
@@ -25,6 +32,11 @@ import com.teachermovies.tv.ui.settings.SettingsViewModel
  *
  * Until first-run setup is completed the first-run screen is shown instead of the shell; nothing
  * is shown for the instant before the persisted settings have been read.
+ *
+ * It also starts the foreground [TorrentService] (the engine it drives was registered in
+ * `TorrentEngineHolder` when the application built its `AppContainer`), and on Android 13+ asks
+ * for `POST_NOTIFICATIONS` once. A denial is not an error: the service still runs, only its
+ * notification is hidden.
  */
 class MainActivity : ComponentActivity() {
 
@@ -50,8 +62,14 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    // The result is deliberately ignored: granted or denied, nothing else changes.
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        TorrentService.start(this)
+        requestNotificationPermissionOnce()
         setContent {
             MaterialTheme {
                 val firstRunCompleted by firstRunViewModel.firstRunCompleted.collectAsStateWithLifecycle()
@@ -69,5 +87,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun requestNotificationPermissionOnce() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val permission = Manifest.permission.POST_NOTIFICATIONS
+        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) return
+        val prefs = getPreferences(Context.MODE_PRIVATE)
+        if (prefs.getBoolean(PREF_NOTIFICATION_PERMISSION_ASKED, false)) return
+        prefs.edit().putBoolean(PREF_NOTIFICATION_PERMISSION_ASKED, true).apply()
+        notificationPermission.launch(permission)
+    }
+
+    private companion object {
+        const val PREF_NOTIFICATION_PERMISSION_ASKED = "notificationPermissionAsked"
     }
 }
