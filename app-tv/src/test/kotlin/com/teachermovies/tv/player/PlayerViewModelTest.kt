@@ -1,8 +1,12 @@
 package com.teachermovies.tv.player
 
+import android.view.KeyEvent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
+import com.teachermovies.assistant.HiddenSubtitleController
+import com.teachermovies.assistant.LineCaptureController
+import com.teachermovies.assistant.SubtitleEngine
 import com.teachermovies.core.model.DownloadState
 import com.teachermovies.core.model.Torrent
 import com.teachermovies.core.model.TorrentId
@@ -56,8 +60,22 @@ class PlayerViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun TestScope.viewModel(): PlayerViewModel =
-        PlayerViewModel(PlaybackSession(player, repo, backgroundScope, clock = { 0L }), player, backgroundScope)
+    private lateinit var hidden: HiddenSubtitleController
+    private lateinit var capture: LineCaptureController
+
+    /** The real assistant controllers (#83, #85) over [player], on the test's background scope. */
+    private fun TestScope.viewModel(): PlayerViewModel {
+        val engine = SubtitleEngine(player.positionMs, backgroundScope)
+        hidden = HiddenSubtitleController(player, engine, backgroundScope)
+        capture = LineCaptureController(player, engine, backgroundScope)
+        return PlayerViewModel(
+            PlaybackSession(player, repo, backgroundScope, clock = { 0L }),
+            player,
+            hidden,
+            capture,
+            backgroundScope,
+        )
+    }
 
     private suspend fun seed(movie: File) {
         repo.upsert(
@@ -78,6 +96,12 @@ class PlayerViewModelTest {
     }
 
     private fun movieFile(): File = tmp.newFolder("Movies", id.value).resolve("Big Movie.mkv").apply { writeText("x") }
+
+    /** A movie with an English sidecar: one line, "Hello there.", from 1 s to 3 s. */
+    private fun movieWithEnglishSubtitles(): File =
+        movieFile().also { movie ->
+            movie.resolveSibling("Big Movie.en.srt").writeText("1\n00:00:01,000 --> 00:00:03,000\nHello there.\n")
+        }
 
     private fun TestScope.openedViewModel(): PlayerViewModel {
         val vm = viewModel()
@@ -351,5 +375,172 @@ class PlayerViewModelTest {
             vm.back()
             runCurrent()
             assertTrue("BACK exits when the error hides the panel", vm.uiState.value.exited)
+        }
+
+    /** Opens the subtitled movie, playing at 2 s (inside the one line). */
+    private suspend fun TestScope.playingWithSubtitles(): PlayerViewModel {
+        seed(movieWithEnglishSubtitles())
+        val vm = openedViewModel()
+        player.emitDuration(600_000L)
+        player.play()
+        player.emitPosition(2_000L)
+        runCurrent()
+        return vm
+    }
+
+    /** What the player screen does with a key: the assistant mapping first, then the transport one. */
+    private fun PlayerViewModel.press(keyCode: Int) {
+        val assistantAction = AssistantKeyMapper.map(keyCode, overlayOpen = uiState.value.assistant != null)
+        if (assistantAction != null) onAssistantAction(assistantAction) else onAction(RemoteKeyMapper.map(keyCode))
+    }
+
+    @Test
+    fun openingStartsHiddenModeAndTheAssistantIsAvailableWithAnEnglishSidecar() =
+        runTest(dispatcher) {
+            val vm = playingWithSubtitles()
+
+            assertTrue(vm.uiState.value.assistantAvailable)
+            assertTrue(hidden.active.value)
+            assertNull(vm.uiState.value.assistant)
+            assertEquals(PlayerState.Playing, player.state.value)
+        }
+
+    @Test
+    fun captureFillsTheOverlayPausesAndHidesTheTransportOverlay() =
+        runTest(dispatcher) {
+            val vm = playingWithSubtitles()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+
+            assertEquals(AssistantOverlayState("Hello there.", replaying = false), vm.uiState.value.assistant)
+            assertEquals(PlayerState.Paused, player.state.value)
+            assertFalse(vm.uiState.value.overlayVisible)
+        }
+
+    @Test
+    fun replayIsForwardedAndReplayingReachesTheUiState() =
+        runTest(dispatcher) {
+            val vm = playingWithSubtitles()
+            vm.press(KeyEvent.KEYCODE_CAPTIONS)
+            runCurrent()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_CENTER)
+            runCurrent()
+
+            assertEquals(AssistantOverlayState("Hello there.", replaying = true), vm.uiState.value.assistant)
+            assertEquals(PlayerState.Playing, player.state.value)
+            assertEquals("the fragment starts with its pre-roll", 700L, player.positionMs.value)
+
+            player.emitPosition(3_300L)
+            runCurrent()
+
+            assertEquals(AssistantOverlayState("Hello there.", replaying = false), vm.uiState.value.assistant)
+            assertEquals(PlayerState.Paused, player.state.value)
+            assertEquals(2_000L, player.positionMs.value)
+        }
+
+    @Test
+    fun dismissClearsTheOverlayAndResumesWhereTheLineWasCaptured() =
+        runTest(dispatcher) {
+            val vm = playingWithSubtitles()
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+
+            vm.press(KeyEvent.KEYCODE_BACK)
+            runCurrent()
+
+            assertNull(vm.uiState.value.assistant)
+            assertFalse("BACK closes the overlay, not the player", vm.uiState.value.exited)
+            assertEquals(PlayerState.Playing, player.state.value)
+            assertEquals(2_000L, player.positionMs.value)
+
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+            assertNull("DPAD_DOWN toggles the overlay closed too", vm.uiState.value.assistant)
+            assertEquals(PlayerState.Playing, player.state.value)
+        }
+
+    @Test
+    fun noLineShowsItsMessageForThreeSecondsAndResumes() =
+        runTest(dispatcher) {
+            val vm = playingWithSubtitles()
+            player.emitPosition(10_000L)
+            runCurrent()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+
+            assertNull(vm.uiState.value.assistant)
+            assertEquals(PlayerViewModel.NO_LINE, vm.uiState.value.message)
+            assertTrue(vm.uiState.value.overlayVisible)
+            assertEquals(PlayerState.Playing, player.state.value)
+
+            advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
+            assertNull(vm.uiState.value.message)
+        }
+
+    @Test
+    fun withoutEnglishSubtitlesCaptureShowsTheMessageAndDoesNotPause() =
+        runTest(dispatcher) {
+            seed(movieFile())
+            val vm = openedViewModel()
+            player.play()
+            player.emitPosition(2_000L)
+            runCurrent()
+            assertFalse(vm.uiState.value.assistantAvailable)
+
+            vm.press(KeyEvent.KEYCODE_CAPTIONS)
+            runCurrent()
+
+            assertEquals("Esta película no tiene subtítulos en inglés", vm.uiState.value.message)
+            assertNull(vm.uiState.value.assistant)
+            assertEquals(PlayerState.Playing, player.state.value)
+
+            advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
+            assertNull(vm.uiState.value.message)
+        }
+
+    @Test
+    fun transportKeysAreIgnoredWhileTheOverlayIsOpen() =
+        runTest(dispatcher) {
+            val vm = playingWithSubtitles()
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+
+            listOf(
+                KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_RIGHT,
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+                KeyEvent.KEYCODE_MEDIA_PLAY,
+                KeyEvent.KEYCODE_DPAD_UP,
+                KeyEvent.KEYCODE_SPACE,
+            ).forEach { vm.press(it) }
+            vm.onAction(PlayerAction.TogglePlayPause)
+            runCurrent()
+
+            assertEquals(2_000L, player.positionMs.value)
+            assertEquals(PlayerState.Paused, player.state.value)
+            assertNull(vm.uiState.value.tracksPanel)
+            assertFalse(vm.uiState.value.overlayVisible)
+            assertEquals(AssistantOverlayState("Hello there.", replaying = false), vm.uiState.value.assistant)
+        }
+
+    @Test
+    fun exitWithALineCapturedStopsTheAssistantAndCloses() =
+        runTest(dispatcher) {
+            val vm = playingWithSubtitles()
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+
+            vm.exit()
+            runCurrent()
+
+            assertTrue(vm.uiState.value.exited)
+            assertNull(capture.captured.value)
+            assertFalse(hidden.active.value)
+            assertEquals(PlayerState.Idle, player.state.value)
         }
 }
