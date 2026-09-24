@@ -5,18 +5,20 @@
 # without hand-writing it first.
 name: agent-os
 
+# Only when the mechanism (or this file) changes: no ruleset/branch protection can require this
+# check on a Free-plan private repo, so a path filter cannot leave a required check pending.
 on:
   pull_request:
+    paths:
+      - "agent_os/**"
+      - ".github/workflows/ci-agent-os.yml"
 
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    # Self-hosted (see ci.yml). The machine's system python3 (3.12) bootstraps the venv.
+    runs-on: [self-hosted, teachermovies]
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
 
       # The mechanism carries its own interpreter (agent_os/docs/AGENT_OS.md §4.1): nothing below needs the
       # host project's own virtualenv to exist.
