@@ -7,18 +7,32 @@ import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.Track
 import com.teachermovies.player.fake.FakePlayer
+import com.teachermovies.player.streaming.StreamPolicy
+import com.teachermovies.player.streaming.StreamResult
+import com.teachermovies.player.streaming.StreamState
+import com.teachermovies.player.streaming.StreamingPlaybackController
+import com.teachermovies.torrent.api.EngineError
+import com.teachermovies.torrent.api.EngineResult
+import com.teachermovies.torrent.api.RangeReadiness
+import com.teachermovies.torrent.api.TorrentEngine
+import com.teachermovies.torrent.fake.FakeTorrentEngine
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackSessionTest {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -261,5 +275,214 @@ class PlaybackSessionTest {
             player.emitPosition(9_000L)
             runCurrent()
             assertEquals(3_000L, persisted().lastPositionMs)
+        }
+
+    // -- openStreaming: an in-progress download, supervised by StreamingPlaybackController --------
+
+    // 100 pieces of 1 KiB; the controller needs a 2-piece head, a 4-piece start buffer (merged with
+    // the head, at byte 0 while the duration is unknown) and a 1-piece tail before it opens.
+    private val piece = 1024
+    private val fileSize = piece * 100L
+    private val poll = 500L
+    private val openRangePieces = (0..3).toSet() + 99
+    private val engine = FakeTorrentEngine()
+
+    private fun TestScope.controller(streamEngine: TorrentEngine = engine) =
+        StreamingPlaybackController(
+            player = player,
+            engine = streamEngine,
+            scope = backgroundScope,
+            policy =
+                StreamPolicy(
+                    headBytes = 2L * piece,
+                    tailBytes = 1L * piece,
+                    startBufferBytes = 4L * piece,
+                    readAheadBytes = 8L * piece,
+                    underrunBytes = 2L * piece,
+                    resumeBytes = 6L * piece,
+                ),
+            pollIntervalMs = poll,
+            minWindowMoveBytes = piece.toLong(),
+        )
+
+    /** A torrent still downloading, with [movie] as its main file (or none picked yet). */
+    private suspend fun seedInProgress(
+        movie: File?,
+        positionMs: Long = 0L,
+        audioTrackId: String? = null,
+        subtitleTrackId: String? = null,
+    ) {
+        repo.upsert(
+            Torrent(
+                id = id,
+                name = "Movie",
+                state = DownloadState.Downloading,
+                progressPercent = 12.0,
+                downloadedBytes = 12L * piece,
+                totalBytes = fileSize,
+                savePath = tmp.root.path,
+                mainFileIndex = movie?.let { 0 },
+                errorMessage = null,
+            ),
+            mainFilePath = movie?.path,
+            now = 1L,
+        )
+        repo.updatePlayback(id, positionMs, audioTrackId, subtitleTrackId)
+    }
+
+    /** The engine knows the torrent and its single file, with [pieces] downloaded. */
+    private suspend fun engineHas(pieces: Set<Int>) {
+        engine.addMagnet("magnet:?xt=urn:btih:${id.value}&dn=movie")
+        engine.emitMetadata(id, "Movie", listOf("Movie.mkv" to fileSize))
+        engine.setPieces(id, piece, pieces)
+    }
+
+    /** Answers every range query with [answer], delegating everything else to [engine]. */
+    private class ScriptedEngine(
+        delegate: FakeTorrentEngine,
+        private val answer: EngineResult<RangeReadiness>,
+    ) : TorrentEngine by delegate {
+        override suspend fun rangeReadiness(
+            id: TorrentId,
+            fileIndex: Int,
+            byteOffset: Long,
+            lengthBytes: Long,
+        ): EngineResult<RangeReadiness> = answer
+
+        override suspend fun prioritizeWindow(
+            id: TorrentId,
+            fileIndex: Int,
+            byteOffset: Long,
+            lengthBytes: Long,
+        ): EngineResult<Unit> = EngineResult.Ok(Unit)
+    }
+
+    @Test
+    fun openStreamingOpensAGrowingFileOnceItsRangesAreReady() =
+        runTest {
+            val movie = movieFile()
+            seedInProgress(movie)
+            engineHas(openRangePieces - 99)
+            val result = backgroundScope.async { session().openStreaming(id, controller()) }
+            runCurrent()
+
+            assertFalse(result.isCompleted)
+            assertNull(player.lastOpen)
+
+            engine.setPieces(id, piece, openRangePieces)
+            advanceTimeBy(poll)
+            runCurrent()
+
+            assertTrue(result.await() is SessionResult.Opened)
+            assertEquals(FakePlayer.OpenCall(movie, 0L, growing = true), player.lastOpen)
+            assertEquals(PlayerState.Playing, player.state.value)
+        }
+
+    @Test
+    fun openStreamingResumesAtThePersistedPositionThroughResumePolicy() =
+        runTest {
+            val movie = movieFile()
+            seedInProgress(movie, positionMs = 600_000L)
+            engineHas(openRangePieces)
+
+            val result = session().openStreaming(id, controller())
+
+            assertTrue(result is SessionResult.Opened)
+            assertEquals(FakePlayer.OpenCall(movie, 597_000L, growing = true), player.lastOpen)
+        }
+
+    @Test
+    fun openStreamingReappliesThePersistedTracksAndAddsExternalSubtitles() =
+        runTest {
+            val movie = movieFile()
+            File(movie.parentFile, "Movie.en.srt").writeText("1")
+            seedInProgress(movie, audioTrackId = "a1", subtitleTrackId = "s2")
+            engineHas(openRangePieces)
+
+            session().openStreaming(id, controller())
+            runCurrent()
+            assertEquals(listOf("Movie.en.srt"), player.subtitleTracks.value.map { it.name })
+
+            player.emitTracks(audio = listOf(audioEs, audioEn), subs = listOf(subEn, subEs))
+            runCurrent()
+
+            assertEquals("a1", player.selectedAudioId.value)
+            assertEquals("s2", player.selectedSubtitleId.value)
+        }
+
+    @Test
+    fun openStreamingSavesProgressAndCloseStopsTheController() =
+        runTest {
+            seedInProgress(movieFile())
+            engineHas(openRangePieces)
+            val controller = controller()
+            val session = session()
+            session.openStreaming(id, controller)
+            runCurrent()
+            assertEquals(StreamState.Streaming, controller.state.value)
+
+            player.emitPosition(3_000L)
+            session.close()
+
+            assertEquals(3_000L, checkNotNull(repo.getPlaybackItem(id)).lastPositionMs)
+            assertEquals(StreamState.Idle, controller.state.value)
+            assertEquals(PlayerState.Idle, player.state.value)
+        }
+
+    @Test
+    fun openStreamingReportsNotFoundForAnUnknownTorrent() =
+        runTest {
+            assertEquals(SessionResult.NotFound, session().openStreaming(id, controller()))
+            assertNull(player.lastOpen)
+        }
+
+    @Test
+    fun openStreamingReportsFileMissingWhileNoMainFileIsSelected() =
+        runTest {
+            seedInProgress(movie = null)
+            engineHas(openRangePieces)
+
+            assertEquals(SessionResult.FileMissing(tmp.root.path), session().openStreaming(id, controller()))
+            assertNull(player.lastOpen)
+        }
+
+    @Test
+    fun openStreamingReportsATorrentTheEngineDoesNotKnow() =
+        runTest {
+            seedInProgress(movieFile())
+
+            assertEquals(
+                SessionResult.StreamingFailed(StreamResult.UnknownTorrent),
+                session().openStreaming(id, controller()),
+            )
+            assertNull(player.lastOpen)
+        }
+
+    @Test
+    fun openStreamingReportsAnEngineThatCannotStream() =
+        runTest {
+            seedInProgress(movieFile())
+            engineHas(emptySet())
+            val scripted = ScriptedEngine(engine, EngineResult.Failure(EngineError.Unsupported))
+
+            assertEquals(
+                SessionResult.StreamingFailed(StreamResult.Unsupported),
+                session().openStreaming(id, controller(scripted)),
+            )
+            assertNull(player.lastOpen)
+        }
+
+    @Test
+    fun openStreamingReportsAnEngineFailure() =
+        runTest {
+            seedInProgress(movieFile())
+            engineHas(emptySet())
+            val scripted = ScriptedEngine(engine, EngineResult.Failure(EngineError.Io("disk gone")))
+
+            assertEquals(
+                SessionResult.StreamingFailed(StreamResult.Failed("disk gone")),
+                session().openStreaming(id, controller(scripted)),
+            )
+            assertNull(player.lastOpen)
         }
 }

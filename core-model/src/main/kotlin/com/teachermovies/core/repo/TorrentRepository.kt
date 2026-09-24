@@ -26,6 +26,14 @@ interface TorrentRepository {
     suspend fun getLibraryItem(id: TorrentId): LibraryItem?
 
     /**
+     * [id] as something to play whatever its download state -- a download still in progress too
+     * (stream while downloading, #99) -- or null when [id] is unknown or has no main file path yet.
+     * [LibraryItem.sizeBytes] is the torrent's `totalBytes` and [LibraryItem.completedAtEpochMs] is
+     * `0` until it has completed.
+     */
+    suspend fun getPlaybackItem(id: TorrentId): LibraryItem?
+
+    /**
      * Inserts [torrent], or replaces the row with the same [Torrent.id].
      *
      * [mainFilePath] becomes the row's stored main file path -- pass the existing value back if the

@@ -130,7 +130,8 @@ class StreamingPlaybackController(
             delay(pollIntervalMs)
         }
 
-        player.open(file, startPositionMs)
+        // The file is still being written by the engine: libVLC gets the growing-file options.
+        player.open(file, startPositionMs, growing = true)
         player.play()
         mutableState.value = StreamState.Streaming
 
