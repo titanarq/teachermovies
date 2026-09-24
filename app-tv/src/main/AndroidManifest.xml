@@ -14,6 +14,10 @@
          never makes cleartext requests, so no network security config is needed. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Autostart on TV boot (#126): `BootCompletedReceiver` starts the server and the torrent
+         service when the user turned it on in Configuración. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:name=".TeacherMoviesApp"
         android:banner="@drawable/tv_banner"
@@ -35,5 +39,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Exported so the system can deliver `BOOT_COMPLETED`, a protected broadcast no other app
+             can send; the receiver ignores every other action. -->
+        <receiver
+            android:name=".autostart.BootCompletedReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
