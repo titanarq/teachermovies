@@ -4,9 +4,17 @@ import android.view.KeyEvent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
+import com.teachermovies.assistant.AssistantSpeechController
 import com.teachermovies.assistant.HiddenSubtitleController
 import com.teachermovies.assistant.LineCaptureController
 import com.teachermovies.assistant.SubtitleEngine
+import com.teachermovies.assistant.TranslationFailure
+import com.teachermovies.assistant.TranslationUiState
+import com.teachermovies.assistant.speech.SpeakerAvailability
+import com.teachermovies.assistant.speech.SpeechLanguage
+import com.teachermovies.assistant.speech.fake.FakeSpeaker
+import com.teachermovies.assistant.translation.TranslationResult
+import com.teachermovies.assistant.translation.fake.FakeTranslationProvider
 import com.teachermovies.core.model.DownloadState
 import com.teachermovies.core.model.Torrent
 import com.teachermovies.core.model.TorrentId
@@ -49,6 +57,8 @@ class PlayerViewModelTest {
     private val id = TorrentId("b".repeat(40))
     private val player = FakePlayer()
     private val repo = InMemoryTorrentRepository()
+    private val speaker = FakeSpeaker()
+    private val translations = FakeTranslationProvider()
 
     @Before
     fun setUp() {
@@ -62,18 +72,25 @@ class PlayerViewModelTest {
 
     private lateinit var hidden: HiddenSubtitleController
     private lateinit var capture: LineCaptureController
+    private lateinit var speech: AssistantSpeechController
 
-    /** The real assistant controllers (#83, #85) over [player], on the test's background scope. */
+    /**
+     * The real assistant controllers (#83, #85, #91) over [player], [speaker] and [translations],
+     * on the test's background scope.
+     */
     private fun TestScope.viewModel(): PlayerViewModel {
         val engine = SubtitleEngine(player.positionMs, backgroundScope)
         hidden = HiddenSubtitleController(player, engine, backgroundScope, tmp.newFolder("cache"))
         capture = LineCaptureController(player, engine, backgroundScope)
+        speech = AssistantSpeechController(speaker, translations, backgroundScope)
         return PlayerViewModel(
             PlaybackSession(player, repo, backgroundScope, clock = { 0L }),
             player,
             hidden,
             capture,
+            speech,
             backgroundScope,
+            prepareDispatcher = dispatcher,
         )
     }
 
@@ -511,8 +528,6 @@ class PlayerViewModelTest {
             runCurrent()
 
             listOf(
-                KeyEvent.KEYCODE_DPAD_LEFT,
-                KeyEvent.KEYCODE_DPAD_RIGHT,
                 KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
                 KeyEvent.KEYCODE_MEDIA_PLAY,
                 KeyEvent.KEYCODE_DPAD_UP,
@@ -542,5 +557,166 @@ class PlayerViewModelTest {
             assertNull(capture.captured.value)
             assertFalse(hidden.active.value)
             assertEquals(PlayerState.Idle, player.state.value)
+        }
+
+    /** Opens the subtitled movie and captures its line, "Hello there.". */
+    private suspend fun TestScope.captured(): PlayerViewModel {
+        val vm = playingWithSubtitles()
+        vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        runCurrent()
+        return vm
+    }
+
+    @Test
+    fun openingPreparesTheSpeakerOnce() =
+        runTest(dispatcher) {
+            val vm = playingWithSubtitles()
+            vm.open(id)
+            runCurrent()
+
+            assertEquals(SpeakerAvailability.Ready, speaker.availability.value)
+            assertEquals(SpeechLanguage.entries.toSet(), speech.state.value.speechAvailable)
+        }
+
+    @Test
+    fun speakOriginalSaysTheCapturedLineInEnglishAndSpeakingReachesTheUiState() =
+        runTest(dispatcher) {
+            val vm = captured()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            runCurrent()
+
+            assertEquals(listOf("Hello there." to SpeechLanguage.EN), speaker.spoken)
+            assertTrue(vm.uiState.value.assistant!!.speaking)
+            assertNull(vm.uiState.value.assistant!!.message)
+            assertEquals("the movie stays paused", PlayerState.Paused, player.state.value)
+
+            speaker.finishCurrentUtterance()
+            runCurrent()
+            assertFalse(vm.uiState.value.assistant!!.speaking)
+        }
+
+    @Test
+    fun speakOriginalWithoutAVoiceShowsTheMessageForThreeSecondsAndNothingElseChanges() =
+        runTest(dispatcher) {
+            speaker.nextAvailability = SpeakerAvailability.EngineUnavailable
+            val vm = captured()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            runCurrent()
+
+            val overlay = vm.uiState.value.assistant!!
+            assertEquals("Voz no disponible", overlay.message)
+            assertEquals("Hello there.", overlay.text)
+            assertFalse(overlay.speaking)
+            assertEquals(TranslationUiState.Idle, overlay.translation)
+            assertEquals(PlayerState.Paused, player.state.value)
+            assertTrue(speaker.spoken.isEmpty())
+
+            advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
+            assertNull(vm.uiState.value.assistant!!.message)
+            assertEquals("Hello there.", vm.uiState.value.assistant!!.text)
+        }
+
+    @Test
+    fun translateLineGoesThroughLoadingToReadyAndSaysTheSpanishText() =
+        runTest(dispatcher) {
+            translations.translations["Hello there."] = "Hola."
+            translations.delayMs = 500
+            val vm = captured()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+            assertEquals(TranslationUiState.Loading, vm.uiState.value.assistant!!.translation)
+
+            advanceTimeBy(501)
+            runCurrent()
+
+            val overlay = vm.uiState.value.assistant!!
+            assertEquals(TranslationUiState.Ready("Hola."), overlay.translation)
+            assertEquals(listOf("Hola." to SpeechLanguage.ES), speaker.spoken)
+            assertTrue(overlay.speaking)
+            assertEquals("the movie stays paused", PlayerState.Paused, player.state.value)
+        }
+
+    @Test
+    fun translateLineWithoutAVoiceStillShowsTheTranslation() =
+        runTest(dispatcher) {
+            speaker.nextAvailability = SpeakerAvailability.EngineUnavailable
+            translations.translations["Hello there."] = "Hola."
+            val vm = captured()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+
+            assertEquals(TranslationUiState.Ready("Hola."), vm.uiState.value.assistant!!.translation)
+            assertTrue(speaker.spoken.isEmpty())
+        }
+
+    @Test
+    fun translateLineOfflineShowsTheOfflineFailure() =
+        runTest(dispatcher) {
+            translations.nextResult = TranslationResult.Offline
+            val vm = captured()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+
+            assertEquals(TranslationUiState.Failed(TranslationFailure.OFFLINE), vm.uiState.value.assistant!!.translation)
+            assertTrue(speaker.spoken.isEmpty())
+            assertEquals(PlayerState.Paused, player.state.value)
+        }
+
+    @Test
+    fun translateLineWithoutAProviderShowsTheUnavailableFailure() =
+        runTest(dispatcher) {
+            val vm = captured()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+
+            assertEquals(TranslationUiState.Failed(TranslationFailure.UNAVAILABLE), vm.uiState.value.assistant!!.translation)
+            assertTrue(speaker.spoken.isEmpty())
+        }
+
+    @Test
+    fun dismissResetsTheSpeechSoNothingSurvivesTheOverlay() =
+        runTest(dispatcher) {
+            translations.translations["Hello there."] = "Hola."
+            val vm = captured()
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+            assertTrue(speech.state.value.speaking)
+
+            vm.press(KeyEvent.KEYCODE_BACK)
+            runCurrent()
+
+            assertNull(vm.uiState.value.assistant)
+            assertFalse(speech.state.value.speaking)
+            assertEquals(TranslationUiState.Idle, speech.state.value.translation)
+            assertEquals(PlayerState.Playing, player.state.value)
+
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+            assertEquals(
+                "a new capture starts clean",
+                AssistantOverlayState("Hello there.", replaying = false),
+                vm.uiState.value.assistant,
+            )
+        }
+
+    @Test
+    fun theSpeechKeysNeverResumePlayback() =
+        runTest(dispatcher) {
+            val vm = captured()
+
+            listOf(KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT).forEach {
+                vm.press(it)
+                runCurrent()
+            }
+
+            assertEquals(PlayerState.Paused, player.state.value)
+            assertEquals(2_000L, player.positionMs.value)
+            assertEquals("Hello there.", vm.uiState.value.assistant!!.text)
         }
 }

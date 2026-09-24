@@ -161,6 +161,7 @@ class MainActivity : ComponentActivity() {
             repo = container.torrentRepository,
             hidden = container.hiddenSubtitleController,
             capture = container.lineCaptureController,
+            speech = container.assistantSpeechController,
         )
     }
 
