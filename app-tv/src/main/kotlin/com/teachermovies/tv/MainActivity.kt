@@ -1,7 +1,9 @@
 package com.teachermovies.tv
 
-import android.app.Activity
+import androidx.activity.ComponentActivity
 
-// Stub for #37: no UI yet. The shell that turns this into the entry point (`ComponentActivity`,
-// `LEANBACK_LAUNCHER`, Compose for TV content, DI container) is #44.
-class MainActivity : Activity()
+/**
+ * The single entry point, reached from the TV home screen through the `LEANBACK_LAUNCHER` filter in
+ * `AndroidManifest.xml`. A [ComponentActivity] because the shell that fills it is Compose for TV.
+ */
+class MainActivity : ComponentActivity()

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Teacher Movies</string>
+
+    <!-- Titles of the three sections of the shell, in the order `Destination` declares them. -->
+    <string name="destination_library">Biblioteca</string>
+    <string name="destination_downloads">Descargas</string>
+    <string name="destination_settings">Configuración</string>
+</resources>

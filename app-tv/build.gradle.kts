@@ -25,12 +25,16 @@ kotlin {
 
 dependencies {
     // app-tv -> feature modules -> core-model (AGENTS.md dependency direction); `implementation`
-    // so nothing leaks further. The Compose-for-TV libraries belong to the UI shell (#44).
+    // so nothing leaks further.
     implementation(project(":core-model"))
     implementation(project(":torrent"))
     implementation(project(":storage"))
     implementation(project(":http-server"))
     implementation(project(":player"))
+
+    // `ComponentActivity` for the launcher activity; the Compose-for-TV libraries themselves come
+    // with the shell composables.
+    implementation(libs.androidx.activity.compose)
 
     testImplementation(libs.junit)
 }
