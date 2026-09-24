@@ -141,6 +141,19 @@ registered -- any fork PR could run arbitrary code on this machine. Deregister f
   is silent. Both the wrapper and `clean_stale_worker.sh` are host-owned, outside `agent_os/`.
   Same removal note as above once agent-os#18 is fixed upstream.
 
+- to report (not yet filed upstream, seen 2026-09-24 control-plane check): under concurrent
+  worker/planner/refiner/validator load, `gh`'s GraphQL-backed subcommands
+  (`issues.py validate`/`gh issue view --json`, `gh pr checks`, `gh pr diff --name-only`,
+  `gh label list`, `gh pr list --json`) intermittently fail with "API rate limit already exceeded
+  for user ID ..." while `gh api rate_limit` reports `remaining: 5000` at the very same moment
+  (checked back to back). Plain REST calls (`gh api repos/.../issues`, `.../pulls/N/files`,
+  `.../pulls/N/reviews`, `.../commits/{sha}/check-runs`) kept working throughout, so this is
+  workable today by preferring REST `gh api` calls over the GraphQL-based `--json` forms when the
+  latter errors, but `scripts/issues.py validate`/`move` cannot be routed around that way and had
+  to be skipped this round. Looks like a shared-token contention/race under many parallel agents
+  rather than a real quota exhaustion; needs reproduction with request timing before filing
+  upstream.
+
 ## Refiner
 
 `planner.refiner_unattended` is `false`: the refiner runs only by hand, attended:

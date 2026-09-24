@@ -114,7 +114,7 @@ mechanism:
 
 planner:
   idle_wake_minutes: 120
-  max_runs_per_day: 40   # raised 2026-09-24 (spend unrestricted until 17:00); revert to 20 after
+  max_runs_per_day: 60   # raised 2026-09-24 (spend unrestricted until 17:00); revert to 20 after
   relaunch_cap: 3
   max_parallel_issues: 2   # raised 2026-09-24 so claude can start while qwen finishes #75; revert to 1 after 17:00
   reconcile_closed_lookback_days: 30
