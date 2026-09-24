@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.teachermovies.core.settings.AppSettings
 import com.teachermovies.core.settings.SettingsRepository
+import com.teachermovies.http.ServerState
 import com.teachermovies.storage.DownloadLayout
 import com.teachermovies.storage.SpaceProvider
 import com.teachermovies.storage.StorageVolumeProvider
@@ -14,11 +15,15 @@ import com.teachermovies.storage.VolumeSelector
 import com.teachermovies.torrent.api.EngineStatus
 import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.tv.net.LanAddressResolver
+import com.teachermovies.tv.ui.server.pinRefreshTicker
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -28,13 +33,16 @@ import kotlinx.coroutines.launch
  * [serverUrl] is `http://<lan-ip>:<port>`, the address a phone opens, or null while the TV has no
  * LAN address. [freeBytes] and [downloadFolder] describe the volume downloads go to (the persisted
  * one, or `VolumeSelector`'s fallback while it is missing): its free space and its `Movies`
- * directory, both null when no volume is available at all.
+ * directory, both null when no volume is available at all. [pin] is the pairing PIN a phone
+ * types (`PairingManager.currentPin`) and [serverState] the embedded HTTP server's state (#66).
  */
 data class FirstRunUiState(
     val serverUrl: String? = null,
     val freeBytes: Long? = null,
     val downloadFolder: String? = null,
     val engineStatus: EngineStatus = EngineStatus.Stopped,
+    val pin: String = "",
+    val serverState: ServerState = ServerState.Stopped,
 )
 
 /**
@@ -44,6 +52,9 @@ data class FirstRunUiState(
  * The LAN address and the volume list are snapshots, not streams, so both are re-read on
  * [refresh] -- which the screen calls each time it is shown. Settings and engine status are
  * streams and update the state on their own.
+ *
+ * [pin] is read on creation, on [refresh], whenever [serverState] changes and on every `pinTicks`
+ * emission, so a PIN rotated by a pairing or by its lifetime reaches the screen.
  */
 class FirstRunViewModel(
     private val settings: SettingsRepository,
@@ -51,15 +62,30 @@ class FirstRunViewModel(
     private val space: SpaceProvider,
     private val engine: TorrentEngine,
     private val lan: LanAddressResolver,
+    private val pin: () -> String,
+    private val serverState: StateFlow<ServerState>,
+    pinTicks: Flow<Unit> = pinRefreshTicker(),
 ) : ViewModel() {
 
     private val lanAddress = MutableStateFlow(lan.current())
     private val volumeSnapshot = MutableStateFlow(volumes.volumes())
+    private val currentPin = MutableStateFlow(pin())
+
+    private val server = combine(currentPin, serverState) { p, state -> p to state }
 
     val uiState: StateFlow<FirstRunUiState> =
-        combine(settings.settings, volumeSnapshot, lanAddress, engine.engineStatus) { appSettings, available, ip, status ->
-            buildState(appSettings, available, ip, status)
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, FirstRunUiState(engineStatus = engine.engineStatus.value))
+        combine(settings.settings, volumeSnapshot, lanAddress, engine.engineStatus, server) { appSettings, available, ip, status, (p, state) ->
+            buildState(appSettings, available, ip, status).copy(pin = p, serverState = state)
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            FirstRunUiState(engineStatus = engine.engineStatus.value, pin = currentPin.value, serverState = serverState.value),
+        )
+
+    init {
+        serverState.onEach { currentPin.value = pin() }.launchIn(viewModelScope)
+        pinTicks.onEach { currentPin.value = pin() }.launchIn(viewModelScope)
+    }
 
     /**
      * Whether first-run setup is done, or null until the persisted settings have been read -- so
@@ -70,8 +96,9 @@ class FirstRunViewModel(
             .map<AppSettings, Boolean?> { it.firstRunCompleted }
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    /** Re-reads the LAN address and the attached volumes. */
+    /** Re-reads the LAN address, the attached volumes and the PIN. */
     fun refresh() {
+        currentPin.value = pin()
         lanAddress.value = lan.current()
         volumeSnapshot.value = volumes.volumes()
     }
@@ -108,13 +135,15 @@ class FirstRunViewModel(
         private val space: SpaceProvider,
         private val engine: TorrentEngine,
         private val lan: LanAddressResolver,
+        private val pin: () -> String,
+        private val serverState: StateFlow<ServerState>,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(FirstRunViewModel::class.java)) {
                 "Unknown ViewModel class ${modelClass.name}"
             }
-            return FirstRunViewModel(settings, volumes, space, engine, lan) as T
+            return FirstRunViewModel(settings, volumes, space, engine, lan, pin, serverState) as T
         }
     }
 }

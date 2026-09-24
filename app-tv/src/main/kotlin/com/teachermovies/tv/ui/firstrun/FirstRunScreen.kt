@@ -22,6 +22,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.teachermovies.torrent.api.EngineStatus
 import com.teachermovies.tv.R
+import com.teachermovies.tv.ui.server.ServerPinAndStatus
 import com.teachermovies.tv.ui.settings.SpaceFormat
 
 /**
@@ -36,7 +37,8 @@ fun FirstRunRoute(viewModel: FirstRunViewModel, modifier: Modifier = Modifier) {
 }
 
 /**
- * The address a phone opens, where downloads go and how much room is left there, the torrent
+ * The address a phone opens and the PIN it pairs with (plus the server's state when it is not
+ * running), where downloads go and how much room is left there, the torrent
  * engine's state, and a `Continuar` button to the shell.
  *
  * Focus: `Continuar` is the only focusable element and takes focus as soon as the screen appears,
@@ -67,6 +69,7 @@ fun FirstRunScreen(
             text = stringResource(R.string.first_run_server, uiState.serverUrl ?: stringResource(R.string.first_run_no_network)),
             style = MaterialTheme.typography.headlineMedium,
         )
+        ServerPinAndStatus(pin = uiState.pin, serverState = uiState.serverState, style = MaterialTheme.typography.headlineMedium)
         Text(
             text =
                 uiState.freeBytes?.let { stringResource(R.string.first_run_free_space, SpaceFormat.freeGb(it)) }
