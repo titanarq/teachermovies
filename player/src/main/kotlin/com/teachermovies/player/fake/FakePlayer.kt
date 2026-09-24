@@ -36,6 +36,10 @@ class FakePlayer : Player {
     val extractionCalls: List<String>
         get() = recordedExtractionCalls.toList()
 
+    /** The arguments of the last [open], or null when [open] was never called. */
+    var lastOpen: OpenCall? = null
+        private set
+
     override val state: StateFlow<PlayerState> = mutableState.asStateFlow()
     override val positionMs: StateFlow<Long> = mutablePositionMs.asStateFlow()
     override val durationMs: StateFlow<Long> = mutableDurationMs.asStateFlow()
@@ -47,7 +51,9 @@ class FakePlayer : Player {
     override fun open(
         file: File,
         startPositionMs: Long,
+        growing: Boolean,
     ) {
+        lastOpen = OpenCall(file, startPositionMs, growing)
         mutableState.value = PlayerState.Opening
         mutablePositionMs.value = startPositionMs
     }
@@ -183,4 +189,11 @@ class FakePlayer : Player {
     fun fail(message: String) {
         mutableState.value = PlayerState.Error(message)
     }
+
+    /** What one [open] call was given, recorded in [lastOpen]. */
+    data class OpenCall(
+        val file: File,
+        val startPositionMs: Long,
+        val growing: Boolean,
+    )
 }

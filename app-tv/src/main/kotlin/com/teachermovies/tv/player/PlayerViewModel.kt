@@ -156,6 +156,8 @@ class PlayerViewModel(
                     }
                     SessionResult.NotFound -> local.update { it.copy(error = NOT_FOUND) }
                     is SessionResult.FileMissing -> local.update { it.copy(error = FILE_MISSING) }
+                    // Only `openStreaming` answers this; the screen does not stream yet (#78).
+                    is SessionResult.StreamingFailed -> local.update { it.copy(error = STREAMING_FAILED) }
                 }
             }
         showOverlay()
@@ -326,6 +328,7 @@ class PlayerViewModel(
 
         const val FILE_MISSING = "El archivo no está disponible (¿se ha desconectado el disco?)"
         const val NOT_FOUND = "Esta película ya no está en la biblioteca"
+        const val STREAMING_FAILED = "No se puede reproducir mientras se descarga"
         const val PLAYBACK_ERROR_PREFIX = "No se puede reproducir: "
 
         /** How long an assistant message stays in the transport overlay. */

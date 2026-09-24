@@ -43,10 +43,15 @@ interface Player {
      *
      * The position the caller passes is the one `:core-model` persisted for the item, so resuming
      * is a caller decision, not something the player remembers by itself.
+     *
+     * [growing]: the file is still being written by the torrent engine; its length will grow while
+     * it plays (stream-while-downloading, epic #8). An implementation reads such a file with the
+     * options a growing file needs instead of trusting its current length.
      */
     fun open(
         file: File,
         startPositionMs: Long = 0,
+        growing: Boolean = false,
     )
 
     fun play()

@@ -51,6 +51,11 @@ class VlcPlayer(
     context: Context,
     /** Longest [extractTextSubtitle] may read the media for before it gives up with `Failed`. */
     private val extractionTimeout: Duration = 2.minutes,
+    /**
+     * libVLC's `:file-caching` for a file opened with `growing = true`, in milliseconds: how much it
+     * reads ahead, and so how long a read may wait for bytes the torrent engine has not written yet.
+     */
+    private val fileCachingMs: Int = DEFAULT_FILE_CACHING_MS,
 ) : Player,
     VideoSurfaceHost {
     // The application context: this player outlives any activity that created it, and `LibVLC` only
@@ -114,13 +119,14 @@ class VlcPlayer(
     override fun open(
         file: File,
         startPositionMs: Long,
+        growing: Boolean,
     ) {
         val player = mediaPlayer()
         unload(player)
         val loaded =
             Media(libVlc(), Uri.fromFile(file)).apply {
                 setHWDecoderEnabled(HARDWARE_DECODING, FORCE_HARDWARE_DECODING)
-                VlcMediaOptions.startTime(startPositionMs)?.let(::addOption)
+                VlcMediaOptions.forMedia(startPositionMs, growing, fileCachingMs).forEach(::addOption)
             }
         media = loaded
         openedFile = file
@@ -313,6 +319,9 @@ class VlcPlayer(
     private fun Int.toSelectedId(): String? = if (this < 0) null else toString()
 
     private companion object {
+        /** [fileCachingMs] unless the caller tunes it: three seconds of read cache on a growing file. */
+        const val DEFAULT_FILE_CACHING_MS = 3000
+
         /** `Media.setHWDecoderEnabled(forVideo, force)`: decode video in hardware when the SoC can. */
         const val HARDWARE_DECODING = true
 

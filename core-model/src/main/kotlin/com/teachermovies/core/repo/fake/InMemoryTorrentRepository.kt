@@ -51,6 +51,11 @@ class InMemoryTorrentRepository : TorrentRepository {
             ?.takeIf { it.torrent.state == DownloadState.Completed && it.mainFilePath != null }
             ?.toLibraryItem()
 
+    override suspend fun getPlaybackItem(id: TorrentId): LibraryItem? =
+        rows.value[id]
+            ?.takeIf { it.mainFilePath != null }
+            ?.toLibraryItem()
+
     override suspend fun upsert(
         torrent: Torrent,
         mainFilePath: String?,
