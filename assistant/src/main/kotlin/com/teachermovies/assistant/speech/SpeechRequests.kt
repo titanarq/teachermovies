@@ -21,4 +21,19 @@ object SpeechRequests {
         }
         return false
     }
+
+    /**
+     * Whether [availability] (the last [Speaker.prepare] result, `null` before it ran) lets a
+     * [Speaker] say something in [language]: `true` for [SpeakerAvailability.Ready] and for a
+     * [SpeakerAvailability.MissingVoice] that does not list [language]; `false` otherwise.
+     */
+    fun allows(
+        availability: SpeakerAvailability?,
+        language: SpeechLanguage,
+    ): Boolean =
+        when (availability) {
+            SpeakerAvailability.Ready -> true
+            is SpeakerAvailability.MissingVoice -> language !in availability.languages
+            SpeakerAvailability.EngineUnavailable, null -> false
+        }
 }

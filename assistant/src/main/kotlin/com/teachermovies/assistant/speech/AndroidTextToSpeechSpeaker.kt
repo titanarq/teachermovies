@@ -91,7 +91,7 @@ class AndroidTextToSpeechSpeaker(
         if (!SpeechRequests.isSpeakable(text)) return false
         synchronized(lock) {
             val tts = engine ?: return false
-            if (isShutDown || mutableAvailability.value != SpeakerAvailability.Ready) return false
+            if (isShutDown || !SpeechRequests.allows(mutableAvailability.value, language)) return false
             val utterance = PendingUtterance(SpeechRequests.utteranceId(nextSeq++), text, language)
             val accepted =
                 try {
@@ -140,7 +140,10 @@ class AndroidTextToSpeechSpeaker(
         return result
     }
 
+    // Checks every language (no early return on the first missing one) so the result names the
+    // full missing set and each language degrades independently.
     private fun checkVoices(tts: TextToSpeech): SpeakerAvailability {
+        val missing = mutableSetOf<SpeechLanguage>()
         for (language in SpeechLanguage.entries) {
             val available =
                 try {
@@ -148,9 +151,9 @@ class AndroidTextToSpeechSpeaker(
                 } catch (e: RuntimeException) {
                     return SpeakerAvailability.EngineUnavailable
                 }
-            if (!available) return SpeakerAvailability.MissingVoice(language)
+            if (!available) missing += language
         }
-        return SpeakerAvailability.Ready
+        return if (missing.isEmpty()) SpeakerAvailability.Ready else SpeakerAvailability.MissingVoice(missing)
     }
 
     private fun release(tts: TextToSpeech) {

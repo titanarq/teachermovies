@@ -42,15 +42,54 @@ class FakeSpeakerTest {
         }
 
     @Test
-    fun `missing voice refuses the reported language`() =
+    fun `missing ES voice refuses ES but still speaks EN`() =
         runTest {
-            speaker.nextAvailability = SpeakerAvailability.MissingVoice(SpeechLanguage.ES)
-            assertEquals(SpeakerAvailability.MissingVoice(SpeechLanguage.ES), speaker.prepare())
+            val missing = SpeakerAvailability.MissingVoice(setOf(SpeechLanguage.ES))
+            speaker.nextAvailability = missing
+            assertEquals(missing, speaker.prepare())
 
             assertFalse(speaker.speak("Hola", SpeechLanguage.ES))
             assertEquals(SpeakerState.Idle, speaker.state.value)
             assertTrue(speaker.spoken.isEmpty())
+
+            assertTrue(speaker.speak("Hello", SpeechLanguage.EN))
+            assertEquals(SpeakerState.Speaking("Hello", SpeechLanguage.EN), speaker.state.value)
+            assertEquals(listOf("Hello" to SpeechLanguage.EN), speaker.spoken)
         }
+
+    @Test
+    fun `missing EN voice refuses EN but still speaks ES`() =
+        runTest {
+            val missing = SpeakerAvailability.MissingVoice(setOf(SpeechLanguage.EN))
+            speaker.nextAvailability = missing
+            assertEquals(missing, speaker.prepare())
+
+            assertFalse(speaker.speak("Hello", SpeechLanguage.EN))
+            assertEquals(SpeakerState.Idle, speaker.state.value)
+            assertTrue(speaker.spoken.isEmpty())
+
+            assertTrue(speaker.speak("Hola", SpeechLanguage.ES))
+            assertEquals(SpeakerState.Speaking("Hola", SpeechLanguage.ES), speaker.state.value)
+            assertEquals(listOf("Hola" to SpeechLanguage.ES), speaker.spoken)
+        }
+
+    @Test
+    fun `every voice missing refuses both languages`() =
+        runTest {
+            val missing = SpeakerAvailability.MissingVoice(setOf(SpeechLanguage.EN, SpeechLanguage.ES))
+            speaker.nextAvailability = missing
+            assertEquals(missing, speaker.prepare())
+
+            assertFalse(speaker.speak("Hello", SpeechLanguage.EN))
+            assertFalse(speaker.speak("Hola", SpeechLanguage.ES))
+            assertEquals(SpeakerState.Idle, speaker.state.value)
+            assertTrue(speaker.spoken.isEmpty())
+        }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `missing voice with no language is rejected`() {
+        SpeakerAvailability.MissingVoice(emptySet())
+    }
 
     @Test
     fun `blank text is refused`() =
