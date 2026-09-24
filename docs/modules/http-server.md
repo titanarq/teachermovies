@@ -14,6 +14,9 @@
   route alone also accepts `?token=<token>`. Every other route ignores/rejects a query-param token.
   Logs redact both the header and the `token` query parameter.
 - The static web UI (`/`, `/static/*`) is public; it runs the pairing flow and sends the token itself.
+- LAN-only (#59): an application-level plugin refuses every request whose remote address is not on
+  the LAN, even the public routes, before any route runs -- 403 `{"error":"not_lan"}`. This is
+  independent of and runs before the bearer-token check.
 
 ## Public contract (package `com.teachermovies.http`)
 - `LocalHttpServer(deps: ServerDeps, port: Int, host: String = "0.0.0.0")`: `start()` is
@@ -22,7 +25,15 @@
 - `fun Application.module(deps: ServerDeps)` holds all plugins and routing; tests run it in-process
   with `testApplication { application { module(fakeDeps) } }`.
 - `ServerDeps(engine: TorrentEngine, space: () -> SpaceInfo?, appVersion: String, clock: () -> Long,
-  pairing: PairingManager)`, extended by later issues.
+  pairing: PairingManager, allowTestRemoteHeader: Boolean = false)`, extended by later issues.
+  `allowTestRemoteHeader` is test-only (#59) and must stay `false` in production.
+- `com.teachermovies.http.auth.LanAddressPolicy.isAllowed(address: String): Boolean` (#59): whether
+  a literal IPv4/IPv6 address is on the LAN -- loopback, `10/8`, `172.16/12`, `192.168/16`,
+  `169.254/16`, `fe80::/10`, `fc00::/7`, and the IPv4-mapped IPv6 form of any allowed IPv4 range.
+  Parses addresses by hand and never resolves a hostname, so an unparsable string (including a real
+  hostname) is refused without a DNS lookup. The application-level guard applies it to
+  `call.request.origin.remoteHost`; only when `ServerDeps.allowTestRemoteHeader` is `true` does an
+  `X-Test-Remote` request header override that address, for route tests.
 - `com.teachermovies.http.auth.PairingManager(settings: SettingsRepository, random: SecureRandom,
   clock: () -> Long)`: `currentPin()` (6 digits, zero-padded; new every 10 min and after each
   successful pairing), `suspend pair(pin): PairResult` (`Paired(token)` | `WrongPin` |
@@ -88,4 +99,4 @@
 - Talks to `TorrentEngine` and repositories through interfaces only. No UPnP, nothing exposed to the Internet. Never log tokens/PINs.
 
 ## Tests
-Route tests with an in-process test client and `FakeTorrentEngine`; auth tests (401 without token) for every protected endpoint, and a test that `?token=` is accepted only on `/api/events`.
+Route tests with an in-process test client and `FakeTorrentEngine`; auth tests (401 without token) for every protected endpoint, and a test that `?token=` is accepted only on `/api/events`. `LanAddressPolicyTest` is table-driven over both address families; route tests other than the LAN-guard's own use `ServerDeps.allowTestRemoteHeader = true` with a test client that sends `X-Test-Remote`, since the in-process test client's real remote address is never an IP literal.

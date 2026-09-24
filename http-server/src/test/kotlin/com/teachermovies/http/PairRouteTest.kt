@@ -5,6 +5,7 @@ import com.teachermovies.http.auth.FakeClock
 import com.teachermovies.http.auth.InMemorySettingsRepository
 import com.teachermovies.http.auth.PairResult
 import com.teachermovies.http.auth.PairingManager
+import com.teachermovies.http.auth.lanClient
 import com.teachermovies.http.auth.redactTokenQuery
 import com.teachermovies.http.auth.requireBearer
 import com.teachermovies.torrent.fake.FakeTorrentEngine
@@ -46,10 +47,15 @@ class PairRouteTest {
             appVersion = "test",
             clock = clock,
             pairing = pairing,
+            allowTestRemoteHeader = true,
         )
 
-    /** The real module plus two protected test routes: header-only and header-or-query. */
-    private fun ApplicationTestBuilder.setUp() {
+    /**
+     * The real module plus two protected test routes: header-only and header-or-query. Returns a
+     * client that claims a LAN remote address (#59), so these auth-focused tests aren't also
+     * exercising the LAN-address guard.
+     */
+    private fun ApplicationTestBuilder.setUp(): HttpClient {
         application {
             module(deps)
             routing {
@@ -67,6 +73,7 @@ class PairRouteTest {
                 }
             }
         }
+        return lanClient()
     }
 
     private suspend fun HttpClient.pair(pin: String): HttpResponse =
@@ -93,7 +100,7 @@ class PairRouteTest {
     @Test
     fun `right pin returns a token whose hash is stored`() =
         testApplication {
-            setUp()
+            val client = setUp()
 
             val response = client.pair(pairing.currentPin())
 
@@ -106,7 +113,7 @@ class PairRouteTest {
     @Test
     fun `wrong pin is 401 wrong_pin without echoing the pin`() =
         testApplication {
-            setUp()
+            val client = setUp()
             val pin = wrongPin()
 
             val response = client.pair(pin)
@@ -120,7 +127,7 @@ class PairRouteTest {
     @Test
     fun `sixth attempt within a minute is 429 too_many_attempts`() =
         testApplication {
-            setUp()
+            val client = setUp()
             repeat(PairingManager.MAX_WRONG_ATTEMPTS) {
                 assertEquals(HttpStatusCode.Unauthorized, client.pair(wrongPin()).status)
             }
@@ -137,7 +144,7 @@ class PairRouteTest {
     @Test
     fun `rotated pin is rejected`() =
         testApplication {
-            setUp()
+            val client = setUp()
             val pin = pairing.currentPin()
             clock.now += PairingManager.PIN_LIFETIME_MS
 
@@ -147,7 +154,7 @@ class PairRouteTest {
     @Test
     fun `malformed pair body is 400 bad_request`() =
         testApplication {
-            setUp()
+            val client = setUp()
 
             val response =
                 client.post("/api/pair") {
@@ -162,7 +169,7 @@ class PairRouteTest {
     @Test
     fun `pair and status need no token`() =
         testApplication {
-            setUp()
+            val client = setUp()
 
             assertEquals(HttpStatusCode.OK, client.get("/api/status").status)
             assertEquals(HttpStatusCode.OK, client.pair(pairing.currentPin()).status)
@@ -171,7 +178,7 @@ class PairRouteTest {
     @Test
     fun `protected route accepts a paired bearer token`() =
         testApplication {
-            setUp()
+            val client = setUp()
             val token = client.pairedToken()
 
             val response = client.get("/api/test") { bearerAuth(token) }
@@ -183,7 +190,7 @@ class PairRouteTest {
     @Test
     fun `protected route rejects a missing token`() =
         testApplication {
-            setUp()
+            val client = setUp()
 
             client.get("/api/test").assertUnauthorized()
             assertEquals(0, handlerRuns)
@@ -192,7 +199,7 @@ class PairRouteTest {
     @Test
     fun `protected route rejects an unknown token without echoing it`() =
         testApplication {
-            setUp()
+            val client = setUp()
             val bogus = "not-a-real-token-1234567890"
 
             client.get("/api/test") { bearerAuth(bogus) }.assertUnauthorized(sentToken = bogus)
@@ -203,7 +210,7 @@ class PairRouteTest {
     @Test
     fun `query token is rejected by default`() =
         testApplication {
-            setUp()
+            val client = setUp()
             val token = client.pairedToken()
 
             client.get("/api/test?token=$token").assertUnauthorized(sentToken = token)
@@ -213,7 +220,7 @@ class PairRouteTest {
     @Test
     fun `query token is accepted with allowQueryToken`() =
         testApplication {
-            setUp()
+            val client = setUp()
             val token = client.pairedToken()
 
             assertEquals(HttpStatusCode.OK, client.get("/api/test-events?token=$token").status)
@@ -229,7 +236,7 @@ class PairRouteTest {
                 PairingManager(settings, CountingSecureRandom(), FakeClock()).let { first ->
                     (first.pair(first.currentPin()) as PairResult.Paired).token
                 }
-            setUp()
+            val client = setUp()
 
             assertEquals(HttpStatusCode.OK, client.get("/api/test") { bearerAuth(token) }.status)
         }
