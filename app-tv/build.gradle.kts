@@ -12,6 +12,11 @@ android {
         applicationId = "com.teachermovies.tv"
         minSdk = 26
         targetSdk = 35
+
+        // Native ABIs packaged for jlibtorrent/libVLC (docs/modules/infra.md); x86 is left out.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     compileOptions {
