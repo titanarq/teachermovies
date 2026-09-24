@@ -4,6 +4,7 @@ import com.teachermovies.core.model.DownloadState
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.http.auth.InMemorySettingsRepository
 import com.teachermovies.http.auth.PairingManager
+import com.teachermovies.http.auth.lanClient
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.FilePriority
 import com.teachermovies.torrent.fake.FakeTorrentEngine
@@ -49,6 +50,7 @@ class TorrentWriteRoutesTest {
             appVersion = "test",
             clock = { 0L },
             pairing = pairing,
+            allowTestRemoteHeader = true,
         )
 
     private val hashA = "a".repeat(40)
@@ -60,7 +62,7 @@ class TorrentWriteRoutesTest {
     private fun withApi(block: suspend ApplicationTestBuilder.(client: HttpClient, token: String) -> Unit) =
         testApplication {
             application { module(deps) }
-            val api = client
+            val api = lanClient()
             val body =
                 api.post("/api/pair") {
                     contentType(ContentType.Application.Json)
