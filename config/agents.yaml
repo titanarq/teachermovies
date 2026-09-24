@@ -116,7 +116,7 @@ planner:
   idle_wake_minutes: 120
   max_runs_per_day: 40   # raised 2026-09-24 (spend unrestricted until 17:00); revert to 20 after
   relaunch_cap: 3
-  max_parallel_issues: 1
+  max_parallel_issues: 2   # raised 2026-09-24 so claude can start while qwen finishes #75; revert to 1 after 17:00
   reconcile_closed_lookback_days: 30
   # Reviewed the refiner's dry run on #29/#81-#83 (2026-09-24); unattended from here on
   # (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
