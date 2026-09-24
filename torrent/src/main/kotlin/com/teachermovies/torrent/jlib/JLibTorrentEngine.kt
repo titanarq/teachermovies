@@ -419,13 +419,31 @@ class JLibTorrentEngine(
             EngineResult.Ok(Unit)
         }
 
-    /** The readiness query is implemented in #94: [EngineError.Unsupported] for a known torrent. */
+    /**
+     * Answers from [readinessFor] over the covering pieces, with `have_piece` saying which are on
+     * disk; `readyBytes` never runs past the end of the file. [EngineError.NotReady] before metadata
+     * or for a file index the torrent does not have.
+     */
     override suspend fun rangeReadiness(
         id: TorrentId,
         fileIndex: Int,
         byteOffset: Long,
         lengthBytes: Long,
-    ): EngineResult<RangeReadiness> = unsupported(id)
+    ): EngineResult<RangeReadiness> =
+        onHandle(id, needsMetadata = true) { handle ->
+            val layout = layoutOf(handle, fileIndex) ?: return@onHandle failure(EngineError.NotReady)
+            val length = lengthBytes.coerceAtMost(layout.fileSizeBytes - byteOffset)
+            EngineResult.Ok(
+                readinessFor(
+                    range = layout.piecesFor(byteOffset, length),
+                    pieceLengthBytes = layout.pieceLengthBytes,
+                    fileOffsetInTorrent = layout.fileOffsetInTorrent,
+                    byteOffset = byteOffset,
+                    lengthBytes = length,
+                    have = handle::havePiece,
+                ),
+            )
+        }
 
     // -- alert thread: copy plain values out, touch nothing else --------------------------------
 
@@ -776,11 +794,6 @@ class JLibTorrentEngine(
     }
 
     private fun nativeFailure(e: RuntimeException): EngineResult<Nothing> = failure(EngineError.Io(e.message ?: e.javaClass.name))
-
-    private suspend fun <T> unsupported(id: TorrentId): EngineResult<T> =
-        withContext(serial) {
-            if (id in snapshots) failure(EngineError.Unsupported) else failure(EngineError.UnknownTorrent)
-        }
 
     private fun failure(error: EngineError): EngineResult<Nothing> = EngineResult.Failure(error)
 
