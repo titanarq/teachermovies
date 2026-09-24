@@ -2,6 +2,7 @@ package com.teachermovies.http
 
 import com.teachermovies.http.auth.InMemorySettingsRepository
 import com.teachermovies.http.auth.PairingManager
+import com.teachermovies.http.auth.lanClient
 import com.teachermovies.torrent.fake.FakeTorrentEngine
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
@@ -25,12 +26,14 @@ class ErrorPagesTest {
             appVersion = "test",
             clock = { 0L },
             pairing = PairingManager(InMemorySettingsRepository(), SecureRandom(), { 0L }),
+            allowTestRemoteHeader = true,
         )
 
     @Test
     fun `unknown api route is a 404 JSON error`() =
         testApplication {
             application { module(deps) }
+            val client = lanClient()
 
             val response = client.get("/api/nope")
 
@@ -46,6 +49,7 @@ class ErrorPagesTest {
                 module(deps)
                 routing { get("/api/boom") { error("secret internal detail") } }
             }
+            val client = lanClient()
 
             val response = client.get("/api/boom")
             val body = response.bodyAsText()

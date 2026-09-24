@@ -2,6 +2,7 @@ package com.teachermovies.http
 
 import com.teachermovies.http.auth.InMemorySettingsRepository
 import com.teachermovies.http.auth.PairingManager
+import com.teachermovies.http.auth.lanClient
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.fake.FakeTorrentEngine
 import io.ktor.client.HttpClient
@@ -40,9 +41,13 @@ class TorrentReadRoutesTest {
             appVersion = "test",
             clock = { 0L },
             pairing = pairing,
+            allowTestRemoteHeader = true,
         )
 
-    private fun ApplicationTestBuilder.setUp() = application { module(deps) }
+    private fun ApplicationTestBuilder.setUp(): HttpClient {
+        application { module(deps) }
+        return lanClient()
+    }
 
     private suspend fun HttpClient.pairedToken(): String {
         val body =
@@ -64,7 +69,7 @@ class TorrentReadRoutesTest {
     @Test
     fun `list is empty with no torrents, and needs a token`() =
         testApplication {
-            setUp()
+            val client = setUp()
             val token = client.pairedToken()
 
             val ok = client.get("/api/torrents") { bearerAuth(token) }
@@ -78,7 +83,7 @@ class TorrentReadRoutesTest {
     @Test
     fun `list reports every torrent, before and after metadata`() =
         testApplication {
-            setUp()
+            val client = setUp()
             val token = client.pairedToken()
             val id = addTorrent('a')
             engine.emitMetadata(id, "Movie", listOf("Movie.mkv" to 100L))
@@ -99,7 +104,7 @@ class TorrentReadRoutesTest {
     @Test
     fun `single torrent 200s before and after metadata, 404s unknown, 400s invalid, 401s without a token`() =
         testApplication {
-            setUp()
+            val client = setUp()
             val token = client.pairedToken()
             val id = addTorrent('a')
 
@@ -132,7 +137,7 @@ class TorrentReadRoutesTest {
     @Test
     fun `files is 409 before metadata, 200 after, 404 unknown, 400 invalid, 401 without a token`() =
         testApplication {
-            setUp()
+            val client = setUp()
             val token = client.pairedToken()
             val id = addTorrent('a')
 

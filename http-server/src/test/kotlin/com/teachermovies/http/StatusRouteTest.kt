@@ -2,6 +2,7 @@ package com.teachermovies.http
 
 import com.teachermovies.http.auth.InMemorySettingsRepository
 import com.teachermovies.http.auth.PairingManager
+import com.teachermovies.http.auth.lanClient
 import com.teachermovies.storage.SpaceInfo
 import com.teachermovies.torrent.fake.FakeTorrentEngine
 import io.ktor.client.request.get
@@ -25,6 +26,7 @@ class StatusRouteTest {
             appVersion = "1.2.3",
             clock = { 0L },
             pairing = PairingManager(InMemorySettingsRepository(), SecureRandom(), { 0L }),
+            allowTestRemoteHeader = true,
         )
 
     @Test
@@ -34,6 +36,7 @@ class StatusRouteTest {
             engine.addMagnet("magnet:?xt=urn:btih:${"a".repeat(40)}")
             engine.addMagnet("magnet:?xt=urn:btih:${"b".repeat(40)}")
             application { module(deps(SpaceInfo(freeBytes = 123, totalBytes = 456))) }
+            val client = lanClient()
 
             val response = client.get("/api/status")
 
@@ -49,6 +52,7 @@ class StatusRouteTest {
     fun `status reports null space when unknown and the engine status lower-case`() =
         testApplication {
             application { module(deps(space = null)) }
+            val client = lanClient()
 
             val response = client.get("/api/status")
 
@@ -63,6 +67,7 @@ class StatusRouteTest {
     fun `status needs no token`() =
         testApplication {
             application { module(deps(space = null)) }
+            val client = lanClient()
 
             assertEquals(HttpStatusCode.OK, client.get("/api/status").status)
         }
@@ -71,6 +76,7 @@ class StatusRouteTest {
     fun `unknown api route is a 404 JSON error`() =
         testApplication {
             application { module(deps(space = null)) }
+            val client = lanClient()
 
             val response = client.get("/api/unknown")
 
