@@ -114,9 +114,9 @@ mechanism:
 
 planner:
   idle_wake_minutes: 120
-  max_runs_per_day: 60   # raised 2026-09-24 (spend unrestricted until 17:00); revert to 20 after
+  max_runs_per_day: 20
   relaunch_cap: 3
-  max_parallel_issues: 2   # raised 2026-09-24 so claude can start while qwen finishes #75; revert to 1 after 17:00
+  max_parallel_issues: 1
   reconcile_closed_lookback_days: 30
   # Reviewed the refiner's dry run on #29/#81-#83 (2026-09-24); unattended from here on
   # (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
@@ -124,8 +124,8 @@ planner:
 
 classes:
   mechanical-qwen:
-    backend: claude   # was qwen; switched 2026-09-24 (Claude budget to spend before 17:00) -- revert after
-    model: claude-opus-5
+    backend: qwen
+    model: qwen3.8-max
     max_context: 400000
     max_cost_usd: 5.0
     max_total_tokens: 80000000
@@ -133,8 +133,8 @@ classes:
     commit_cut_turns: 90
     qwen_fallback_eligible: false
   complex-qwen:
-    backend: claude   # was qwen; switched 2026-09-24 (Claude budget to spend before 17:00) -- revert after
-    model: claude-opus-5
+    backend: qwen
+    model: qwen3.8-max
     max_context: 800000
     max_cost_usd: 20.0
     max_total_tokens: 150000000
