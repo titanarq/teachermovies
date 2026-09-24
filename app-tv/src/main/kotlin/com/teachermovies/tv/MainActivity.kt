@@ -61,6 +61,9 @@ class MainActivity : ComponentActivity() {
             settings = container.settingsRepository,
             volumes = container.storageVolumeProvider,
             space = container.spaceProvider,
+            pin = container.pairingManager::currentPin,
+            serverState = container.httpServerController.state,
+            serverUrl = serverUrl(container),
         )
     }
 
@@ -86,6 +89,8 @@ class MainActivity : ComponentActivity() {
             space = container.spaceProvider,
             engine = container.torrentEngine,
             lan = container.lanAddressResolver,
+            pin = container.pairingManager::currentPin,
+            serverState = container.httpServerController.state,
         )
     }
 
