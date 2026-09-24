@@ -11,6 +11,15 @@
   (`state` stores the `DownloadState` name), and `TorrentDao` (`upsert`, `get`, `observeAll`
   newest first by `addedAtEpochMs`, `observeByState`, `updateProgress`, `updatePlayback`,
   `delete`). Schemas are exported to `core-model/schemas/` and committed.
+- `TorrentRepository` (`com.teachermovies.core.repo`) is the domain-level read/write path over
+  `TorrentDao`: `observeDownloads()`/`observeLibrary()` split torrents by `DownloadState.Completed`
+  (library = completed with a known main file, newest completed first), `upsert(torrent,
+  mainFilePath, now)` keeps an existing row's `addedAtEpochMs` and stamps `completedAtEpochMs` only
+  the first time a torrent's state becomes `Completed`, and `updatePlayback`/`delete` round out the
+  contract. `RoomTorrentRepository` implements it over Room (an unknown persisted `state` string
+  maps to `DownloadState.Error`); `InMemoryTorrentRepository` in
+  `com.teachermovies.core.repo.fake` is the deterministic fake other modules' tests use (ADR-0003).
+  It does not keep itself in sync with the torrent engine -- that mapping is #68.
 - DataStore-backed settings (HTTP port, download volume, auth token hash, assistant preferences):
   `SettingsRepository` is the only read/write path -- `settings: Flow<AppSettings>` plus one setter
   per field -- and `DataStoreSettingsRepository` implements it over DataStore Preferences, with
