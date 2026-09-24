@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -25,8 +26,17 @@ dependencies {
     // The API adds a torrent to a chosen volume and reports both, so it needs the public types of
     // :torrent and :storage as well as :core-model (AGENTS.md dependency direction).
     implementation(project(":core-model"))
-    implementation(project(":torrent"))
-    implementation(project(":storage"))
+    // `api`: `ServerDeps` exposes `TorrentEngine` and `SpaceInfo` in its public constructor.
+    api(project(":torrent"))
+    api(project(":storage"))
+
+    // ADR-0002: Ktor server with the CIO engine, JSON via kotlinx.serialization, JSON error pages.
+    implementation(libs.ktor.server.core)
+    implementation(libs.ktor.server.cio)
+    implementation(libs.ktor.server.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.ktor.server.status.pages)
 
     testImplementation(libs.junit)
+    testImplementation(libs.ktor.server.test.host)
 }

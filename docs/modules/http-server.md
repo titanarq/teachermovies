@@ -15,6 +15,20 @@
   Logs redact both the header and the `token` query parameter.
 - The static web UI (`/`, `/static/*`) is public; it runs the pairing flow and sends the token itself.
 
+## Public contract (package `com.teachermovies.http`)
+- `LocalHttpServer(deps: ServerDeps, port: Int, host: String = "0.0.0.0")`: `start()` is
+  non-blocking (`embeddedServer(CIO, port, host) { module(deps) }.start(wait = false)`), `stop()` is
+  graceful and idempotent.
+- `fun Application.module(deps: ServerDeps)` holds all plugins and routing; tests run it in-process
+  with `testApplication { application { module(fakeDeps) } }`.
+- `ServerDeps(engine: TorrentEngine, space: () -> SpaceInfo?, appVersion: String, clock: () -> Long)`,
+  extended by later issues.
+- `GET /api/status` (public) -> 200
+  `{"version":"...","engine":"running","freeBytes":123,"totalBytes":456,"torrents":2}`; `engine` is
+  the `EngineStatus` in lower case, `freeBytes`/`totalBytes` are `null` when unknown.
+- Errors are JSON `{"error":"<code>","message":"..."}` (StatusPages): unknown `/api/*` route -> 404
+  `not_found`; any uncaught exception -> 500 `internal`, never with a stack trace or exception message.
+
 ## Boundaries
 - Talks to `TorrentEngine` and repositories through interfaces only. No UPnP, nothing exposed to the Internet. Never log tokens/PINs.
 
