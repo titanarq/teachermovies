@@ -46,8 +46,6 @@ import com.teachermovies.tv.autostart.BootAutostartCoordinator
 import com.teachermovies.tv.autostart.ServiceAutostart
 import com.teachermovies.tv.discovery.ServerAnnouncementCoordinator
 import com.teachermovies.tv.net.LanAddressResolver
-import java.io.File
-import java.security.SecureRandom
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -57,6 +55,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.runBlocking
+import java.io.File
+import java.security.SecureRandom
 
 /**
  * The whole object graph, built by hand: constructor injection only, no framework and no service
@@ -70,8 +70,9 @@ import kotlinx.coroutines.runBlocking
  * `com.teachermovies.torrent.jlib` type is named. No fake is wired in production code (ADR-0003
  * rule 3).
  */
-class AppContainer(application: Application) {
-
+class AppContainer(
+    application: Application,
+) {
     // DataStore rejects a second instance over a file one is already active on, so the store is
     // created once here and kept for the life of the process.
     private val dataStore: DataStore<Preferences> = application.settingsDataStore()
@@ -143,7 +144,14 @@ class AppContainer(application: Application) {
      */
     fun downloadVolumeSpace(): SpaceInfo? {
         val volume =
-            when (val selection = VolumeSelector.select(storageVolumeProvider.volumes(), persistedVolumeId.value, spaceProvider)) {
+            when (
+                val selection =
+                    VolumeSelector.select(
+                        storageVolumeProvider.volumes(),
+                        persistedVolumeId.value,
+                        spaceProvider,
+                    )
+            ) {
                 is VolumeSelection.Selected -> selection.volume
                 is VolumeSelection.PersistedMissing -> selection.fallback
                 VolumeSelection.NoneAvailable -> null
@@ -198,7 +206,10 @@ class AppContainer(application: Application) {
             appVersion = appVersion,
             clock = System::currentTimeMillis,
             pairing = pairingManager,
-            subtitles = LayoutSubtitleStore { id -> SubtitleLayoutResolver.layoutFor(id, torrentEngine.torrents.value) },
+            subtitles =
+                LayoutSubtitleStore { id ->
+                    SubtitleLayoutResolver.layoutFor(id, torrentEngine.torrents.value)
+                },
             library = torrentRepository,
         )
 

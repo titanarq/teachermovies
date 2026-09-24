@@ -1,8 +1,8 @@
 package com.teachermovies.assistant.subtitles
 
-import java.nio.charset.StandardCharsets
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.nio.charset.StandardCharsets
 
 class SubtitleCharsetTest {
     @Test

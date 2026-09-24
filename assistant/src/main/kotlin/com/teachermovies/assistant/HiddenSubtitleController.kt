@@ -9,7 +9,6 @@ import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.SubtitleExtraction
 import com.teachermovies.player.api.SubtitleFormat
 import com.teachermovies.player.api.Track
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +18,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 
 /** Where the cues of a hidden-mode session came from. */
 enum class SubtitleSource {
@@ -32,13 +32,17 @@ enum class SubtitleSource {
 /** Outcome of asking a [HiddenSubtitleController] to enter hidden mode for a media file. */
 sealed interface HiddenModeResult {
     /** Cues were found and parsed from [source]; the engine has the track and subtitles are off. */
-    data class Started(val source: SubtitleSource) : HiddenModeResult
+    data class Started(
+        val source: SubtitleSource,
+    ) : HiddenModeResult
 
     /** Neither a sidecar `.srt`/`.ass` nor an embedded text track for the requested language exists. */
     data object NoSubtitleFile : HiddenModeResult
 
     /** A sidecar file or embedded track was found but could not be turned into cues; [reason] says why. */
-    data class Unreadable(val reason: String) : HiddenModeResult
+    data class Unreadable(
+        val reason: String,
+    ) : HiddenModeResult
 }
 
 /**
@@ -211,9 +215,13 @@ class HiddenSubtitleController(
     private fun unreadable(reason: String): Parsing = Parsing.Failed(HiddenModeResult.Unreadable(reason))
 
     private sealed interface Parsing {
-        data class Ok(val track: SubtitleTrack) : Parsing
+        data class Ok(
+            val track: SubtitleTrack,
+        ) : Parsing
 
-        data class Failed(val result: HiddenModeResult.Unreadable) : Parsing
+        data class Failed(
+            val result: HiddenModeResult.Unreadable,
+        ) : Parsing
     }
 
     companion object {

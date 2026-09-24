@@ -27,7 +27,10 @@ object ServiceNames {
         return if (truncated.isEmpty()) BASE_NAME else "$PREFIX$truncated$SUFFIX"
     }
 
-    private fun truncateUtf8(text: String, maxBytes: Int): String {
+    private fun truncateUtf8(
+        text: String,
+        maxBytes: Int,
+    ): String {
         var bytes = 0
         var end = 0
         while (end < text.length) {

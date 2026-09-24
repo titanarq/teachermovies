@@ -43,7 +43,7 @@ internal fun Route.subtitleRoutes(deps: ServerDeps) {
     requireBearer(deps.pairing) {
         post("/api/subtitles") {
             when (val upload = call.receiveSubtitleUpload()) {
-                SubtitleUpload.Missing ->
+                SubtitleUpload.Missing -> {
                     call.respondApiError(
                         HttpStatusCode.BadRequest,
                         ApiError(
@@ -51,12 +51,18 @@ internal fun Route.subtitleRoutes(deps: ServerDeps) {
                             "Expected multipart fields \"$SUBTITLE_TORRENT_ID_FIELD\" and \"$SUBTITLE_FILE_FIELD\"",
                         ),
                     )
-                SubtitleUpload.TooLarge ->
+                }
+
+                SubtitleUpload.TooLarge -> {
                     call.respondApiError(
                         HttpStatusCode.PayloadTooLarge,
                         ApiError("too_large", "A subtitle file may be at most 2 MiB"),
                     )
-                is SubtitleUpload.Ready -> call.handleSubtitleUpload(deps, upload)
+                }
+
+                is SubtitleUpload.Ready -> {
+                    call.handleSubtitleUpload(deps, upload)
+                }
             }
         }
     }
@@ -81,22 +87,35 @@ private suspend fun ApplicationCall.handleSubtitleUpload(
     if (extension !in ALLOWED_SUBTITLE_EXTENSIONS) {
         respondApiError(
             HttpStatusCode.BadRequest,
-            ApiError("unsupported_subtitle", "Subtitle file must be one of ${ALLOWED_SUBTITLE_EXTENSIONS.sorted().joinToString()}"),
+            ApiError(
+                "unsupported_subtitle",
+                "Subtitle file must be one of ${ALLOWED_SUBTITLE_EXTENSIONS.sorted().joinToString()}",
+            ),
         )
         return
     }
     deps.subtitles.save(id.value, upload.fileName, upload.bytes).fold(
         onSuccess = { absolutePath ->
-            respond(HttpStatusCode.Created, SubtitleUploadResponse(path = "$SUBTITLES_SUBDIR/${File(absolutePath).name}"))
+            respond(
+                HttpStatusCode.Created,
+                SubtitleUploadResponse(path = "$SUBTITLES_SUBDIR/${File(absolutePath).name}"),
+            )
         },
         onFailure = {
-            respondApiError(HttpStatusCode.InternalServerError, ApiError("io_error", "Could not save the subtitle file"))
+            respondApiError(
+                HttpStatusCode.InternalServerError,
+                ApiError("io_error", "Could not save the subtitle file"),
+            )
         },
     )
 }
 
 private sealed interface SubtitleUpload {
-    data class Ready(val torrentId: String, val fileName: String, val bytes: ByteArray) : SubtitleUpload
+    data class Ready(
+        val torrentId: String,
+        val fileName: String,
+        val bytes: ByteArray,
+    ) : SubtitleUpload
 
     data object TooLarge : SubtitleUpload
 
@@ -125,13 +144,19 @@ private suspend fun ApplicationCall.receiveSubtitleUpload(): SubtitleUpload {
         val part = multipart.readPart() ?: break
         try {
             when {
-                part is PartData.FormItem && part.name == SUBTITLE_TORRENT_ID_FIELD -> torrentId = part.value
+                part is PartData.FormItem && part.name == SUBTITLE_TORRENT_ID_FIELD -> {
+                    torrentId = part.value
+                }
+
                 part is PartData.FileItem && part.name == SUBTITLE_FILE_FIELD -> {
                     fileName = part.originalFileName
                     val data = part.provider().readRemaining(MAX_SUBTITLE_FILE_BYTES + 1).readByteArray()
                     if (data.size > MAX_SUBTITLE_FILE_BYTES) tooLarge = true else bytes = data
                 }
-                else -> Unit
+
+                else -> {
+                    Unit
+                }
             }
         } finally {
             part.dispose()

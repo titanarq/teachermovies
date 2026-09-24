@@ -5,10 +5,10 @@ import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.SubtitleExtraction
 import com.teachermovies.player.api.SubtitleFormat
 import com.teachermovies.player.api.Track
-import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
 
 /**
  * In-memory [Player] for every test above `:player` (ADR-0003: fakes live in the main source set).
@@ -69,7 +69,9 @@ class FakePlayer : Player {
     override fun togglePlayPause() {
         when (mutableState.value) {
             PlayerState.Playing -> pause()
+
             PlayerState.Paused -> play()
+
             // Nothing to toggle: no media is loaded, it is not ready, or playback is over.
             PlayerState.Idle,
             PlayerState.Opening,
@@ -120,7 +122,10 @@ class FakePlayer : Player {
             return SubtitleExtraction.TrackNotFound
         }
         return when (val outcome = extractionOutcome) {
-            is ExtractionOutcome.Result -> outcome.result
+            is ExtractionOutcome.Result -> {
+                outcome.result
+            }
+
             is ExtractionOutcome.Text -> {
                 destination.writeText(outcome.text)
                 SubtitleExtraction.Extracted(destination, outcome.format)

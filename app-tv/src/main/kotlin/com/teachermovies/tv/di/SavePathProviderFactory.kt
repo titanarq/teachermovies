@@ -20,7 +20,6 @@ import java.io.File
  * (the app's internal storage) is used, so the provider never throws for a valid id.
  */
 object SavePathProviderFactory {
-
     /**
      * @param volumes the volumes currently available.
      * @param space free space, for the selector's fallback rule.

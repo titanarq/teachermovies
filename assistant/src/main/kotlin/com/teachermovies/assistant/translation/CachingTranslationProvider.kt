@@ -56,7 +56,10 @@ class CachingTranslationProvider(
                     cache[key] = result.text
                     result.copy(fromCache = false)
                 }
-                TranslationResult.Offline, is TranslationResult.Unavailable -> result
+
+                TranslationResult.Offline, is TranslationResult.Unavailable -> {
+                    result
+                }
             }
         }
     }

@@ -37,7 +37,6 @@ data class LibraryUiState(
 class LibraryViewModel(
     repo: TorrentRepository,
 ) : ViewModel() {
-
     val uiState: StateFlow<LibraryUiState> =
         repo
             .observeLibrary()

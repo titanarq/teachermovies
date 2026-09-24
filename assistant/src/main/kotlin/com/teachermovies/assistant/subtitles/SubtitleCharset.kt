@@ -11,9 +11,11 @@ import java.nio.charset.StandardCharsets
  */
 internal object SubtitleCharset {
     fun decode(bytes: ByteArray): String {
-        val strictUtf8Decoder = StandardCharsets.UTF_8.newDecoder()
-            .onMalformedInput(CodingErrorAction.REPORT)
-            .onUnmappableCharacter(CodingErrorAction.REPORT)
+        val strictUtf8Decoder =
+            StandardCharsets.UTF_8
+                .newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
         return try {
             strictUtf8Decoder.decode(ByteBuffer.wrap(bytes)).toString()
         } catch (_: CharacterCodingException) {

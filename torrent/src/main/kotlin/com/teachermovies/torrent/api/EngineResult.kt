@@ -6,7 +6,11 @@ package com.teachermovies.torrent.api
  * a caller pattern-matches the outcome instead of wrapping every call in a try/catch.
  */
 sealed interface EngineResult<out T> {
-    data class Ok<T>(val value: T) : EngineResult<T>
+    data class Ok<T>(
+        val value: T,
+    ) : EngineResult<T>
 
-    data class Failure(val error: EngineError) : EngineResult<Nothing>
+    data class Failure(
+        val error: EngineError,
+    ) : EngineResult<Nothing>
 }

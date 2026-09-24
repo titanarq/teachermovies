@@ -57,7 +57,9 @@ class AssParser : SubtitleParser {
                 }
 
                 // "Comment:" lines and anything else inside [Events] are ignored.
-                else -> Unit
+                else -> {
+                    Unit
+                }
             }
         }
         return buildTrack(rawCues)
@@ -73,14 +75,15 @@ class AssParser : SubtitleParser {
     }
 
     private fun cleanText(raw: String): String =
-        raw.replace(OVERRIDE_BLOCK_REGEX, "")
+        raw
+            .replace(OVERRIDE_BLOCK_REGEX, "")
             .replace("\\N", "\n")
             .replace("\\n", "\n")
             .replace("\\h", " ")
             .trim()
 
     private companion object {
-        const val BOM = "﻿"
+        const val BOM = ""
         val TIME_REGEX = Regex("""(\d+):(\d{2}):(\d{2})\.(\d{2})""")
         val OVERRIDE_BLOCK_REGEX = Regex("""\{[^}]*}""")
     }

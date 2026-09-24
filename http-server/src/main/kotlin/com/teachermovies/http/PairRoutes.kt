@@ -44,14 +44,20 @@ internal fun Route.pairRoutes(pairing: PairingManager) {
             return@post
         }
         when (val result = pairing.pair(request.pin)) {
-            is PairResult.Paired -> call.respond(PairResponse(result.token))
-            PairResult.WrongPin ->
+            is PairResult.Paired -> {
+                call.respond(PairResponse(result.token))
+            }
+
+            PairResult.WrongPin -> {
                 call.respond(HttpStatusCode.Unauthorized, ApiError("wrong_pin", "Wrong PIN"))
-            PairResult.TooManyAttempts ->
+            }
+
+            PairResult.TooManyAttempts -> {
                 call.respond(
                     HttpStatusCode.TooManyRequests,
                     ApiError("too_many_attempts", "Too many wrong PINs; try again in a minute"),
                 )
+            }
         }
     }
 }

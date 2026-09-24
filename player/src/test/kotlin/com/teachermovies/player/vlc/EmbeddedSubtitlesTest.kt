@@ -5,12 +5,12 @@ import com.teachermovies.player.api.SubtitleFormat
 import com.teachermovies.player.api.Track
 import com.teachermovies.player.mkv.EbmlWriter
 import com.teachermovies.player.mp4.Mp4Writer
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 /** [EmbeddedSubtitles]: container sniffing and the dispatch of a libVLC track id to its reader. */
 class EmbeddedSubtitlesTest {
@@ -31,7 +31,12 @@ class EmbeddedSubtitlesTest {
         Mp4Writer.mp4(
             listOf(
                 Mp4Writer.TrackSpec(1, "vide", "avc1", samples = listOf(Mp4Writer.Sample(ByteArray(100), 1_000))),
-                Mp4Writer.TrackSpec(2, "sbtl", "tx3g", samples = listOf(Mp4Writer.gap(250), Mp4Writer.tx3g("From MP4", 750))),
+                Mp4Writer.TrackSpec(
+                    2,
+                    "sbtl",
+                    "tx3g",
+                    samples = listOf(Mp4Writer.gap(250), Mp4Writer.tx3g("From MP4", 750)),
+                ),
             ),
         )
 
@@ -39,7 +44,10 @@ class EmbeddedSubtitlesTest {
     fun theContainerIsSniffedFromTheFirstBytes() {
         assertEquals(EmbeddedSubtitles.Container.MATROSKA, EmbeddedSubtitles.containerOf(write(mkv)))
         assertEquals(EmbeddedSubtitles.Container.MP4, EmbeddedSubtitles.containerOf(write(mp4)))
-        assertEquals(EmbeddedSubtitles.Container.OTHER, EmbeddedSubtitles.containerOf(write("RIFF....AVI LIST".toByteArray())))
+        assertEquals(
+            EmbeddedSubtitles.Container.OTHER,
+            EmbeddedSubtitles.containerOf(write("RIFF....AVI LIST".toByteArray())),
+        )
         assertEquals(EmbeddedSubtitles.Container.OTHER, EmbeddedSubtitles.containerOf(write(ByteArray(3))))
         assertEquals(EmbeddedSubtitles.Container.OTHER, EmbeddedSubtitles.containerOf(tmp.root.resolve("missing")))
     }
@@ -69,7 +77,10 @@ class EmbeddedSubtitlesTest {
         val out = destination
         val tracks = listOf(Track("7", "Track 1", null), Track("8", "external.srt", null))
 
-        assertEquals(SubtitleExtraction.Extracted(out, SubtitleFormat.SRT), EmbeddedSubtitles.extract(write(mp4), "7", tracks, out))
+        assertEquals(
+            SubtitleExtraction.Extracted(out, SubtitleFormat.SRT),
+            EmbeddedSubtitles.extract(write(mp4), "7", tracks, out),
+        )
         // The track after the embedded ones is an external slave: nothing to extract.
         assertEquals(SubtitleExtraction.TrackNotFound, EmbeddedSubtitles.extract(write(mp4), "8", tracks, out))
     }
@@ -80,13 +91,22 @@ class EmbeddedSubtitlesTest {
         val webmLike = write(EbmlWriter.mkv(listOf(), docType = "notmatroska"))
         val tracks = listOf(Track("3", "Track 1", null))
 
-        assertEquals(SubtitleExtraction.Failed("container not supported"), EmbeddedSubtitles.extract(avi, "3", tracks, destination))
-        assertEquals(SubtitleExtraction.Failed("container not supported"), EmbeddedSubtitles.extract(webmLike, "3", tracks, destination))
+        assertEquals(
+            SubtitleExtraction.Failed("container not supported"),
+            EmbeddedSubtitles.extract(avi, "3", tracks, destination),
+        )
+        assertEquals(
+            SubtitleExtraction.Failed("container not supported"),
+            EmbeddedSubtitles.extract(webmLike, "3", tracks, destination),
+        )
         assertFalse(destination.exists())
     }
 
     @Test
     fun anIdLibVlcDoesNotListIsNotFound() {
-        assertEquals(SubtitleExtraction.TrackNotFound, EmbeddedSubtitles.extract(write(mp4), "2", emptyList(), destination))
+        assertEquals(
+            SubtitleExtraction.TrackNotFound,
+            EmbeddedSubtitles.extract(write(mp4), "2", emptyList(), destination),
+        )
     }
 }

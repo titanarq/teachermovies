@@ -6,7 +6,6 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class RemoteKeyMapperTest {
-
     @Test
     fun everyMappedKeyGivesItsAction() {
         val expected =

@@ -9,7 +9,9 @@ private val INFO_HASH_PATTERN = Regex("^[0-9a-f]{40}$|^[0-9a-f]{64}$")
  * is not exactly a lower-case hex info-hash is rejected here instead of at each use site.
  */
 @JvmInline
-value class TorrentId(val value: String) {
+value class TorrentId(
+    val value: String,
+) {
     init {
         require(value.matches(INFO_HASH_PATTERN)) {
             "info-hash must be 40 or 64 lower-case hex characters, was '$value'"

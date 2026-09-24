@@ -208,7 +208,13 @@ class AnthropicTranslationProviderTest {
             http.respond(200, message("Hola."))
             counting.translate("Hello.")
             assertEquals(2, built)
-            assertEquals(listOf("sk-ant-test-other"), http.requests.last().headers.values("x-api-key"))
+            assertEquals(
+                listOf("sk-ant-test-other"),
+                http.requests
+                    .last()
+                    .headers
+                    .values("x-api-key"),
+            )
         }
 
     private companion object {

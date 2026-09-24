@@ -23,7 +23,6 @@ import org.junit.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryViewModelTest {
-
     private val repo = InMemoryTorrentRepository()
 
     @Before
@@ -40,7 +39,10 @@ class LibraryViewModelTest {
     fun emptyRepositoryMeansNoCards() {
         val viewModel = LibraryViewModel(repo)
 
-        assertTrue(viewModel.uiState.value.items.isEmpty())
+        assertTrue(
+            viewModel.uiState.value.items
+                .isEmpty(),
+        )
     }
 
     @Test
@@ -48,7 +50,9 @@ class LibraryViewModelTest {
         val viewModel = LibraryViewModel(repo)
         store(id(1), "Movie", DownloadState.Completed, totalBytes = 25_600_000_000L, now = 10)
 
-        val card = viewModel.uiState.value.items.single()
+        val card =
+            viewModel.uiState.value.items
+                .single()
 
         assertEquals(LibraryCard(id = id(1), title = "Movie", sizeText = "25,6 GB", resumeText = null), card)
     }
@@ -59,7 +63,12 @@ class LibraryViewModelTest {
         store(id(1), "Movie", DownloadState.Completed, now = 10)
         runBlocking { repo.updatePlayback(id(1), positionMs = 3_725_000L, audioTrackId = null, subtitleTrackId = null) }
 
-        assertEquals("Continuar en 1 h 2 min", viewModel.uiState.value.items.single().resumeText)
+        assertEquals(
+            "Continuar en 1 h 2 min",
+            viewModel.uiState.value.items
+                .single()
+                .resumeText,
+        )
     }
 
     @Test
@@ -68,7 +77,11 @@ class LibraryViewModelTest {
         store(id(1), "Movie", DownloadState.Completed, now = 10)
         runBlocking { repo.updatePlayback(id(1), positionMs = 0L, audioTrackId = null, subtitleTrackId = null) }
 
-        assertNull(viewModel.uiState.value.items.single().resumeText)
+        assertNull(
+            viewModel.uiState.value.items
+                .single()
+                .resumeText,
+        )
     }
 
     @Test
@@ -78,20 +91,34 @@ class LibraryViewModelTest {
         store(id(2), "Still downloading", DownloadState.Downloading, now = 20)
         store(id(3), "Newer", DownloadState.Completed, now = 30)
 
-        assertEquals(listOf("Newer", "Older"), viewModel.uiState.value.items.map { it.title })
+        assertEquals(
+            listOf("Newer", "Older"),
+            viewModel.uiState.value.items
+                .map { it.title },
+        )
     }
 
     @Test
     fun aDownloadThatCompletesAppearsAndADeletedOneDisappears() {
         val viewModel = LibraryViewModel(repo)
         store(id(1), "Movie", DownloadState.Downloading, now = 10)
-        assertTrue(viewModel.uiState.value.items.isEmpty())
+        assertTrue(
+            viewModel.uiState.value.items
+                .isEmpty(),
+        )
 
         store(id(1), "Movie", DownloadState.Completed, now = 20)
-        assertEquals(listOf(id(1)), viewModel.uiState.value.items.map { it.id })
+        assertEquals(
+            listOf(id(1)),
+            viewModel.uiState.value.items
+                .map { it.id },
+        )
 
         runBlocking { repo.delete(id(1)) }
-        assertTrue(viewModel.uiState.value.items.isEmpty())
+        assertTrue(
+            viewModel.uiState.value.items
+                .isEmpty(),
+        )
     }
 
     private fun id(n: Int) = TorrentId(n.toString().padStart(40, '0'))

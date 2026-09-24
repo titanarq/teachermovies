@@ -12,7 +12,9 @@ sealed interface PlayerAction {
     data object Pause : PlayerAction
 
     /** Seek [deltaMs] relative to the current position (negative = back). */
-    data class SeekBy(val deltaMs: Long) : PlayerAction
+    data class SeekBy(
+        val deltaMs: Long,
+    ) : PlayerAction
 
     /** Open the audio/subtitle track panel (#79). */
     data object ShowTracks : PlayerAction

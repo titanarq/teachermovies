@@ -9,7 +9,9 @@ import kotlinx.coroutines.flow.asStateFlow
  * talks to the platform. Callbacks from a registration that has since been replaced or stopped
  * are ignored, so a late platform callback can never overwrite the current state.
  */
-class NsdServiceAnnouncer(private val registrar: NsdRegistrar) : ServiceAnnouncer {
+class NsdServiceAnnouncer(
+    private val registrar: NsdRegistrar,
+) : ServiceAnnouncer {
     private val lock = Any()
     private val _state = MutableStateFlow<AnnouncementState>(AnnouncementState.Idle)
 
@@ -65,7 +67,9 @@ class NsdServiceAnnouncer(private val registrar: NsdRegistrar) : ServiceAnnounce
         }
     }
 
-    private inner class Registration(val info: TvServiceInfo) : RegistrationCallback {
+    private inner class Registration(
+        val info: TvServiceInfo,
+    ) : RegistrationCallback {
         override fun onRegistered(registeredName: String) {
             synchronized(lock) {
                 if (current !== this) return
@@ -93,7 +97,9 @@ class NsdServiceAnnouncer(private val registrar: NsdRegistrar) : ServiceAnnounce
     private companion object {
         val VALID_PORTS = 1..65535
 
-        fun reason(action: String, e: Exception): String =
-            "$action failed: ${e.message ?: e.javaClass.simpleName}"
+        fun reason(
+            action: String,
+            e: Exception,
+        ): String = "$action failed: ${e.message ?: e.javaClass.simpleName}"
     }
 }

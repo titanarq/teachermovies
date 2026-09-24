@@ -16,7 +16,6 @@ import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.session.PlaybackSession
 import com.teachermovies.player.session.SessionResult
 import com.teachermovies.tv.format.Formatters
-import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +30,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * Everything the player screen draws, fully formatted (#78). [progress] (0..1) sizes the overlay's
@@ -103,7 +103,6 @@ class PlayerViewModel(
     private val closeScope: CoroutineScope? = null,
     private val prepareDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
-
     private data class Local(
         val title: String = "",
         val overlayVisible: Boolean = true,
@@ -142,7 +141,13 @@ class PlayerViewModel(
     private val panels = combine(tracks, assistant, ::Pair)
 
     val uiState: StateFlow<PlayerUiState> =
-        combine(local, player.state, player.positionMs, player.durationMs, panels) { local, state, position, duration, panels ->
+        combine(
+            local,
+            player.state,
+            player.positionMs,
+            player.durationMs,
+            panels,
+        ) { local, state, position, duration, panels ->
             val (tracks, assistant) = panels
             val error = errorOf(local, state)
             // An error replaces the picture, assistant overlay included.
@@ -185,10 +190,19 @@ class PlayerViewModel(
                         val available = hidden.start(File(result.item.mainFilePath)) is HiddenModeResult.Started
                         local.update { it.copy(assistantAvailable = available) }
                     }
-                    SessionResult.NotFound -> local.update { it.copy(error = NOT_FOUND) }
-                    is SessionResult.FileMissing -> local.update { it.copy(error = FILE_MISSING) }
+
+                    SessionResult.NotFound -> {
+                        local.update { it.copy(error = NOT_FOUND) }
+                    }
+
+                    is SessionResult.FileMissing -> {
+                        local.update { it.copy(error = FILE_MISSING) }
+                    }
+
                     // Only `openStreaming` answers this; the screen does not stream yet (#78).
-                    is SessionResult.StreamingFailed -> local.update { it.copy(error = STREAMING_FAILED) }
+                    is SessionResult.StreamingFailed -> {
+                        local.update { it.copy(error = STREAMING_FAILED) }
+                    }
                 }
             }
         showOverlay()
@@ -272,6 +286,7 @@ class PlayerViewModel(
                 messageJob?.cancel()
                 local.update { it.copy(overlayVisible = false, message = null) }
             }
+
             CaptureResult.NoLine -> {
                 // capture() paused the movie; give it back as it was.
                 if (wasPlaying) player.play()
@@ -382,7 +397,14 @@ class PlayerViewModel(
                 "Unknown ViewModel class ${modelClass.name}"
             }
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-            return PlayerViewModel(PlaybackSession(player, repo, scope, clock), player, hidden, capture, speech, scope) as T
+            return PlayerViewModel(
+                PlaybackSession(player, repo, scope, clock),
+                player,
+                hidden,
+                capture,
+                speech,
+                scope,
+            ) as T
         }
     }
 

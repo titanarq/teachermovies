@@ -4,9 +4,8 @@ import com.teachermovies.player.api.SubtitleExtraction
 import com.teachermovies.player.api.SubtitleFormat
 import com.teachermovies.player.api.Track
 import com.teachermovies.player.fake.FakePlayer
-import java.io.File
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
@@ -18,6 +17,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 class HiddenSubtitleControllerTest {
     @get:Rule

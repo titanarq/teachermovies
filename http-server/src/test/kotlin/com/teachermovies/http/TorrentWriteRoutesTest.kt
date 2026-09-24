@@ -67,11 +67,16 @@ class TorrentWriteRoutesTest {
             application { module(deps) }
             val api = lanClient()
             val body =
-                api.post("/api/pair") {
-                    contentType(ContentType.Application.Json)
-                    setBody("""{"pin":"${pairing.currentPin()}"}""")
-                }.bodyAsText()
-            val token = Json.parseToJsonElement(body).jsonObject["token"]!!.jsonPrimitive.content
+                api
+                    .post("/api/pair") {
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"pin":"${pairing.currentPin()}"}""")
+                    }.bodyAsText()
+            val token =
+                Json
+                    .parseToJsonElement(body)
+                    .jsonObject["token"]!!
+                    .jsonPrimitive.content
             block(api, token)
         }
 
@@ -108,7 +113,11 @@ class TorrentWriteRoutesTest {
                 },
         ) { token?.let { bearerAuth(it) } }
 
-    private fun HttpResponse.errorCode(body: String): String = Json.parseToJsonElement(body).jsonObject["error"]!!.jsonPrimitive.content
+    private fun HttpResponse.errorCode(body: String): String =
+        Json
+            .parseToJsonElement(body)
+            .jsonObject["error"]!!
+            .jsonPrimitive.content
 
     // -- POST /api/torrents/magnet --
 
@@ -163,7 +172,10 @@ class TorrentWriteRoutesTest {
 
     private val torrentBytes = "d8:announce0:4:infod4:name5:movieee".toByteArray()
 
-    private fun sha1Hex(bytes: ByteArray): String = MessageDigest.getInstance("SHA-1").digest(bytes).joinToString("") { "%02x".format(it) }
+    private fun sha1Hex(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-1").digest(bytes).joinToString("") {
+            "%02x".format(it)
+        }
 
     @Test
     fun `torrent file adds the torrent and answers 201`() =
@@ -236,11 +248,21 @@ class TorrentWriteRoutesTest {
 
             val paused = client.post("/api/torrents/${id.value}/pause") { bearerAuth(token) }
             assertEquals(HttpStatusCode.NoContent, paused.status)
-            assertEquals(DownloadState.Paused, engine.torrents.value.single().state)
+            assertEquals(
+                DownloadState.Paused,
+                engine.torrents.value
+                    .single()
+                    .state,
+            )
 
             val resumed = client.post("/api/torrents/${id.value}/resume") { bearerAuth(token) }
             assertEquals(HttpStatusCode.NoContent, resumed.status)
-            assertEquals(DownloadState.Downloading, engine.torrents.value.single().state)
+            assertEquals(
+                DownloadState.Downloading,
+                engine.torrents.value
+                    .single()
+                    .state,
+            )
 
             assertEquals(listOf("pause(${id.value})", "resume(${id.value})"), engine.recordedCalls)
         }
@@ -277,7 +299,10 @@ class TorrentWriteRoutesTest {
             val a = addTorrent('a')
             val b = addTorrent('b')
 
-            assertEquals(HttpStatusCode.NoContent, client.delete("/api/torrents/${a.value}") { bearerAuth(token) }.status)
+            assertEquals(
+                HttpStatusCode.NoContent,
+                client.delete("/api/torrents/${a.value}") { bearerAuth(token) }.status,
+            )
             assertEquals(
                 HttpStatusCode.NoContent,
                 client.delete("/api/torrents/${b.value}?deleteFiles=true") { bearerAuth(token) }.status,
@@ -292,7 +317,10 @@ class TorrentWriteRoutesTest {
         withApi { client, _ ->
             val id = addTorrent('a')
 
-            assertEquals(HttpStatusCode.Unauthorized, client.delete("/api/torrents/${id.value}?deleteFiles=true").status)
+            assertEquals(
+                HttpStatusCode.Unauthorized,
+                client.delete("/api/torrents/${id.value}?deleteFiles=true").status,
+            )
             assertTrue(engine.recordedCalls.isEmpty())
             assertEquals(1, engine.torrents.value.size)
         }
@@ -334,7 +362,12 @@ class TorrentWriteRoutesTest {
             val id = addTorrent('a')
             engine.emitMetadata(id, "Movie", listOf("Movie.mkv" to 100L, "extras.mkv" to 50L))
 
-            val response = client.putFiles(id.value, """[{"index":0,"priority":"high"},{"index":1,"priority":"skip"}]""", token)
+            val response =
+                client.putFiles(
+                    id.value,
+                    """[{"index":0,"priority":"high"},{"index":1,"priority":"skip"}]""",
+                    token,
+                )
 
             assertEquals(HttpStatusCode.NoContent, response.status)
             assertEquals(listOf("setFilePriorities(${id.value},{0=High, 1=Skip})"), engine.recordedCalls)
@@ -348,7 +381,10 @@ class TorrentWriteRoutesTest {
             val id = addTorrent('a')
             engine.emitMetadata(id, "Movie", listOf("Movie.mkv" to 100L))
 
-            assertEquals(HttpStatusCode.Unauthorized, client.putFiles(id.value, """[{"index":0,"priority":"skip"}]""", null).status)
+            assertEquals(
+                HttpStatusCode.Unauthorized,
+                client.putFiles(id.value, """[{"index":0,"priority":"skip"}]""", null).status,
+            )
             assertTrue(engine.recordedCalls.isEmpty())
         }
 
@@ -374,7 +410,12 @@ class TorrentWriteRoutesTest {
             assertEquals(HttpStatusCode.BadRequest, badPriority.status)
             assertEquals("invalid_priority", badPriority.errorCode(badPriority.bodyAsText()))
 
-            val badIndex = client.putFiles(id.value, """[{"index":0,"priority":"high"},{"index":7,"priority":"skip"}]""", token)
+            val badIndex =
+                client.putFiles(
+                    id.value,
+                    """[{"index":0,"priority":"high"},{"index":7,"priority":"skip"}]""",
+                    token,
+                )
             assertEquals(HttpStatusCode.BadRequest, badIndex.status)
             assertEquals("invalid_index", badIndex.errorCode(badIndex.bodyAsText()))
 

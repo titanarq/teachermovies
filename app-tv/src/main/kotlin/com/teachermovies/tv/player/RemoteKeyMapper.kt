@@ -22,16 +22,25 @@ object RemoteKeyMapper {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
             KeyEvent.KEYCODE_SPACE,
             -> PlayerAction.TogglePlayPause
+
             KeyEvent.KEYCODE_MEDIA_PLAY -> PlayerAction.Play
+
             KeyEvent.KEYCODE_MEDIA_PAUSE -> PlayerAction.Pause
+
             KeyEvent.KEYCODE_DPAD_LEFT -> PlayerAction.SeekBy(-SHORT_SEEK_MS)
+
             KeyEvent.KEYCODE_DPAD_RIGHT -> PlayerAction.SeekBy(SHORT_SEEK_MS)
+
             KeyEvent.KEYCODE_MEDIA_REWIND -> PlayerAction.SeekBy(-LONG_SEEK_MS)
+
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> PlayerAction.SeekBy(LONG_SEEK_MS)
+
             KeyEvent.KEYCODE_DPAD_UP,
             KeyEvent.KEYCODE_MENU,
             -> PlayerAction.ShowTracks
+
             KeyEvent.KEYCODE_BACK -> PlayerAction.Exit
+
             else -> null
         }
 }

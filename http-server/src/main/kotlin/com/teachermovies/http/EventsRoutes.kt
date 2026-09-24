@@ -67,8 +67,7 @@ internal fun Route.eventsRoutes(deps: ServerDeps) {
                                 .transform { list ->
                                     emit(list)
                                     delay(THROTTLE_MS)
-                                }
-                                .collect { list ->
+                                }.collect { list ->
                                     write(SseFormat.event("torrents", eventsJson.encodeToString(list)))
                                     flush()
                                 }

@@ -11,8 +11,6 @@ import com.teachermovies.torrent.api.EngineStatus
 import com.teachermovies.torrent.fake.FakeTorrentEngine
 import com.teachermovies.tv.net.LanAddressResolver
 import com.teachermovies.tv.net.NetIf
-import java.io.File
-import java.net.InetAddress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -30,10 +28,11 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.File
+import java.net.InetAddress
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FirstRunViewModelTest {
-
     private val internal = volume(id = "primary", primary = true)
     private val usb = volume(id = "USB-1", removable = true)
 
@@ -67,7 +66,10 @@ class FirstRunViewModelTest {
     @Test
     fun initialStateShowsServerUrlSpaceFolderAndEngineStatus() {
         val settings = InMemorySettingsRepository(AppSettings(httpPort = 8787, downloadVolumeId = "primary"))
-        val viewModel = FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal, usb)), space, engine, lan, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal, usb)), space, engine, lan, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         assertEquals(
             FirstRunUiState(
@@ -84,7 +86,21 @@ class FirstRunViewModelTest {
 
     @Test
     fun serverStateFollowsTheController() {
-        val viewModel = FirstRunViewModel(InMemorySettingsRepository(AppSettings()), FakeVolumeProvider(listOf(internal)), space, engine, lan, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            FirstRunViewModel(
+                InMemorySettingsRepository(
+                    AppSettings(),
+                ),
+                FakeVolumeProvider(listOf(internal)),
+                space,
+                engine,
+                lan,
+                pin = {
+                    pin
+                },
+                serverState = serverState,
+                pinTicks = pinTicks,
+            )
 
         serverState.value = ServerState.Failed(8787, "Address already in use")
         assertEquals(ServerState.Failed(8787, "Address already in use"), viewModel.uiState.value.serverState)
@@ -95,7 +111,21 @@ class FirstRunViewModelTest {
 
     @Test
     fun pinIsReReadOnRefreshServerChangeAndTick() {
-        val viewModel = FirstRunViewModel(InMemorySettingsRepository(AppSettings()), FakeVolumeProvider(listOf(internal)), space, engine, lan, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            FirstRunViewModel(
+                InMemorySettingsRepository(
+                    AppSettings(),
+                ),
+                FakeVolumeProvider(listOf(internal)),
+                space,
+                engine,
+                lan,
+                pin = {
+                    pin
+                },
+                serverState = serverState,
+                pinTicks = pinTicks,
+            )
         assertEquals("482916", viewModel.uiState.value.pin)
 
         pin = "000123"
@@ -114,7 +144,10 @@ class FirstRunViewModelTest {
     @Test
     fun serverUrlFollowsThePersistedPort() {
         val settings = InMemorySettingsRepository(AppSettings(httpPort = 9000))
-        val viewModel = FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal)), space, engine, lan, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal)), space, engine, lan, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         assertEquals("http://192.168.1.50:9000", viewModel.uiState.value.serverUrl)
     }
@@ -122,7 +155,21 @@ class FirstRunViewModelTest {
     @Test
     fun noLanAddressMeansNoServerUrl() {
         interfaces = emptyList()
-        val viewModel = FirstRunViewModel(InMemorySettingsRepository(AppSettings()), FakeVolumeProvider(listOf(internal)), space, engine, lan, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            FirstRunViewModel(
+                InMemorySettingsRepository(
+                    AppSettings(),
+                ),
+                FakeVolumeProvider(listOf(internal)),
+                space,
+                engine,
+                lan,
+                pin = {
+                    pin
+                },
+                serverState = serverState,
+                pinTicks = pinTicks,
+            )
 
         assertNull(viewModel.uiState.value.serverUrl)
     }
@@ -131,7 +178,10 @@ class FirstRunViewModelTest {
     fun refreshPicksUpANewLanAddressAndVolume() {
         interfaces = emptyList()
         val volumes = FakeVolumeProvider(listOf(internal))
-        val viewModel = FirstRunViewModel(InMemorySettingsRepository(AppSettings()), volumes, space, engine, lan, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            FirstRunViewModel(InMemorySettingsRepository(AppSettings()), volumes, space, engine, lan, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         interfaces = listOf(wlan("192.168.1.50"))
         volumes.current = listOf(internal, usb)
@@ -146,7 +196,10 @@ class FirstRunViewModelTest {
     @Test
     fun missingPersistedVolumeShowsTheFallback() {
         val settings = InMemorySettingsRepository(AppSettings(downloadVolumeId = "USB-1"))
-        val viewModel = FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal)), space, engine, lan, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal)), space, engine, lan, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         assertEquals(5_000_000_000, viewModel.uiState.value.freeBytes)
         assertEquals(File(internal.root, "Movies").path, viewModel.uiState.value.downloadFolder)
@@ -154,7 +207,21 @@ class FirstRunViewModelTest {
 
     @Test
     fun noVolumeMeansNoSpaceAndNoFolder() {
-        val viewModel = FirstRunViewModel(InMemorySettingsRepository(AppSettings()), FakeVolumeProvider(emptyList()), space, engine, lan, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            FirstRunViewModel(
+                InMemorySettingsRepository(
+                    AppSettings(),
+                ),
+                FakeVolumeProvider(emptyList()),
+                space,
+                engine,
+                lan,
+                pin = {
+                    pin
+                },
+                serverState = serverState,
+                pinTicks = pinTicks,
+            )
 
         assertNull(viewModel.uiState.value.freeBytes)
         assertNull(viewModel.uiState.value.downloadFolder)
@@ -162,7 +229,21 @@ class FirstRunViewModelTest {
 
     @Test
     fun engineStatusFollowsTheEngine() {
-        val viewModel = FirstRunViewModel(InMemorySettingsRepository(AppSettings()), FakeVolumeProvider(listOf(internal)), space, engine, lan, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            FirstRunViewModel(
+                InMemorySettingsRepository(
+                    AppSettings(),
+                ),
+                FakeVolumeProvider(listOf(internal)),
+                space,
+                engine,
+                lan,
+                pin = {
+                    pin
+                },
+                serverState = serverState,
+                pinTicks = pinTicks,
+            )
 
         engine.setEngineStatus(EngineStatus.Starting)
         assertEquals(EngineStatus.Starting, viewModel.uiState.value.engineStatus)
@@ -177,7 +258,10 @@ class FirstRunViewModelTest {
     @Test
     fun firstRunCompletedMirrorsTheSetting() {
         val settings = InMemorySettingsRepository(AppSettings(firstRunCompleted = false))
-        val viewModel = FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal)), space, engine, lan, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal)), space, engine, lan, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         assertEquals(false, viewModel.firstRunCompleted.value)
     }
@@ -185,7 +269,10 @@ class FirstRunViewModelTest {
     @Test
     fun completePersistsFirstRunCompleted() {
         val settings = InMemorySettingsRepository(AppSettings(firstRunCompleted = false))
-        val viewModel = FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal)), space, engine, lan, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal)), space, engine, lan, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
         assertFalse(settings.current.firstRunCompleted)
 
         viewModel.complete()
@@ -211,7 +298,9 @@ class FirstRunViewModelTest {
         NetIf(name = "wlan0", isUp = true, isLoopback = false, addresses = listOf(InetAddress.getByName(ip)))
 
     /** Mirrors `DataStoreSettingsRepository`: same defaults, same port validation. */
-    private class InMemorySettingsRepository(initial: AppSettings) : SettingsRepository {
+    private class InMemorySettingsRepository(
+        initial: AppSettings,
+    ) : SettingsRepository {
         private val state = MutableStateFlow(initial)
 
         val current: AppSettings get() = state.value
@@ -244,11 +333,15 @@ class FirstRunViewModelTest {
         }
     }
 
-    private class FakeVolumeProvider(var current: List<VolumeInfo>) : StorageVolumeProvider {
+    private class FakeVolumeProvider(
+        var current: List<VolumeInfo>,
+    ) : StorageVolumeProvider {
         override fun volumes(): List<VolumeInfo> = current
     }
 
-    private class FakeSpaceProvider(private val byRoot: Map<File, SpaceInfo>) : SpaceProvider {
+    private class FakeSpaceProvider(
+        private val byRoot: Map<File, SpaceInfo>,
+    ) : SpaceProvider {
         override fun spaceOf(root: File): SpaceInfo = byRoot[root] ?: SpaceInfo(freeBytes = 0, totalBytes = 0)
     }
 }

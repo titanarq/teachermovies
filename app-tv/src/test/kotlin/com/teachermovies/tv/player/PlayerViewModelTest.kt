@@ -23,7 +23,6 @@ import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.Track
 import com.teachermovies.player.fake.FakePlayer
 import com.teachermovies.player.session.PlaybackSession
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -42,6 +41,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 /**
  * [PlayerViewModel] over a real [PlaybackSession] driven by [FakePlayer] and
@@ -379,12 +379,24 @@ class PlayerViewModelTest {
             val vm = openedViewModel()
             vm.onAction(PlayerAction.ShowTracks)
             runCurrent()
-            assertEquals(emptyList<TrackOption>(), vm.uiState.value.tracksPanel?.audio)
-            assertEquals(listOf(TrackOption(null, "Desactivados", true)), vm.uiState.value.tracksPanel?.subtitles)
+            assertEquals(
+                emptyList<TrackOption>(),
+                vm.uiState.value.tracksPanel
+                    ?.audio,
+            )
+            assertEquals(
+                listOf(TrackOption(null, "Desactivados", true)),
+                vm.uiState.value.tracksPanel
+                    ?.subtitles,
+            )
 
             player.emitTracks(audio = listOf(english), subs = emptyList())
             runCurrent()
-            assertEquals(listOf(TrackOption("a1", "English", true)), vm.uiState.value.tracksPanel?.audio)
+            assertEquals(
+                listOf(TrackOption("a1", "English", true)),
+                vm.uiState.value.tracksPanel
+                    ?.audio,
+            )
 
             player.fail("codec")
             runCurrent()
@@ -587,13 +599,22 @@ class PlayerViewModelTest {
             runCurrent()
 
             assertEquals(listOf("Hello there." to SpeechLanguage.EN), speaker.spoken)
-            assertTrue(vm.uiState.value.assistant!!.speaking)
-            assertNull(vm.uiState.value.assistant!!.message)
+            assertTrue(
+                vm.uiState.value.assistant!!
+                    .speaking,
+            )
+            assertNull(
+                vm.uiState.value.assistant!!
+                    .message,
+            )
             assertEquals("the movie stays paused", PlayerState.Paused, player.state.value)
 
             speaker.finishCurrentUtterance()
             runCurrent()
-            assertFalse(vm.uiState.value.assistant!!.speaking)
+            assertFalse(
+                vm.uiState.value.assistant!!
+                    .speaking,
+            )
         }
 
     @Test
@@ -614,8 +635,15 @@ class PlayerViewModelTest {
             assertTrue(speaker.spoken.isEmpty())
 
             advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
-            assertNull(vm.uiState.value.assistant!!.message)
-            assertEquals("Hello there.", vm.uiState.value.assistant!!.text)
+            assertNull(
+                vm.uiState.value.assistant!!
+                    .message,
+            )
+            assertEquals(
+                "Hello there.",
+                vm.uiState.value.assistant!!
+                    .text,
+            )
         }
 
     @Test
@@ -627,7 +655,11 @@ class PlayerViewModelTest {
 
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
             runCurrent()
-            assertEquals(TranslationUiState.Loading, vm.uiState.value.assistant!!.translation)
+            assertEquals(
+                TranslationUiState.Loading,
+                vm.uiState.value.assistant!!
+                    .translation,
+            )
 
             advanceTimeBy(501)
             runCurrent()
@@ -649,7 +681,11 @@ class PlayerViewModelTest {
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
             runCurrent()
 
-            assertEquals(TranslationUiState.Ready("Hola."), vm.uiState.value.assistant!!.translation)
+            assertEquals(
+                TranslationUiState.Ready("Hola."),
+                vm.uiState.value.assistant!!
+                    .translation,
+            )
             assertTrue(speaker.spoken.isEmpty())
         }
 
@@ -662,7 +698,11 @@ class PlayerViewModelTest {
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
             runCurrent()
 
-            assertEquals(TranslationUiState.Failed(TranslationFailure.OFFLINE), vm.uiState.value.assistant!!.translation)
+            assertEquals(
+                TranslationUiState.Failed(TranslationFailure.OFFLINE),
+                vm.uiState.value.assistant!!
+                    .translation,
+            )
             assertTrue(speaker.spoken.isEmpty())
             assertEquals(PlayerState.Paused, player.state.value)
         }
@@ -675,7 +715,11 @@ class PlayerViewModelTest {
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
             runCurrent()
 
-            assertEquals(TranslationUiState.Failed(TranslationFailure.UNAVAILABLE), vm.uiState.value.assistant!!.translation)
+            assertEquals(
+                TranslationUiState.Failed(TranslationFailure.UNAVAILABLE),
+                vm.uiState.value.assistant!!
+                    .translation,
+            )
             assertTrue(speaker.spoken.isEmpty())
         }
 
@@ -717,6 +761,10 @@ class PlayerViewModelTest {
 
             assertEquals(PlayerState.Paused, player.state.value)
             assertEquals(2_000L, player.positionMs.value)
-            assertEquals("Hello there.", vm.uiState.value.assistant!!.text)
+            assertEquals(
+                "Hello there.",
+                vm.uiState.value.assistant!!
+                    .text,
+            )
         }
 }

@@ -30,7 +30,10 @@ import com.teachermovies.tv.ui.settings.SpaceFormat
  * the volume list are re-read, so a network or USB drive connected meanwhile appears.
  */
 @Composable
-fun FirstRunRoute(viewModel: FirstRunViewModel, modifier: Modifier = Modifier) {
+fun FirstRunRoute(
+    viewModel: FirstRunViewModel,
+    modifier: Modifier = Modifier,
+) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.refresh() }
     FirstRunScreen(uiState = uiState, onContinue = viewModel::complete, modifier = modifier)
@@ -66,10 +69,18 @@ fun FirstRunScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = stringResource(R.string.first_run_server, uiState.serverUrl ?: stringResource(R.string.first_run_no_network)),
+            text =
+                stringResource(
+                    R.string.first_run_server,
+                    uiState.serverUrl ?: stringResource(R.string.first_run_no_network),
+                ),
             style = MaterialTheme.typography.headlineMedium,
         )
-        ServerPinAndStatus(pin = uiState.pin, serverState = uiState.serverState, style = MaterialTheme.typography.headlineMedium)
+        ServerPinAndStatus(
+            pin = uiState.pin,
+            serverState = uiState.serverState,
+            style = MaterialTheme.typography.headlineMedium,
+        )
         Text(
             text =
                 uiState.freeBytes?.let { stringResource(R.string.first_run_free_space, SpaceFormat.freeGb(it)) }

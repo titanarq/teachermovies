@@ -149,11 +149,15 @@ class JLibTorrentEngine(
                 val event =
                     when (alert) {
                         is AddTorrentAlert -> addedEvent(alert)
+
                         is MetadataReceivedAlert -> metadataEvent(alert)
+
                         is SaveResumeDataAlert -> resumeDataEvent(alert)
+
                         // libtorrent also answers this way when there was nothing to save or the
                         // torrent is gone; it only settles the pending request.
                         is SaveResumeDataFailedAlert -> SessionEvent.ResumeDataFailed(handleIdOf(alert.handle()))
+
                         else -> null
                     }
                 if (event != null) events.trySend(event)
@@ -240,7 +244,8 @@ class JLibTorrentEngine(
                 }
             params.savePath(savePaths.savePathFor(id).absolutePath)
             manager.swig().async_add_torrent(params.swig())
-            snapshots[id] = JlibMappers.addedSnapshot(id, magnet.displayName, hasMetadata = false, totalBytes = 0, savePath = null)
+            snapshots[id] =
+                JlibMappers.addedSnapshot(id, magnet.displayName, hasMetadata = false, totalBytes = 0, savePath = null)
             publish()
             EngineResult.Ok(id)
         }
@@ -263,7 +268,14 @@ class JLibTorrentEngine(
             params.torrentInfo(info)
             params.savePath(savePath)
             manager.swig().async_add_torrent(params.swig())
-            snapshots[id] = JlibMappers.addedSnapshot(id, info.name(), hasMetadata = true, totalBytes = info.totalSize(), savePath = savePath)
+            snapshots[id] =
+                JlibMappers.addedSnapshot(
+                    id,
+                    info.name(),
+                    hasMetadata = true,
+                    totalBytes = info.totalSize(),
+                    savePath = savePath,
+                )
             publish()
             EngineResult.Ok(id)
         }
@@ -294,7 +306,11 @@ class JLibTorrentEngine(
         onHandle(id, needsMetadata = true) { handle ->
             val count = handle.torrentFile()?.numFiles() ?: return@onHandle failure(EngineError.NotReady)
             for ((index, priority) in priorities) {
-                if (index in 0 until count) handle.filePriority(index, Priority.fromSwig(StatusSampleMapper.libPriorityOf(priority)))
+                if (index in
+                    0 until count
+                ) {
+                    handle.filePriority(index, Priority.fromSwig(StatusSampleMapper.libPriorityOf(priority)))
+                }
             }
             refreshAndPublish(id)
             EngineResult.Ok(Unit)
@@ -461,7 +477,10 @@ class JLibTorrentEngine(
         val params = alert.params()
         val id = idOf(params.getInfoHashes()) ?: return SessionEvent.ResumeDataFailed(null)
         return try {
-            SessionEvent.ResumeDataSaved(id, Vectors.byte_vector2bytes(libtorrent.write_resume_data_buf_ex(params.swig())))
+            SessionEvent.ResumeDataSaved(
+                id,
+                Vectors.byte_vector2bytes(libtorrent.write_resume_data_buf_ex(params.swig())),
+            )
         } catch (e: RuntimeException) {
             SessionEvent.ResumeDataFailed(id, e.message ?: e.javaClass.name)
         }
@@ -512,8 +531,14 @@ class JLibTorrentEngine(
 
     private fun apply(event: SessionEvent) {
         when (event) {
-            is SessionEvent.Added -> applyAdded(event)
-            is SessionEvent.MetadataReceived -> applyMetadata(event)
+            is SessionEvent.Added -> {
+                applyAdded(event)
+            }
+
+            is SessionEvent.MetadataReceived -> {
+                applyMetadata(event)
+            }
+
             is SessionEvent.ResumeDataSaved -> {
                 resumeSaveAnswered()
                 // An answer arriving after [remove] must not bring the entry back.
@@ -524,6 +549,7 @@ class JLibTorrentEngine(
                     resumeFailures += e.message ?: e.javaClass.name
                 }
             }
+
             is SessionEvent.ResumeDataFailed -> {
                 resumeSaveAnswered()
                 if (event.message != null) resumeFailures += event.message
@@ -536,12 +562,22 @@ class JLibTorrentEngine(
         val wasRestored = restored.remove(event.id)
         snapshots[event.id] =
             when {
-                event.errorMessage != null -> JlibMappers.withAddError(current, event.errorMessage)
+                event.errorMessage != null -> {
+                    JlibMappers.withAddError(current, event.errorMessage)
+                }
+
                 // A restored torrent keeps the file priorities stored in its resume data.
-                wasRestored && event.files != null ->
+                wasRestored && event.files != null -> {
                     current.copy(mainFileIndex = StatusSampleMapper.autoSelection(event.files).mainFileIndex)
-                event.files != null -> withAutoSelection(current, event.files)
-                else -> current
+                }
+
+                event.files != null -> {
+                    withAutoSelection(current, event.files)
+                }
+
+                else -> {
+                    current
+                }
             }
         if (event.errorMessage == null) {
             // A restored torrent shows its stored state (e.g. paused) at once; a new one is
@@ -554,7 +590,10 @@ class JLibTorrentEngine(
     private fun applyMetadata(event: SessionEvent.MetadataReceived) {
         val current = snapshots[event.id] ?: return
         snapshots[event.id] =
-            withAutoSelection(JlibMappers.withMetadata(current, event.name, event.totalBytes, event.savePath), event.files)
+            withAutoSelection(
+                JlibMappers.withMetadata(current, event.name, event.totalBytes, event.savePath),
+                event.files,
+            )
         // Save the info dict now, so a restart never has to fetch the metadata again.
         handleOf(event.id)?.let(::requestResumeDataSafely)
         publish()
@@ -679,7 +718,14 @@ class JLibTorrentEngine(
         snapshots[id] =
             try {
                 val torrentStatus = handle.status()
-                val savePath = if (current.savePath == null && torrentStatus.hasMetadata()) handle.savePath() else current.savePath
+                val savePath =
+                    if (current.savePath == null &&
+                        torrentStatus.hasMetadata()
+                    ) {
+                        handle.savePath()
+                    } else {
+                        current.savePath
+                    }
                 val next = StatusSampleMapper.apply(current, sampleOf(torrentStatus, savePath))
                 if (StatusSampleMapper.isUnexpectedTransition(current.state, next.state)) {
                     Log.w(
@@ -734,7 +780,13 @@ class JLibTorrentEngine(
     private fun handleOf(id: TorrentId): TorrentHandle? {
         val manager = session ?: return null
         val handle =
-            if (id.value.length == SHA1_HEX_LENGTH) manager.find(Sha1Hash(id.value)) else manager.find(Sha256Hash(id.value))
+            if (id.value.length ==
+                SHA1_HEX_LENGTH
+            ) {
+                manager.find(Sha1Hash(id.value))
+            } else {
+                manager.find(Sha256Hash(id.value))
+            }
         return handle?.takeIf { it.isValid }
     }
 
@@ -793,7 +845,10 @@ class JLibTorrentEngine(
         publish()
     }
 
-    private fun nativeFailure(e: RuntimeException): EngineResult<Nothing> = failure(EngineError.Io(e.message ?: e.javaClass.name))
+    private fun nativeFailure(e: RuntimeException): EngineResult<Nothing> =
+        failure(
+            EngineError.Io(e.message ?: e.javaClass.name),
+        )
 
     private fun failure(error: EngineError): EngineResult<Nothing> = EngineResult.Failure(error)
 
@@ -836,7 +891,8 @@ internal data class PieceLayout(
     fun piecesFor(
         byteOffset: Long,
         lengthBytes: Long,
-    ): PieceRange = PieceWindowCalculator.piecesFor(fileOffsetInTorrent, pieceLengthBytes, totalPieces, byteOffset, lengthBytes)
+    ): PieceRange =
+        PieceWindowCalculator.piecesFor(fileOffsetInTorrent, pieceLengthBytes, totalPieces, byteOffset, lengthBytes)
 }
 
 /** What the alert thread hands to [JLibTorrentEngine]'s serial side: plain values only. */

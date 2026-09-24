@@ -8,4 +8,8 @@ package com.teachermovies.torrent.api
  * player can read that far without waiting. [missingPieces] lists the absolute indices of the
  * covering pieces that are not on disk yet, in ascending order (empty when [ready]).
  */
-data class RangeReadiness(val ready: Boolean, val readyBytes: Long, val missingPieces: List<Int>)
+data class RangeReadiness(
+    val ready: Boolean,
+    val readyBytes: Long,
+    val missingPieces: List<Int>,
+)

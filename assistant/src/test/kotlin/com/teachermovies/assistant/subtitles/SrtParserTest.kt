@@ -18,7 +18,8 @@ class SrtParserTest {
 
     @Test
     fun `parses a well-formed file with LF endings`() {
-        val srt = """
+        val srt =
+            """
             1
             00:00:01,000 --> 00:00:04,000
             Hello there.
@@ -27,7 +28,7 @@ class SrtParserTest {
             00:00:05,500 --> 00:00:06,000
             Second cue.
 
-        """.trimIndent()
+            """.trimIndent()
 
         val track = parser.parse(srt)
 
@@ -38,7 +39,7 @@ class SrtParserTest {
 
     @Test
     fun `strips a leading BOM`() {
-        val srt = "﻿1\n00:00:01,000 --> 00:00:02,000\nHello.\n"
+        val srt = "1\n00:00:01,000 --> 00:00:02,000\nHello.\n"
 
         val track = parser.parse(srt)
 
@@ -49,8 +50,9 @@ class SrtParserTest {
 
     @Test
     fun `handles CRLF line endings`() {
-        val srt = "1\r\n00:00:01,000 --> 00:00:02,000\r\nHello.\r\n\r\n" +
-            "2\r\n00:00:03,000 --> 00:00:04,000\r\nWorld.\r\n"
+        val srt =
+            "1\r\n00:00:01,000 --> 00:00:02,000\r\nHello.\r\n\r\n" +
+                "2\r\n00:00:03,000 --> 00:00:04,000\r\nWorld.\r\n"
 
         val track = parser.parse(srt)
 
@@ -93,8 +95,9 @@ class SrtParserTest {
 
     @Test
     fun `renumbers regardless of non-numeric or repeated block indexes`() {
-        val srt = "abc\n00:00:05,000 --> 00:00:06,000\nLater.\n\n" +
-            "abc\n00:00:01,000 --> 00:00:02,000\nEarlier.\n"
+        val srt =
+            "abc\n00:00:05,000 --> 00:00:06,000\nLater.\n\n" +
+                "abc\n00:00:01,000 --> 00:00:02,000\nEarlier.\n"
 
         val track = parser.parse(srt)
 
@@ -117,8 +120,9 @@ class SrtParserTest {
 
     @Test
     fun `strips italic, bold, underline and font tags`() {
-        val srt = "1\n00:00:01,000 --> 00:00:02,000\n" +
-            "<i>Hello</i> <b>bold</b> <u>underline</u> <font color=\"#ffffff\">colored</font>\n"
+        val srt =
+            "1\n00:00:01,000 --> 00:00:02,000\n" +
+                "<i>Hello</i> <b>bold</b> <u>underline</u> <font color=\"#ffffff\">colored</font>\n"
 
         val track = parser.parse(srt)
 

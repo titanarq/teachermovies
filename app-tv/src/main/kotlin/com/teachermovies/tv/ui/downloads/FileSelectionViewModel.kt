@@ -56,7 +56,6 @@ class FileSelectionViewModel(
     private val engine: TorrentEngine,
     private val id: TorrentId,
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow(FileSelectionUiState())
     val uiState: StateFlow<FileSelectionUiState> = _uiState.asStateFlow()
 
@@ -80,27 +79,52 @@ class FileSelectionViewModel(
         _uiState.value = state.copy(applying = true, error = null)
         viewModelScope.launch {
             when (val result = engine.setFilePriorities(id, priorities)) {
-                is EngineResult.Ok -> _uiState.update { it.copy(applying = false, done = true) }
-                is EngineResult.Failure -> _uiState.update { it.copy(applying = false, error = errorText(result.error)) }
+                is EngineResult.Ok -> {
+                    _uiState.update { it.copy(applying = false, done = true) }
+                }
+
+                is EngineResult.Failure -> {
+                    _uiState.update {
+                        it.copy(
+                            applying = false,
+                            error = errorText(result.error),
+                        )
+                    }
+                }
             }
         }
     }
 
     private suspend fun load() {
         when (val result = engine.files(id)) {
-            is EngineResult.Ok ->
+            is EngineResult.Ok -> {
                 _uiState.update {
-                    it.copy(rows = result.value.map { file -> file.toRow() }, loading = false, notReady = false, error = null)
+                    it.copy(
+                        rows =
+                            result.value.map { file ->
+                                file.toRow()
+                            },
+                        loading = false,
+                        notReady = false,
+                        error = null,
+                    )
                 }
-            is EngineResult.Failure ->
+            }
+
+            is EngineResult.Failure -> {
                 if (result.error == EngineError.NotReady) {
                     _uiState.update { it.copy(loading = false, notReady = true, error = null) }
                     // Retry once the torrent reports metadata (or give up quietly if it is removed).
-                    val snapshot = engine.torrents.first { list -> list.none { it.id == id } || list.any { it.id == id && it.hasMetadata } }
+                    val snapshot =
+                        engine.torrents.first { list ->
+                            list.none { it.id == id } ||
+                                list.any { it.id == id && it.hasMetadata }
+                        }
                     if (snapshot.any { it.id == id }) load()
                 } else {
                     _uiState.update { it.copy(loading = false, notReady = false, error = errorText(result.error)) }
                 }
+            }
         }
     }
 

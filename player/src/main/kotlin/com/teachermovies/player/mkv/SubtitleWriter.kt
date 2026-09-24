@@ -37,8 +37,14 @@ internal object SubtitleWriter {
             val start = starts[index]
             val end =
                 when (val duration = block.durationTicks) {
-                    null -> (index + 1 until starts.size).firstOrNull { starts[it] > start }?.let(starts::get) ?: (start + DEFAULT_LAST_DURATION_MS)
-                    else -> toMs(block.ticks + duration, timecodeScale)
+                    null -> {
+                        (index + 1 until starts.size).firstOrNull { starts[it] > start }?.let(starts::get)
+                            ?: (start + DEFAULT_LAST_DURATION_MS)
+                    }
+
+                    else -> {
+                        toMs(block.ticks + duration, timecodeScale)
+                    }
                 }
             TimedCue(start, end, String(block.payload, Charsets.UTF_8).trimEnd('\u0000'))
         }
@@ -73,7 +79,11 @@ internal object SubtitleWriter {
         val dialogues =
             cues
                 .mapNotNull { cue ->
-                    val fields = cue.text.normalizeNewlines().trimEnd('\n').split(',', limit = ASS_BLOCK_FIELDS)
+                    val fields =
+                        cue.text
+                            .normalizeNewlines()
+                            .trimEnd('\n')
+                            .split(',', limit = ASS_BLOCK_FIELDS)
                     val readOrder = fields.first().trim().toLongOrNull()
                     if (fields.size < ASS_BLOCK_FIELDS || readOrder == null) {
                         null
@@ -100,7 +110,14 @@ internal object SubtitleWriter {
     }
 
     private fun eventsHeader(header: String): String {
-        val lines = header.removePrefix("﻿").trimEnd('\u0000').normalizeNewlines().trimEnd('\n').lines().toMutableList()
+        val lines =
+            header
+                .removePrefix("")
+                .trimEnd('\u0000')
+                .normalizeNewlines()
+                .trimEnd('\n')
+                .lines()
+                .toMutableList()
         if (lines.size == 1 && lines[0].isEmpty()) lines.clear()
         val events = lines.indexOfFirst { it.trim().equals(EVENTS_SECTION, ignoreCase = true) }
         if (events < 0) {
@@ -108,8 +125,15 @@ internal object SubtitleWriter {
             lines += EVENTS_SECTION
             lines += EVENTS_FORMAT
         } else {
-            val sectionEnd = (events + 1 until lines.size).firstOrNull { lines[it].trim().startsWith("[") } ?: lines.size
-            val hasFormat = (events + 1 until sectionEnd).any { lines[it].trim().startsWith("Format:", ignoreCase = true) }
+            val sectionEnd =
+                (events + 1 until lines.size).firstOrNull { lines[it].trim().startsWith("[") } ?: lines.size
+            val hasFormat =
+                (events + 1 until sectionEnd).any {
+                    lines[it].trim().startsWith(
+                        "Format:",
+                        ignoreCase = true,
+                    )
+                }
             if (!hasFormat) lines.add(events + 1, EVENTS_FORMAT)
         }
         return lines.joinToString("\n", postfix = "\n")

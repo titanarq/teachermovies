@@ -139,7 +139,13 @@ class CachingTranslationProviderTest {
             val cachedNull = CachingTranslationProvider(NullTranslationProvider)
 
             assertEquals("none", cachedNull.id)
-            assertEquals(TranslationResult.Unavailable("no translation provider configured"), cachedNull.translate("Hi"))
-            assertEquals(TranslationResult.Unavailable("no translation provider configured"), cachedNull.translate("Hi"))
+            assertEquals(
+                TranslationResult.Unavailable("no translation provider configured"),
+                cachedNull.translate("Hi"),
+            )
+            assertEquals(
+                TranslationResult.Unavailable("no translation provider configured"),
+                cachedNull.translate("Hi"),
+            )
         }
 }

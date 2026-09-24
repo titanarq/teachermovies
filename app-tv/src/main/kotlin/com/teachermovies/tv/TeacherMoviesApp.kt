@@ -11,7 +11,6 @@ import com.teachermovies.tv.di.AppContainer
  * the process runs; the foreground `TorrentService` that `MainActivity` starts keeps it running.
  */
 class TeacherMoviesApp : Application() {
-
     lateinit var container: AppContainer
         private set
 

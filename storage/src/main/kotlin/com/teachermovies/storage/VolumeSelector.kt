@@ -6,7 +6,6 @@ package com.teachermovies.storage
  * [StorageVolumeProvider.volumes] currently reports.
  */
 object VolumeSelector {
-
     /**
      * @param volumes the volumes currently reported; empty when none is available at all.
      * @param persistedId the persisted `downloadVolumeId`, or null if the user never chose one.
@@ -42,9 +41,13 @@ object VolumeSelector {
     }
 
     /** The largest-free mounted removable volume, else the primary volume, else null. */
-    private fun fallback(volumes: List<VolumeInfo>, spaceProvider: SpaceProvider): VolumeInfo? {
+    private fun fallback(
+        volumes: List<VolumeInfo>,
+        spaceProvider: SpaceProvider,
+    ): VolumeInfo? {
         val largestRemovable =
-            volumes.filter { it.removable && it.mounted }
+            volumes
+                .filter { it.removable && it.mounted }
                 .maxByOrNull { spaceProvider.spaceOf(it.root).freeBytes }
         return largestRemovable ?: volumes.find { it.primary }
     }

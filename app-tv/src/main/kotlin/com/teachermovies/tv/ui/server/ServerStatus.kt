@@ -23,7 +23,9 @@ sealed interface ServerStatusLabel {
 
     data object PortInUse : ServerStatusLabel
 
-    data class Failed(val reason: String) : ServerStatusLabel
+    data class Failed(
+        val reason: String,
+    ) : ServerStatusLabel
 
     companion object {
         /** Pure mapping, so it is covered by JVM tests without Compose. */

@@ -93,6 +93,7 @@ fun DownloadsContent(
     modifier: Modifier = Modifier,
 ) {
     val rowRequesters = remember { mutableMapOf<TorrentId, FocusRequester>() }
+
     fun requesterFor(id: TorrentId): FocusRequester = rowRequesters.getOrPut(id) { FocusRequester() }
     val listState = rememberLazyListState()
     // The row that has focus and where it sat, so focus can land on a neighbour when it disappears.
@@ -147,21 +148,38 @@ fun DownloadsContent(
     }
 
     when (val dialog = uiState.dialog) {
-        null -> Unit
-        is DownloadsDialog.Actions ->
+        null -> {
+            Unit
+        }
+
+        is DownloadsDialog.Actions -> {
             ActionsDialog(
-                title = uiState.rows.firstOrNull { it.id == uiState.selectedRowId }?.name.orEmpty(),
+                title =
+                    uiState.rows
+                        .firstOrNull { it.id == uiState.selectedRowId }
+                        ?.name
+                        .orEmpty(),
                 dialog = dialog,
                 onAction = onAction,
                 onDismiss = onDismissDialog,
             )
-        DownloadsDialog.ConfirmDelete ->
+        }
+
+        DownloadsDialog.ConfirmDelete -> {
             ConfirmDeleteDialog(
-                title = uiState.rows.firstOrNull { it.id == uiState.selectedRowId }?.name.orEmpty(),
+                title =
+                    uiState.rows
+                        .firstOrNull { it.id == uiState.selectedRowId }
+                        ?.name
+                        .orEmpty(),
                 onConfirm = onConfirmDelete,
                 onDismiss = onDismissDialog,
             )
-        DownloadsDialog.ChooseFiles -> uiState.selectedRowId?.let { chooseFilesContent(it, onDismissDialog) }
+        }
+
+        DownloadsDialog.ChooseFiles -> {
+            uiState.selectedRowId?.let { chooseFilesContent(it, onDismissDialog) }
+        }
     }
 
     // Focus must never be left on nothing: a focused row that disappears (deleted here or from the
@@ -181,7 +199,14 @@ fun DownloadsContent(
         restoreAfterDialog = false
         if (!needsFocus || rowIds.isEmpty()) return@LaunchedEffect
         val selectedIndex = rowIds.indexOf(uiState.selectedRowId)
-        val index = if (focused == null && selectedIndex >= 0) selectedIndex else focusedIndex.coerceAtMost(rowIds.lastIndex)
+        val index =
+            if (focused == null &&
+                selectedIndex >= 0
+            ) {
+                selectedIndex
+            } else {
+                focusedIndex.coerceAtMost(rowIds.lastIndex)
+            }
         focusRow(listState, rowIds, index, ::requesterFor)
     }
 }
@@ -199,7 +224,11 @@ private suspend fun focusRow(
 }
 
 @Composable
-private fun DownloadRowItem(row: DownloadRow, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun DownloadRowItem(
+    row: DownloadRow,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     ListItem(
         selected = false,
         onClick = onClick,
@@ -226,7 +255,14 @@ private fun DownloadRowItem(row: DownloadRow, onClick: () -> Unit, modifier: Mod
                 Text(text = row.percent, style = MaterialTheme.typography.titleLarge)
                 Text(
                     text = Formatters.stateLabel(row.state),
-                    color = if (row.state == DownloadState.Error) MaterialTheme.colorScheme.error else Color.Unspecified,
+                    color =
+                        if (row.state ==
+                            DownloadState.Error
+                        ) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            Color.Unspecified
+                        },
                 )
             }
         },
@@ -236,7 +272,10 @@ private fun DownloadRowItem(row: DownloadRow, onClick: () -> Unit, modifier: Mod
 
 /** tv-material has no progress indicator: a track with a filled fraction, dimmed while not active. */
 @Composable
-private fun ProgressBar(progress: Float, state: DownloadState) {
+private fun ProgressBar(
+    progress: Float,
+    state: DownloadState,
+) {
     val fill =
         when (state) {
             DownloadState.Error -> MaterialTheme.colorScheme.error
@@ -284,12 +323,20 @@ private fun ActionsDialog(
 
 /** Focus starts on `Cancelar`: of the three, it is the one an accidental OK cannot hurt. */
 @Composable
-private fun ConfirmDeleteDialog(title: String, onConfirm: (Boolean) -> Unit, onDismiss: () -> Unit) {
+private fun ConfirmDeleteDialog(
+    title: String,
+    onConfirm: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val cancelRequester = remember { FocusRequester() }
     DialogFrame(title = title, subtitle = stringResource(R.string.downloads_confirm_delete), onDismiss = onDismiss) {
         DialogButton(text = stringResource(R.string.downloads_confirm_yes), onClick = { onConfirm(true) })
         DialogButton(text = stringResource(R.string.downloads_confirm_no), onClick = { onConfirm(false) })
-        DialogButton(text = stringResource(R.string.downloads_action_cancel), onClick = onDismiss, focusRequester = cancelRequester)
+        DialogButton(
+            text = stringResource(R.string.downloads_action_cancel),
+            onClick = onDismiss,
+            focusRequester = cancelRequester,
+        )
     }
     LaunchedEffect(Unit) { cancelRequester.requestFocus() }
 }
@@ -308,7 +355,12 @@ private fun DialogFrame(
                 modifier = Modifier.width(DIALOG_WIDTH).padding(32.dp).focusGroup(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(text = title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 if (subtitle != null) Text(text = subtitle, style = MaterialTheme.typography.bodyLarge)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { buttons() }
             }

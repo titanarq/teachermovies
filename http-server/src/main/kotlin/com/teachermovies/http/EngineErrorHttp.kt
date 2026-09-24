@@ -16,20 +16,33 @@ data class HttpError(
  */
 fun EngineError.toHttp(): HttpError =
     when (this) {
-        EngineError.InvalidMagnet ->
+        EngineError.InvalidMagnet -> {
             HttpError(HttpStatusCode.BadRequest, ApiError("invalid_magnet", "Not a valid magnet URI"))
-        EngineError.InvalidTorrentFile ->
+        }
+
+        EngineError.InvalidTorrentFile -> {
             HttpError(HttpStatusCode.BadRequest, ApiError("invalid_torrent", "Not a valid .torrent file"))
-        EngineError.UnknownTorrent ->
+        }
+
+        EngineError.UnknownTorrent -> {
             HttpError(HttpStatusCode.NotFound, ApiError("unknown_torrent", "No such torrent"))
-        is EngineError.AlreadyExists ->
+        }
+
+        is EngineError.AlreadyExists -> {
             HttpError(HttpStatusCode.Conflict, ApiError("already_exists", "Torrent already added", id = id.value))
-        EngineError.NotReady ->
+        }
+
+        EngineError.NotReady -> {
             HttpError(HttpStatusCode.Conflict, ApiError("not_ready", "Torrent metadata not available yet"))
-        EngineError.Unsupported ->
+        }
+
+        EngineError.Unsupported -> {
             HttpError(HttpStatusCode.NotImplemented, ApiError("unsupported", "Not supported by the engine"))
-        is EngineError.Io ->
+        }
+
+        is EngineError.Io -> {
             HttpError(HttpStatusCode.InternalServerError, ApiError("io_error", "Storage or engine I/O failure"))
+        }
     }
 
 /** Responds with [error] mapped by [toHttp]. */

@@ -50,7 +50,10 @@ import com.teachermovies.tv.ui.server.ServerPinAndStatus
  * volume list is re-read, so a USB drive plugged in since the last visit appears.
  */
 @Composable
-fun SettingsRoute(viewModel: SettingsViewModel, modifier: Modifier = Modifier) {
+fun SettingsRoute(
+    viewModel: SettingsViewModel,
+    modifier: Modifier = Modifier,
+) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.refreshVolumes() }
     SettingsScreen(
@@ -112,7 +115,11 @@ fun SettingsScreen(
                 text = uiState.serverUrl ?: stringResource(R.string.first_run_no_network),
                 style = MaterialTheme.typography.bodyLarge,
             )
-            ServerPinAndStatus(pin = uiState.pin, serverState = uiState.serverState, style = MaterialTheme.typography.bodyLarge)
+            ServerPinAndStatus(
+                pin = uiState.pin,
+                serverState = uiState.serverState,
+                style = MaterialTheme.typography.bodyLarge,
+            )
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -141,7 +148,11 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun PortField(port: Int, onPortChange: (Int) -> Unit, focusRequester: FocusRequester) {
+private fun PortField(
+    port: Int,
+    onPortChange: (Int) -> Unit,
+    focusRequester: FocusRequester,
+) {
     var editing by remember { mutableStateOf(false) }
     var returnFocus by remember { mutableStateOf(false) }
 
@@ -158,11 +169,15 @@ private fun PortField(port: Int, onPortChange: (Int) -> Unit, focusRequester: Fo
                                 onPortChange(port + 1)
                                 true
                             }
+
                             Key.DirectionDown -> {
                                 onPortChange(port - 1)
                                 true
                             }
-                            else -> false
+
+                            else -> {
+                                false
+                            }
                         }
                     },
         ) {
@@ -196,7 +211,10 @@ private fun PortField(port: Int, onPortChange: (Int) -> Unit, focusRequester: Fo
 
 /** [onFinish] gets the typed text on OK/Done, or null when the edit is abandoned. */
 @Composable
-private fun PortTextField(initial: Int, onFinish: (String?) -> Unit) {
+private fun PortTextField(
+    initial: Int,
+    onFinish: (String?) -> Unit,
+) {
     val initialText = initial.toString()
     var value by remember { mutableStateOf(TextFieldValue(initialText, selection = TextRange(0, initialText.length))) }
     val fieldRequester = remember { FocusRequester() }
@@ -223,16 +241,19 @@ private fun PortTextField(initial: Int, onFinish: (String?) -> Unit) {
                     // The remote's OK is DPAD_CENTER, which a text field does not treat as Done. Only
                     // a press that started here counts: the KeyUp of the OK that opened the field
                     // must not close it again.
-                    val isOk = event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter
+                    val isOk =
+                        event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter
                     if (isOk && event.type == KeyEventType.KeyDown) okPressed = true
                     if (isOk && event.type == KeyEventType.KeyUp && okPressed) onFinish(value.text)
                     isOk
-                }
-                .onFocusChanged { state ->
+                }.onFocusChanged { state ->
                     // D-pad moving focus away abandons the edit, like BACK.
-                    if (state.isFocused) hadFocus = true else if (hadFocus) onFinish(null)
-                }
-                .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                    if (state.isFocused) {
+                        hadFocus = true
+                    } else if (hadFocus) {
+                        onFinish(null)
+                    }
+                }.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
                 .padding(horizontal = 24.dp, vertical = 12.dp)
                 .width(160.dp),
     )
@@ -241,7 +262,11 @@ private fun PortTextField(initial: Int, onFinish: (String?) -> Unit) {
 }
 
 @Composable
-private fun VolumeItem(row: VolumeRow, selected: Boolean, onSelect: (String) -> Unit) {
+private fun VolumeItem(
+    row: VolumeRow,
+    selected: Boolean,
+    onSelect: (String) -> Unit,
+) {
     ListItem(
         selected = selected,
         onClick = { onSelect(row.id) },
@@ -263,7 +288,10 @@ private fun VolumeItem(row: VolumeRow, selected: Boolean, onSelect: (String) -> 
 
 /** The whole row is the focus target; OK flips the switch, which only mirrors the setting. */
 @Composable
-private fun AutostartItem(checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun AutostartItem(
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
     ListItem(
         selected = false,
         onClick = { onChange(!checked) },

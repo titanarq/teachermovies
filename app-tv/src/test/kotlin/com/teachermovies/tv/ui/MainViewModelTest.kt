@@ -6,7 +6,6 @@ import org.junit.Assert.assertSame
 import org.junit.Test
 
 class MainViewModelTest {
-
     @Test
     fun initialStateSelectsTheFirstSection() {
         val viewModel = MainViewModel()

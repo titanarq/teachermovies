@@ -55,6 +55,7 @@ class ServerAnnouncementCoordinator(
                     ),
                 )
             }
+
             ServerState.Stopped, is ServerState.Failed -> {
                 announcedPort = null
                 announcer.stop()

@@ -59,7 +59,10 @@ class LibraryRouteTest {
                 contentType(ContentType.Application.Json)
                 setBody("""{"pin":"${pairing.currentPin()}"}""")
             }.bodyAsText()
-        return Json.parseToJsonElement(body).jsonObject["token"]!!.jsonPrimitive.content
+        return Json
+            .parseToJsonElement(body)
+            .jsonObject["token"]!!
+            .jsonPrimitive.content
     }
 
     private fun torrent(
@@ -101,7 +104,12 @@ class LibraryRouteTest {
             val newer = 1_790_325_015_250L
             repo.upsert(torrent('a', "Old Movie", DownloadState.Completed, 700L), "/vol/Movies/a/Old.mkv", older)
             repo.upsert(torrent('b', "New Movie", DownloadState.Completed, 900L), "/vol/Movies/b/New.mkv", newer)
-            repo.updatePlayback(TorrentId("a".repeat(40)), positionMs = 61_000L, audioTrackId = null, subtitleTrackId = null)
+            repo.updatePlayback(
+                TorrentId("a".repeat(40)),
+                positionMs = 61_000L,
+                audioTrackId = null,
+                subtitleTrackId = null,
+            )
             // Not yet in the library: still downloading.
             repo.upsert(torrent('c', "Downloading", DownloadState.Downloading), "/vol/Movies/c/D.mkv", newer + 1)
 

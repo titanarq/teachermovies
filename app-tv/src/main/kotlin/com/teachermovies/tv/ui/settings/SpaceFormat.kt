@@ -16,14 +16,16 @@ private val SPANISH = DecimalFormatSymbols(Locale.forLanguageTag("es-ES"))
  * screen's formatting is covered by a JVM test.
  */
 internal object SpaceFormat {
-
     /** `5_050_000_000` -> `"5,1"`. */
     fun freeGb(bytes: Long): String = format(bytes, "0.0")
 
     /** `15_600_000_000` -> `"16"`. */
     fun totalGb(bytes: Long): String = format(bytes, "0")
 
-    private fun format(bytes: Long, pattern: String): String {
+    private fun format(
+        bytes: Long,
+        pattern: String,
+    ): String {
         val formatter = DecimalFormat(pattern, SPANISH)
         formatter.roundingMode = RoundingMode.HALF_UP
         formatter.isGroupingUsed = false

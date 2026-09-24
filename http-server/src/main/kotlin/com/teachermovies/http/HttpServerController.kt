@@ -26,10 +26,15 @@ sealed interface ServerState {
     data object Stopped : ServerState
 
     /** Listening on [port]. */
-    data class Running(val port: Int) : ServerState
+    data class Running(
+        val port: Int,
+    ) : ServerState
 
     /** The server failed to start on [port]; [reason] is the exception message, never a stack trace. */
-    data class Failed(val port: Int, val reason: String) : ServerState
+    data class Failed(
+        val port: Int,
+        val reason: String,
+    ) : ServerState
 }
 
 /**

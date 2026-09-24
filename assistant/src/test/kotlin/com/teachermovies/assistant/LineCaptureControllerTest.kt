@@ -4,7 +4,6 @@ import com.teachermovies.assistant.subtitles.SubtitleCue
 import com.teachermovies.assistant.subtitles.SubtitleTrack
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.fake.FakePlayer
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.job
@@ -16,6 +15,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class LineCaptureControllerTest {
     private val first = SubtitleCue(index = 0, startMs = 10_000L, endMs = 12_000L, text = "Hello.")

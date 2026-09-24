@@ -18,7 +18,9 @@ sealed interface AppRoute {
         override val route: String = "shell"
     }
 
-    data class Player(val id: TorrentId) : AppRoute {
+    data class Player(
+        val id: TorrentId,
+    ) : AppRoute {
         override val route: String = "player/${id.value}"
 
         companion object {
@@ -42,7 +44,6 @@ data class MainUiState(
  * `AppContainer` (ADR-0003 rule 1).
  */
 class MainViewModel : ViewModel() {
-
     private val _uiState = MutableStateFlow(MainUiState())
 
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()

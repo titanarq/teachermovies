@@ -18,7 +18,10 @@ import io.ktor.server.routing.get
 internal fun Route.torrentReadRoutes(deps: ServerDeps) {
     requireBearer(deps.pairing) {
         get("/api/torrents") {
-            call.respond(deps.engine.torrents.value.map { it.toDto() })
+            call.respond(
+                deps.engine.torrents.value
+                    .map { it.toDto() },
+            )
         }
         get("/api/torrents/{id}") {
             val id = call.torrentIdOrRespond() ?: return@get
@@ -30,7 +33,10 @@ internal fun Route.torrentReadRoutes(deps: ServerDeps) {
             val id = call.torrentIdOrRespond() ?: return@get
             val snapshot = deps.snapshotOf(id) ?: return@get call.respondUnknownTorrent()
             if (!snapshot.hasMetadata) {
-                call.respondApiError(HttpStatusCode.Conflict, ApiError("not_ready", "Torrent metadata not available yet"))
+                call.respondApiError(
+                    HttpStatusCode.Conflict,
+                    ApiError("not_ready", "Torrent metadata not available yet"),
+                )
                 return@get
             }
 

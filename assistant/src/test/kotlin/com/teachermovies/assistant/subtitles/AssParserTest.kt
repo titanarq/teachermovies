@@ -18,7 +18,8 @@ class AssParserTest {
 
     @Test
     fun `reads Start, End and Text columns wherever the Format line puts them`() {
-        val ass = """
+        val ass =
+            """
             [Script Info]
             Title: Example
 
@@ -29,7 +30,7 @@ class AssParserTest {
             [Events]
             Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             Dialogue: 0,0:00:01.00,0:00:04.00,Default,,0,0,0,,Hello there.
-        """.trimIndent()
+            """.trimIndent()
 
         val track = parser.parse(ass)
 
@@ -41,11 +42,12 @@ class AssParserTest {
 
     @Test
     fun `finds columns by name even when the Format order is unusual`() {
-        val ass = """
+        val ass =
+            """
             [Events]
             Format: Text, Start, Layer, End, Style
             Dialogue: Reordered cue,0:00:02.00,0,0:00:05.00,Default
-        """.trimIndent()
+            """.trimIndent()
 
         val track = parser.parse(ass)
 
@@ -57,11 +59,12 @@ class AssParserTest {
 
     @Test
     fun `keeps commas that appear inside the Text field`() {
-        val ass = """
+        val ass =
+            """
             [Events]
             Format: Start, End, Text
             Dialogue: 0:00:01.00,0:00:02.00,Hello, world, how are you?
-        """.trimIndent()
+            """.trimIndent()
 
         val track = parser.parse(ass)
 
@@ -71,12 +74,13 @@ class AssParserTest {
 
     @Test
     fun `ignores Comment lines`() {
-        val ass = """
+        val ass =
+            """
             [Events]
             Format: Start, End, Text
             Comment: 0:00:01.00,0:00:02.00,Not a cue.
             Dialogue: 0:00:03.00,0:00:04.00,A real cue.
-        """.trimIndent()
+            """.trimIndent()
 
         val track = parser.parse(ass)
 
@@ -86,14 +90,15 @@ class AssParserTest {
 
     @Test
     fun `ignores sections other than Events`() {
-        val ass = """
+        val ass =
+            """
             [Script Info]
             Dialogue: 0:00:01.00,0:00:02.00,should be ignored
 
             [Events]
             Format: Start, End, Text
             Dialogue: 0:00:03.00,0:00:04.00,should be parsed
-        """.trimIndent()
+            """.trimIndent()
 
         val track = parser.parse(ass)
 
@@ -103,11 +108,12 @@ class AssParserTest {
 
     @Test
     fun `strips override blocks`() {
-        val ass = """
+        val ass =
+            """
             [Events]
             Format: Start, End, Text
             Dialogue: 0:00:01.00,0:00:02.00,{\i1}Hello{\i0} world
-        """.trimIndent()
+            """.trimIndent()
 
         val track = parser.parse(ass)
 
@@ -117,11 +123,12 @@ class AssParserTest {
 
     @Test
     fun `turns backslash-N and backslash-n into a newline and backslash-h into a space`() {
-        val ass = """
+        val ass =
+            """
             [Events]
             Format: Start, End, Text
             Dialogue: 0:00:01.00,0:00:02.00,First\Nsecond\nthird\hfourth
-        """.trimIndent()
+            """.trimIndent()
 
         val track = parser.parse(ass)
 
@@ -131,12 +138,13 @@ class AssParserTest {
 
     @Test
     fun `drops cues that end up empty`() {
-        val ass = """
+        val ass =
+            """
             [Events]
             Format: Start, End, Text
             Dialogue: 0:00:01.00,0:00:02.00,{\i1}{\i0}
             Dialogue: 0:00:03.00,0:00:04.00,Real cue.
-        """.trimIndent()
+            """.trimIndent()
 
         val track = parser.parse(ass)
 

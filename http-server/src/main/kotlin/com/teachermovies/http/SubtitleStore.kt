@@ -18,7 +18,11 @@ interface SubtitleStore {
      *   [torrentId] has no known download layout, [fileName] sanitises to nothing usable (e.g.
      *   empty, `"."`, or `".."`), or the write itself fails.
      */
-    fun save(torrentId: String, fileName: String, bytes: ByteArray): Result<String>
+    fun save(
+        torrentId: String,
+        fileName: String,
+        bytes: ByteArray,
+    ): Result<String>
 }
 
 /**
@@ -32,8 +36,14 @@ interface SubtitleStore {
  * still resolve to a real directory inside it (`subs` itself, or the torrent directory), so those
  * are rejected explicitly rather than left to collide with a directory on write.
  */
-class LayoutSubtitleStore(private val layoutFor: (String) -> DownloadLayout?) : SubtitleStore {
-    override fun save(torrentId: String, fileName: String, bytes: ByteArray): Result<String> =
+class LayoutSubtitleStore(
+    private val layoutFor: (String) -> DownloadLayout?,
+) : SubtitleStore {
+    override fun save(
+        torrentId: String,
+        fileName: String,
+        bytes: ByteArray,
+    ): Result<String> =
         runCatching {
             val layout = layoutFor(torrentId) ?: error("No download layout for torrent \"$torrentId\"")
             val sanitized = sanitizeSubtitleFileName(fileName)

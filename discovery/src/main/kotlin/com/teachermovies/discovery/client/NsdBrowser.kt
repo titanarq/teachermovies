@@ -6,7 +6,10 @@ package com.teachermovies.discovery.client
  * [stop] ends the browse started last. Callbacks may arrive on any thread.
  */
 interface NsdBrowser {
-    fun start(serviceType: String, callback: BrowseCallback)
+    fun start(
+        serviceType: String,
+        callback: BrowseCallback,
+    )
 
     fun stop()
 }

@@ -16,8 +16,9 @@ private val TORRENT_ID_PATTERN = Regex("[0-9A-Za-z_-]+")
  * persisted choice of volume are #43 -- so it runs on the JVM with no Android runtime. Storage
  * holds no torrent knowledge beyond the id string and paths; what a torrent is belongs to :torrent.
  */
-class DownloadLayout(private val volumeRoot: File) {
-
+class DownloadLayout(
+    private val volumeRoot: File,
+) {
     /** `<volumeRoot>/Movies`, whether or not it exists yet. */
     fun moviesDir(): File = File(volumeRoot, MOVIES_DIR_NAME)
 
@@ -57,7 +58,10 @@ class DownloadLayout(private val volumeRoot: File) {
      *   absolute, or if it still points outside the torrent directory once `..` segments are
      *   collapsed. A name that arrives off the network never chooses where it lands on disk.
      */
-    fun resolveInTorrent(torrentId: String, relativePath: String): File {
+    fun resolveInTorrent(
+        torrentId: String,
+        relativePath: String,
+    ): File {
         require(relativePath.isNotBlank()) { "Relative path must not be blank" }
         require(!relativePath.startsWith("/") && !relativePath.startsWith("\\")) {
             "Relative path must not be absolute, was \"$relativePath\""

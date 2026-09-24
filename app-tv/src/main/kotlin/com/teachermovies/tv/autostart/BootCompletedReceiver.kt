@@ -30,14 +30,25 @@ class BootCompletedReceiver : BroadcastReceiver() {
         scope.launch {
             try {
                 when (val decision = coordinator.onBroadcast(action)) {
-                    is BootDecision.Started ->
+                    is BootDecision.Started -> {
                         when (val result = decision.result) {
-                            AutostartResult.Started -> Log.i(TAG, "Autostart after boot: services started")
-                            is AutostartResult.TorrentServiceRefused ->
+                            AutostartResult.Started -> {
+                                Log.i(TAG, "Autostart after boot: services started")
+                            }
+
+                            is AutostartResult.TorrentServiceRefused -> {
                                 Log.w(TAG, "Autostart after boot: torrent service refused: ${result.reason}")
+                            }
                         }
-                    BootDecision.Disabled -> Log.i(TAG, "Autostart after boot is off")
-                    BootDecision.IgnoredAction -> Unit
+                    }
+
+                    BootDecision.Disabled -> {
+                        Log.i(TAG, "Autostart after boot is off")
+                    }
+
+                    BootDecision.IgnoredAction -> {
+                        Unit
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Autostart after boot failed", e)

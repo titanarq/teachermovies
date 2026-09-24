@@ -6,7 +6,10 @@ package com.teachermovies.discovery
  */
 interface NsdRegistrar {
     /** Registers [info] and reports the outcome, possibly asynchronously, to [callback]. */
-    fun register(info: TvServiceInfo, callback: RegistrationCallback)
+    fun register(
+        info: TvServiceInfo,
+        callback: RegistrationCallback,
+    )
 
     /** Withdraws the registration made by the last [register] call. */
     fun unregister()

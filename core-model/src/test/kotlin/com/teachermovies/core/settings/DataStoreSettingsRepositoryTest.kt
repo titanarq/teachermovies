@@ -20,181 +20,202 @@ class DataStoreSettingsRepositoryTest {
         )
 
     @Test
-    fun anUntouchedStoreReadsAsTheDefaults() = runTest {
-        val settings = newRepository().settings.first()
+    fun anUntouchedStoreReadsAsTheDefaults() =
+        runTest {
+            val settings = newRepository().settings.first()
 
-        assertEquals(AppSettings(), settings)
-        assertEquals(8787, settings.httpPort)
-        assertNull(settings.downloadVolumeId)
-        assertTrue(settings.authTokenHashes.isEmpty())
-        assertFalse(settings.firstRunCompleted)
-        assertFalse(settings.autostartOnBoot)
-    }
-
-    @Test
-    fun setHttpPortRoundTrips() = runTest {
-        val repository = newRepository()
-
-        repository.setHttpPort(9000)
-
-        assertEquals(9000, repository.settings.first().httpPort)
-    }
+            assertEquals(AppSettings(), settings)
+            assertEquals(8787, settings.httpPort)
+            assertNull(settings.downloadVolumeId)
+            assertTrue(settings.authTokenHashes.isEmpty())
+            assertFalse(settings.firstRunCompleted)
+            assertFalse(settings.autostartOnBoot)
+        }
 
     @Test
-    fun setHttpPortAcceptsBothEndsOfTheRange() = runTest {
-        val repository = newRepository()
+    fun setHttpPortRoundTrips() =
+        runTest {
+            val repository = newRepository()
 
-        repository.setHttpPort(1024)
-        assertEquals(1024, repository.settings.first().httpPort)
+            repository.setHttpPort(9000)
 
-        repository.setHttpPort(65535)
-        assertEquals(65535, repository.settings.first().httpPort)
-    }
-
-    @Test
-    fun setHttpPortRejectsAPortOutsideTheRange() = runTest {
-        val repository = newRepository()
-
-        assertRejected { repository.setHttpPort(1023) }
-        assertRejected { repository.setHttpPort(65536) }
-        assertRejected { repository.setHttpPort(0) }
-        assertRejected { repository.setHttpPort(-1) }
-
-        // A rejected port must leave the stored one alone, not half-write it.
-        assertEquals(8787, repository.settings.first().httpPort)
-    }
+            assertEquals(9000, repository.settings.first().httpPort)
+        }
 
     @Test
-    fun setDownloadVolumeIdRoundTrips() = runTest {
-        val repository = newRepository()
+    fun setHttpPortAcceptsBothEndsOfTheRange() =
+        runTest {
+            val repository = newRepository()
 
-        repository.setDownloadVolumeId("usb-1")
+            repository.setHttpPort(1024)
+            assertEquals(1024, repository.settings.first().httpPort)
 
-        assertEquals("usb-1", repository.settings.first().downloadVolumeId)
-    }
-
-    @Test
-    fun setDownloadVolumeIdClearsTheChoiceWithNull() = runTest {
-        val repository = newRepository()
-        repository.setDownloadVolumeId("usb-1")
-
-        repository.setDownloadVolumeId(null)
-
-        assertNull(repository.settings.first().downloadVolumeId)
-    }
+            repository.setHttpPort(65535)
+            assertEquals(65535, repository.settings.first().httpPort)
+        }
 
     @Test
-    fun addAuthTokenHashKeepsTheHashesAlreadyStored() = runTest {
-        val repository = newRepository()
+    fun setHttpPortRejectsAPortOutsideTheRange() =
+        runTest {
+            val repository = newRepository()
 
-        repository.addAuthTokenHash("hash-a")
-        repository.addAuthTokenHash("hash-b")
+            assertRejected { repository.setHttpPort(1023) }
+            assertRejected { repository.setHttpPort(65536) }
+            assertRejected { repository.setHttpPort(0) }
+            assertRejected { repository.setHttpPort(-1) }
 
-        assertEquals(setOf("hash-a", "hash-b"), repository.settings.first().authTokenHashes)
-    }
-
-    @Test
-    fun addAuthTokenHashStoresADuplicateOnlyOnce() = runTest {
-        val repository = newRepository()
-
-        repository.addAuthTokenHash("hash-a")
-        repository.addAuthTokenHash("hash-a")
-
-        assertEquals(setOf("hash-a"), repository.settings.first().authTokenHashes)
-    }
+            // A rejected port must leave the stored one alone, not half-write it.
+            assertEquals(8787, repository.settings.first().httpPort)
+        }
 
     @Test
-    fun clearAuthTokenHashesForgetsEveryHash() = runTest {
-        val repository = newRepository()
-        repository.addAuthTokenHash("hash-a")
-        repository.addAuthTokenHash("hash-b")
+    fun setDownloadVolumeIdRoundTrips() =
+        runTest {
+            val repository = newRepository()
 
-        repository.clearAuthTokenHashes()
+            repository.setDownloadVolumeId("usb-1")
 
-        assertTrue(repository.settings.first().authTokenHashes.isEmpty())
-    }
-
-    @Test
-    fun setFirstRunCompletedRoundTrips() = runTest {
-        val repository = newRepository()
-
-        repository.setFirstRunCompleted(true)
-        assertTrue(repository.settings.first().firstRunCompleted)
-
-        repository.setFirstRunCompleted(false)
-        assertFalse(repository.settings.first().firstRunCompleted)
-    }
+            assertEquals("usb-1", repository.settings.first().downloadVolumeId)
+        }
 
     @Test
-    fun autostartOnBootIsOffByDefault() = runTest {
-        assertFalse(newRepository().settings.first().autostartOnBoot)
-    }
+    fun setDownloadVolumeIdClearsTheChoiceWithNull() =
+        runTest {
+            val repository = newRepository()
+            repository.setDownloadVolumeId("usb-1")
+
+            repository.setDownloadVolumeId(null)
+
+            assertNull(repository.settings.first().downloadVolumeId)
+        }
 
     @Test
-    fun setAutostartOnBootIsWhatSettingsEmitsNext() = runTest {
-        val repository = newRepository()
+    fun addAuthTokenHashKeepsTheHashesAlreadyStored() =
+        runTest {
+            val repository = newRepository()
 
-        repository.setAutostartOnBoot(true)
+            repository.addAuthTokenHash("hash-a")
+            repository.addAuthTokenHash("hash-b")
 
-        assertTrue(repository.settings.first().autostartOnBoot)
-    }
-
-    @Test
-    fun setAutostartOnBootCanBeTurnedBackOff() = runTest {
-        val repository = newRepository()
-        repository.setAutostartOnBoot(true)
-
-        repository.setAutostartOnBoot(false)
-
-        assertFalse(repository.settings.first().autostartOnBoot)
-    }
+            assertEquals(setOf("hash-a", "hash-b"), repository.settings.first().authTokenHashes)
+        }
 
     @Test
-    fun togglingAutostartOnBootLeavesTheOtherSettingsAlone() = runTest {
-        val repository = newRepository()
-        repository.setHttpPort(9000)
-        repository.setDownloadVolumeId("usb-1")
-        repository.addAuthTokenHash("hash-a")
-        repository.setFirstRunCompleted(true)
-        val before = repository.settings.first()
+    fun addAuthTokenHashStoresADuplicateOnlyOnce() =
+        runTest {
+            val repository = newRepository()
 
-        repository.setAutostartOnBoot(true)
-        assertEquals(before.copy(autostartOnBoot = true), repository.settings.first())
+            repository.addAuthTokenHash("hash-a")
+            repository.addAuthTokenHash("hash-a")
 
-        repository.setAutostartOnBoot(false)
-        assertEquals(before, repository.settings.first())
-    }
+            assertEquals(setOf("hash-a"), repository.settings.first().authTokenHashes)
+        }
 
     @Test
-    fun writingOneSettingLeavesTheOthersAlone() = runTest {
-        val repository = newRepository()
+    fun clearAuthTokenHashesForgetsEveryHash() =
+        runTest {
+            val repository = newRepository()
+            repository.addAuthTokenHash("hash-a")
+            repository.addAuthTokenHash("hash-b")
 
-        repository.setHttpPort(9000)
-        repository.setDownloadVolumeId("usb-1")
-        repository.addAuthTokenHash("hash-a")
-        repository.setFirstRunCompleted(true)
+            repository.clearAuthTokenHashes()
 
-        assertEquals(
-            AppSettings(
-                httpPort = 9000,
-                downloadVolumeId = "usb-1",
-                authTokenHashes = setOf("hash-a"),
-                firstRunCompleted = true,
-            ),
-            repository.settings.first(),
-        )
-    }
+            assertTrue(
+                repository.settings
+                    .first()
+                    .authTokenHashes
+                    .isEmpty(),
+            )
+        }
 
     @Test
-    fun aWriteReachesTheFileOnDisk() = runTest {
-        val storeFile = tmpFolder.newFile("t.preferences_pb")
-        val dataStore = PreferenceDataStoreFactory.create { storeFile }
-        val repository = DataStoreSettingsRepository(dataStore)
+    fun setFirstRunCompletedRoundTrips() =
+        runTest {
+            val repository = newRepository()
 
-        repository.setHttpPort(9000)
+            repository.setFirstRunCompleted(true)
+            assertTrue(repository.settings.first().firstRunCompleted)
 
-        assertTrue("nothing was written to $storeFile", storeFile.length() > 0L)
-    }
+            repository.setFirstRunCompleted(false)
+            assertFalse(repository.settings.first().firstRunCompleted)
+        }
+
+    @Test
+    fun autostartOnBootIsOffByDefault() =
+        runTest {
+            assertFalse(newRepository().settings.first().autostartOnBoot)
+        }
+
+    @Test
+    fun setAutostartOnBootIsWhatSettingsEmitsNext() =
+        runTest {
+            val repository = newRepository()
+
+            repository.setAutostartOnBoot(true)
+
+            assertTrue(repository.settings.first().autostartOnBoot)
+        }
+
+    @Test
+    fun setAutostartOnBootCanBeTurnedBackOff() =
+        runTest {
+            val repository = newRepository()
+            repository.setAutostartOnBoot(true)
+
+            repository.setAutostartOnBoot(false)
+
+            assertFalse(repository.settings.first().autostartOnBoot)
+        }
+
+    @Test
+    fun togglingAutostartOnBootLeavesTheOtherSettingsAlone() =
+        runTest {
+            val repository = newRepository()
+            repository.setHttpPort(9000)
+            repository.setDownloadVolumeId("usb-1")
+            repository.addAuthTokenHash("hash-a")
+            repository.setFirstRunCompleted(true)
+            val before = repository.settings.first()
+
+            repository.setAutostartOnBoot(true)
+            assertEquals(before.copy(autostartOnBoot = true), repository.settings.first())
+
+            repository.setAutostartOnBoot(false)
+            assertEquals(before, repository.settings.first())
+        }
+
+    @Test
+    fun writingOneSettingLeavesTheOthersAlone() =
+        runTest {
+            val repository = newRepository()
+
+            repository.setHttpPort(9000)
+            repository.setDownloadVolumeId("usb-1")
+            repository.addAuthTokenHash("hash-a")
+            repository.setFirstRunCompleted(true)
+
+            assertEquals(
+                AppSettings(
+                    httpPort = 9000,
+                    downloadVolumeId = "usb-1",
+                    authTokenHashes = setOf("hash-a"),
+                    firstRunCompleted = true,
+                ),
+                repository.settings.first(),
+            )
+        }
+
+    @Test
+    fun aWriteReachesTheFileOnDisk() =
+        runTest {
+            val storeFile = tmpFolder.newFile("t.preferences_pb")
+            val dataStore = PreferenceDataStoreFactory.create { storeFile }
+            val repository = DataStoreSettingsRepository(dataStore)
+
+            repository.setHttpPort(9000)
+
+            assertTrue("nothing was written to $storeFile", storeFile.length() > 0L)
+        }
 
     /** The suspend cousin of `assertThrows`, for a call that has to run inside `runTest`. */
     private suspend fun assertRejected(block: suspend () -> Unit) {

@@ -58,7 +58,10 @@ data class MagnetUri(
                 else -> null
             }
 
-        private fun decode(value: String): String = runCatching { URLDecoder.decode(value, StandardCharsets.UTF_8) }.getOrDefault(value)
+        private fun decode(value: String): String =
+            runCatching {
+                URLDecoder.decode(value, StandardCharsets.UTF_8)
+            }.getOrDefault(value)
 
         /** Decodes RFC 4648 base32 (no padding), assuming [input] is upper-case and valid. */
         private fun decodeBase32(input: String): ByteArray {

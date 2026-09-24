@@ -13,9 +13,11 @@ import kotlinx.coroutines.flow.update
  * deduplicated by instance name and sorted by it, whatever the service type. The service types
  * asked for are recorded in [requestedServiceTypes].
  */
-class FakeServiceDiscoverer(initial: List<DiscoveredTv> = emptyList()) : ServiceDiscoverer {
+class FakeServiceDiscoverer(
+    initial: List<DiscoveredTv> = emptyList(),
+) : ServiceDiscoverer {
     private val _tvs = MutableStateFlow(normalize(initial))
-    private val _requested = mutableListOf<String>()
+    private val requestedTypes = mutableListOf<String>()
 
     /** The TVs currently visible. */
     val tvs: List<DiscoveredTv>
@@ -23,10 +25,10 @@ class FakeServiceDiscoverer(initial: List<DiscoveredTv> = emptyList()) : Service
 
     /** Every service type passed to [discover], in order. */
     val requestedServiceTypes: List<String>
-        get() = synchronized(_requested) { _requested.toList() }
+        get() = synchronized(requestedTypes) { requestedTypes.toList() }
 
     override fun discover(serviceType: String): Flow<List<DiscoveredTv>> {
-        synchronized(_requested) { _requested += serviceType }
+        synchronized(requestedTypes) { requestedTypes += serviceType }
         return _tvs.asStateFlow()
     }
 

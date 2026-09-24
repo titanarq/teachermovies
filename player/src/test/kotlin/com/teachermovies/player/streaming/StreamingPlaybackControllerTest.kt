@@ -8,7 +8,6 @@ import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.RangeReadiness
 import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.fake.FakeTorrentEngine
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
@@ -20,6 +19,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /**
  * The file is 100 pieces of 1 KiB lasting 100 s, so one millisecond is 1.024 bytes: position
@@ -108,7 +108,10 @@ class StreamingPlaybackControllerTest {
             runCurrent()
 
             assertEquals(PlayerState.Idle, player.state.value)
-            assertEquals(StreamState.Preparing(readyBytes = 1L * piece + piece, requiredBytes = 5L * piece), controller.state.value)
+            assertEquals(
+                StreamState.Preparing(readyBytes = 1L * piece + piece, requiredBytes = 5L * piece),
+                controller.state.value,
+            )
 
             advanceTimeBy(3 * poll)
             runCurrent()

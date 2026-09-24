@@ -87,7 +87,10 @@ class PairRouteTest {
 
     private suspend fun HttpClient.pairedToken(): String {
         val body = pair(pairing.currentPin()).bodyAsText()
-        return Json.parseToJsonElement(body).jsonObject["token"]!!.jsonPrimitive.content
+        return Json
+            .parseToJsonElement(body)
+            .jsonObject["token"]!!
+            .jsonPrimitive.content
     }
 
     private fun wrongPin(): String = ((pairing.currentPin().toInt() + 1) % 1_000_000).toString().padStart(6, '0')
@@ -109,7 +112,11 @@ class PairRouteTest {
 
             assertEquals(HttpStatusCode.OK, response.status)
             assertTrue(response.contentType()!!.match(ContentType.Application.Json))
-            val token = Json.parseToJsonElement(response.bodyAsText()).jsonObject["token"]!!.jsonPrimitive.content
+            val token =
+                Json
+                    .parseToJsonElement(response.bodyAsText())
+                    .jsonObject["token"]!!
+                    .jsonPrimitive.content
             assertEquals(setOf(PairingManager.sha256Hex(token)), settings.current.authTokenHashes)
         }
 
@@ -166,7 +173,13 @@ class PairRouteTest {
                 }
 
             assertEquals(HttpStatusCode.BadRequest, response.status)
-            assertEquals("bad_request", Json.parseToJsonElement(response.bodyAsText()).jsonObject["error"]!!.jsonPrimitive.content)
+            assertEquals(
+                "bad_request",
+                Json
+                    .parseToJsonElement(response.bodyAsText())
+                    .jsonObject["error"]!!
+                    .jsonPrimitive.content,
+            )
         }
 
     @Test

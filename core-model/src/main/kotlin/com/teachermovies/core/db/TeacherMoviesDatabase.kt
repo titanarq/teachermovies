@@ -18,7 +18,8 @@ abstract class TeacherMoviesDatabase : RoomDatabase() {
 
         /** The production database, stored in the app's database directory as [NAME]. */
         fun build(context: Context): TeacherMoviesDatabase =
-            Room.databaseBuilder(context.applicationContext, TeacherMoviesDatabase::class.java, NAME)
+            Room
+                .databaseBuilder(context.applicationContext, TeacherMoviesDatabase::class.java, NAME)
                 .build()
     }
 }

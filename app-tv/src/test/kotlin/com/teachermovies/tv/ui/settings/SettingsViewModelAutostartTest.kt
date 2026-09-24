@@ -7,7 +7,6 @@ import com.teachermovies.storage.SpaceInfo
 import com.teachermovies.storage.SpaceProvider
 import com.teachermovies.storage.StorageVolumeProvider
 import com.teachermovies.storage.VolumeInfo
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -21,11 +20,11 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.File
 
 /** The "Arrancar al encender la TV" switch (#126), over `:core-model`'s in-memory settings. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelAutostartTest {
-
     private val noVolumes =
         object : StorageVolumeProvider {
             override fun volumes(): List<VolumeInfo> = emptyList()

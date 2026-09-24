@@ -65,7 +65,13 @@ class StatusSampleMapperTest {
 
     @Test
     fun etaIsUnknownBeforeMetadata() {
-        val fetching = downloading.copy(phase = RawPhase.DownloadingMetadata, hasMetadata = false, totalWanted = 0, totalWantedDone = 0)
+        val fetching =
+            downloading.copy(
+                phase = RawPhase.DownloadingMetadata,
+                hasMetadata = false,
+                totalWanted = 0,
+                totalWantedDone = 0,
+            )
 
         val snapshot = StatusSampleMapper.apply(pending, fetching)
 
@@ -104,7 +110,10 @@ class StatusSampleMapperTest {
 
     @Test
     fun finishedIsCompleted() {
-        assertEquals(DownloadState.Completed, StatusSampleMapper.apply(pending, downloading.copy(phase = RawPhase.Seeding)).state)
+        assertEquals(
+            DownloadState.Completed,
+            StatusSampleMapper.apply(pending, downloading.copy(phase = RawPhase.Seeding)).state,
+        )
     }
 
     @Test
@@ -169,8 +178,20 @@ class StatusSampleMapperTest {
 
         assertEquals(
             listOf(
-                TorrentFileInfo(index = 0, path = "m/Movie.mkv", sizeBytes = 1_000, priority = FilePriority.High, downloadedBytes = 400),
-                TorrentFileInfo(index = 1, path = "m/sample.mkv", sizeBytes = 50, priority = FilePriority.Skip, downloadedBytes = 0),
+                TorrentFileInfo(
+                    index = 0,
+                    path = "m/Movie.mkv",
+                    sizeBytes = 1_000,
+                    priority = FilePriority.High,
+                    downloadedBytes = 400,
+                ),
+                TorrentFileInfo(
+                    index = 1,
+                    path = "m/sample.mkv",
+                    sizeBytes = 50,
+                    priority = FilePriority.Skip,
+                    downloadedBytes = 0,
+                ),
             ),
             files,
         )
@@ -188,7 +209,13 @@ class StatusSampleMapperTest {
         index: Int,
         path: String,
         size: Long,
-    ) = TorrentFileInfo(index = index, path = path, sizeBytes = size, priority = FilePriority.Normal, downloadedBytes = 0)
+    ) = TorrentFileInfo(
+        index = index,
+        path = path,
+        sizeBytes = size,
+        priority = FilePriority.Normal,
+        downloadedBytes = 0,
+    )
 
     @Test
     fun anAllowedMoveIsNotUnexpected() {
@@ -198,7 +225,9 @@ class StatusSampleMapperTest {
     @Test
     fun aSelfMoveIsNotUnexpected() {
         assertFalse(StatusSampleMapper.isUnexpectedTransition(DownloadState.Downloading, DownloadState.Downloading))
-        assertFalse(StatusSampleMapper.isUnexpectedTransition(DownloadState.FetchingMetadata, DownloadState.FetchingMetadata))
+        assertFalse(
+            StatusSampleMapper.isUnexpectedTransition(DownloadState.FetchingMetadata, DownloadState.FetchingMetadata),
+        )
     }
 
     @Test

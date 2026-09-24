@@ -28,7 +28,10 @@ object DownloadStateMapper {
  * Estimated seconds remaining at the current [rateBps], or `null` when the rate is not positive
  * and no estimate can be made.
  */
-fun etaSeconds(remainingBytes: Long, rateBps: Long): Long? {
+fun etaSeconds(
+    remainingBytes: Long,
+    rateBps: Long,
+): Long? {
     if (rateBps <= 0) return null
     // Integer ceiling division: exact for arbitrarily large byte counts, unlike a Double round trip.
     return (remainingBytes + rateBps - 1) / rateBps

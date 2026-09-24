@@ -61,7 +61,11 @@ internal object MatroskaSubtitles {
                         is Walk.Stop -> return walk.result
                     }
                 }
-            val timed = SubtitleWriter.timedCues(collected.blocks.map { decodeBlock(it, collected.track) }, collected.scale)
+            val timed =
+                SubtitleWriter.timedCues(
+                    collected.blocks.map { decodeBlock(it, collected.track) },
+                    collected.scale,
+                )
             val cues =
                 if (collected.track.codecId == CODEC_WEBVTT) {
                     timed.map { SubtitleWriter.TimedCue(it.startMs, it.endMs, WebVttText.toSrt(it.text)) }
@@ -165,7 +169,10 @@ internal object MatroskaSubtitles {
                     clusterTimecode = null
                 }
 
-                ID_TIMECODE -> clusterTimecode = source.readUint(header)
+                ID_TIMECODE -> {
+                    clusterTimecode = source.readUint(header)
+                }
+
                 ID_SIMPLE_BLOCK -> {
                     val block = readBlockIfTrack(source, header, trackNumber)
                     if (block != null) {
@@ -176,20 +183,29 @@ internal object MatroskaSubtitles {
                 ID_BLOCK_GROUP -> {
                     val group = readBlockGroup(source, header, trackNumber)
                     if (group != null) {
-                        blocks += RawBlock(blockTime(clusterTimecode, inCluster, group.first), group.second, group.first.data)
+                        blocks +=
+                            RawBlock(blockTime(clusterTimecode, inCluster, group.first), group.second, group.first.data)
                     }
                 }
 
-                ID_INFO -> scale = readTimecodeScale(source, header)
+                ID_INFO -> {
+                    scale = readTimecodeScale(source, header)
+                }
+
                 ID_TRACKS -> {
                     val chosen =
-                        readTracks(source, header).firstOrNull { it.number == trackNumber && it.type == TRACK_TYPE_SUBTITLE }
+                        readTracks(source, header).firstOrNull {
+                            it.number == trackNumber &&
+                                it.type == TRACK_TYPE_SUBTITLE
+                        }
                             ?: return Walk.Stop(SubtitleExtraction.TrackNotFound)
                     classify(chosen)?.let { return Walk.Stop(it) }
                     track = chosen
                 }
 
-                else -> skip(source, header)
+                else -> {
+                    skip(source, header)
+                }
             }
         }
         if (segmentEnd > source.length) throw TruncatedException()
@@ -229,7 +245,10 @@ internal object MatroskaSubtitles {
             return null
         }
         if (head.size < numberLength + BLOCK_TIMECODE_AND_FLAGS) throw CorruptException("block too short")
-        val relative = ((head[numberLength].toInt() shl Byte.SIZE_BITS) or (head[numberLength + 1].toInt() and 0xFF)).toShort().toInt()
+        val relative =
+            ((head[numberLength].toInt() shl Byte.SIZE_BITS) or (head[numberLength + 1].toInt() and 0xFF))
+                .toShort()
+                .toInt()
         val flags = head[numberLength + 2].toInt() and 0xFF
         if ((flags and LACING_MASK) != 0) throw ExtractionFailure("laced subtitle block")
         val frameStart = header.dataStart + numberLength + BLOCK_TIMECODE_AND_FLAGS
@@ -256,7 +275,9 @@ internal object MatroskaSubtitles {
                     otherTrack = frame == null
                 }
 
-                ID_BLOCK_DURATION -> duration = source.readUint(child)
+                ID_BLOCK_DURATION -> {
+                    duration = source.readUint(child)
+                }
             }
         }
         if (otherTrack) return null
@@ -333,20 +354,34 @@ internal object MatroskaSubtitles {
             var encrypted = false
             children(source, encoding) { child ->
                 when (child.id) {
-                    ID_CONTENT_ENCODING_ORDER -> order = source.readUint(child)
-                    ID_CONTENT_ENCODING_SCOPE -> scope = source.readUint(child)
-                    ID_CONTENT_ENCODING_TYPE -> type = source.readUint(child)
-                    ID_CONTENT_ENCRYPTION -> encrypted = true
-                    ID_CONTENT_COMPRESSION ->
+                    ID_CONTENT_ENCODING_ORDER -> {
+                        order = source.readUint(child)
+                    }
+
+                    ID_CONTENT_ENCODING_SCOPE -> {
+                        scope = source.readUint(child)
+                    }
+
+                    ID_CONTENT_ENCODING_TYPE -> {
+                        type = source.readUint(child)
+                    }
+
+                    ID_CONTENT_ENCRYPTION -> {
+                        encrypted = true
+                    }
+
+                    ID_CONTENT_COMPRESSION -> {
                         children(source, child) { compression ->
                             when (compression.id) {
                                 ID_CONTENT_COMP_ALGO -> algorithm = source.readUint(compression)
                                 ID_CONTENT_COMP_SETTINGS -> settings = source.readBytes(compression.size)
                             }
                         }
+                    }
                 }
             }
-            encodings += ContentEncoding(order, scope, encrypted || type != ENCODING_TYPE_COMPRESSION, algorithm, settings)
+            encodings +=
+                ContentEncoding(order, scope, encrypted || type != ENCODING_TYPE_COMPRESSION, algorithm, settings)
         }
         return encodings
     }
@@ -385,7 +420,8 @@ internal object MatroskaSubtitles {
 
     private fun EbmlSource.readUint(header: EbmlHeader): Long = EbmlSource.uint(readBytes(header.size))
 
-    private fun EbmlSource.readString(header: EbmlHeader): String = String(readBytes(header.size), Charsets.UTF_8).trimEnd('\u0000')
+    private fun EbmlSource.readString(header: EbmlHeader): String =
+        String(readBytes(header.size), Charsets.UTF_8).trimEnd('\u0000')
 
     // endregion
 
@@ -395,16 +431,31 @@ internal object MatroskaSubtitles {
     private fun classify(track: TrackInfo): SubtitleExtraction? {
         val codec = track.codecId
         return when {
-            codec == CODEC_UTF8 || codec == CODEC_WEBVTT || codec == CODEC_ASS || codec == CODEC_SSA ->
+            codec == CODEC_UTF8 || codec == CODEC_WEBVTT || codec == CODEC_ASS || codec == CODEC_SSA -> {
                 when {
-                    track.encodings.any { it.encrypted } -> SubtitleExtraction.Failed("encrypted subtitle track")
-                    track.encodings.any { it.algorithm != COMP_ALGO_ZLIB && it.algorithm != COMP_ALGO_HEADER_STRIPPING } ->
-                        SubtitleExtraction.Failed("unsupported content compression")
-                    else -> null
-                }
+                    track.encodings.any { it.encrypted } -> {
+                        SubtitleExtraction.Failed("encrypted subtitle track")
+                    }
 
-            codec in IMAGE_CODECS || codec.startsWith(IMAGE_CODEC_PREFIX) -> SubtitleExtraction.NotTextBased
-            else -> SubtitleExtraction.Failed("unsupported subtitle codec $codec")
+                    track.encodings.any {
+                        it.algorithm != COMP_ALGO_ZLIB && it.algorithm != COMP_ALGO_HEADER_STRIPPING
+                    } -> {
+                        SubtitleExtraction.Failed("unsupported content compression")
+                    }
+
+                    else -> {
+                        null
+                    }
+                }
+            }
+
+            codec in IMAGE_CODECS || codec.startsWith(IMAGE_CODEC_PREFIX) -> {
+                SubtitleExtraction.NotTextBased
+            }
+
+            else -> {
+                SubtitleExtraction.Failed("unsupported subtitle codec $codec")
+            }
         }
     }
 
@@ -414,7 +465,8 @@ internal object MatroskaSubtitles {
     private fun decodeBlock(
         block: RawBlock,
         track: TrackInfo,
-    ): SubtitleWriter.RawCue = SubtitleWriter.RawCue(block.ticks, block.durationTicks, decode(block.data, track.encodings, SCOPE_FRAMES))
+    ): SubtitleWriter.RawCue =
+        SubtitleWriter.RawCue(block.ticks, block.durationTicks, decode(block.data, track.encodings, SCOPE_FRAMES))
 
     private fun assHeader(track: TrackInfo): String {
         val raw = track.codecPrivate ?: return ""
@@ -467,8 +519,11 @@ internal object MatroskaSubtitles {
     private fun IOException.toReason(): String =
         when (this) {
             is TruncatedException -> "truncated file"
+
             is CorruptException -> "corrupt file: $message"
+
             is ClosedByInterruptException -> "interrupted"
+
             // Never the exception's own message: it names the media's path.
             else -> "I/O error"
         }

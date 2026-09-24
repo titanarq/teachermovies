@@ -24,7 +24,6 @@ import org.junit.Test
 /** [FakeTorrentEngine] on an unconfined main dispatcher, like `DownloadsViewModelTest`. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class FileSelectionViewModelTest {
-
     private val magnet = "magnet:?xt=urn:btih:${"b".repeat(40)}&dn=Movie"
     private val engine = FakeTorrentEngine()
 
@@ -75,10 +74,18 @@ class FileSelectionViewModelTest {
         val viewModel = FileSelectionViewModel(engine, id)
 
         viewModel.toggle(1)
-        assertEquals(listOf(true, true, true), viewModel.uiState.value.rows.map { it.checked })
+        assertEquals(
+            listOf(true, true, true),
+            viewModel.uiState.value.rows
+                .map { it.checked },
+        )
         viewModel.toggle(0)
         viewModel.toggle(1)
-        assertEquals(listOf(false, false, true), viewModel.uiState.value.rows.map { it.checked })
+        assertEquals(
+            listOf(false, false, true),
+            viewModel.uiState.value.rows
+                .map { it.checked },
+        )
         assertTrue("toggling is local until Aplicar", engine.recordedCalls.none { it.startsWith("setFilePriorities") })
     }
 
@@ -140,7 +147,9 @@ class FileSelectionViewModelTest {
     }
 
     /** The real engine answers `NotReady` before metadata; the fake returns an empty list instead. */
-    private class NotReadyUntilMetadata(private val fake: FakeTorrentEngine) : TorrentEngine by fake {
+    private class NotReadyUntilMetadata(
+        private val fake: FakeTorrentEngine,
+    ) : TorrentEngine by fake {
         override suspend fun files(id: TorrentId): EngineResult<List<TorrentFileInfo>> =
             if (fake.torrents.value.any { it.id == id && it.hasMetadata }) {
                 fake.files(id)

@@ -6,4 +6,7 @@ package com.teachermovies.storage
  * [freeBytes] is what an unprivileged app may actually write, not what the filesystem reports as
  * unallocated; both are 0 for a root that does not exist.
  */
-data class SpaceInfo(val freeBytes: Long, val totalBytes: Long)
+data class SpaceInfo(
+    val freeBytes: Long,
+    val totalBytes: Long,
+)

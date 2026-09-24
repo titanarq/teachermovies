@@ -58,8 +58,13 @@ internal object Mp4Writer {
         /** Top-level boxes written right after `ftyp` (a `free` box with a 64-bit size, say). */
         afterFtyp: List<ByteArray> = emptyList(),
     ): ByteArray {
-        val ftyp = concat(box("ftyp", "isom".toByteArray(), u32(0x200), "isomiso2mp41".toByteArray()), *afterFtyp.toTypedArray())
+        val ftyp =
+            concat(
+                box("ftyp", "isom".toByteArray(), u32(0x200), "isomiso2mp41".toByteArray()),
+                *afterFtyp.toTypedArray(),
+            )
         val mdat = box("mdat", payload(tracks))
+
         fun moovAt(mdatPayloadStart: Long): ByteArray {
             var offset = mdatPayloadStart
             val traks =
@@ -79,7 +84,8 @@ internal object Mp4Writer {
     }
 
     /** Every sample of [tracks], in the order [mp4] lays them out. */
-    fun payload(tracks: List<TrackSpec>): ByteArray = concat(*tracks.flatMap { t -> t.samples.map { it.bytes } }.toTypedArray())
+    fun payload(tracks: List<TrackSpec>): ByteArray =
+        concat(*tracks.flatMap { t -> t.samples.map { it.bytes } }.toTypedArray())
 
     private fun trak(
         track: TrackSpec,
@@ -88,18 +94,53 @@ internal object Mp4Writer {
         val tkhd = fullBox("tkhd", 0, 0, u32(0), u32(0), u32(track.trackId), ByteArray(68))
         val mdhd =
             if (track.mdhdVersion1) {
-                fullBox("mdhd", 1, 0, ByteArray(16), u32(track.timescale), ByteArray(8), u16(packLanguage(track.language)), u16(0))
+                fullBox(
+                    "mdhd",
+                    1,
+                    0,
+                    ByteArray(16),
+                    u32(track.timescale),
+                    ByteArray(8),
+                    u16(packLanguage(track.language)),
+                    u16(0),
+                )
             } else {
-                fullBox("mdhd", 0, 0, ByteArray(8), u32(track.timescale), u32(0), u16(packLanguage(track.language)), u16(0))
+                fullBox(
+                    "mdhd",
+                    0,
+                    0,
+                    ByteArray(8),
+                    u32(track.timescale),
+                    u32(0),
+                    u16(packLanguage(track.language)),
+                    u16(0),
+                )
             }
         val hdlr = fullBox("hdlr", 0, 0, u32(0), track.handler.toByteArray(), ByteArray(12), byteArrayOf(0))
         val entry = box(track.sampleEntry, ByteArray(6), u16(1), ByteArray(30))
         val stsd = fullBox("stsd", 0, 0, u32(1), entry)
-        val stts = fullBox("stts", 0, 0, u32(track.samples.size.toLong()), *track.samples.map { concat(u32(1), u32(it.delta)) }.toTypedArray())
+        val stts =
+            fullBox(
+                "stts",
+                0,
+                0,
+                u32(track.samples.size.toLong()),
+                *track.samples
+                    .map {
+                        concat(u32(1), u32(it.delta))
+                    }.toTypedArray(),
+            )
         val sizes = track.samples.map { it.bytes.size }
         val stsz =
             if (track.compactSizes) {
-                fullBox("stz2", 0, 0, byteArrayOf(0, 0, 0, 16), u32(sizes.size.toLong()), *sizes.map { u16(it) }.toTypedArray())
+                fullBox(
+                    "stz2",
+                    0,
+                    0,
+                    byteArrayOf(0, 0, 0, 16),
+                    u32(sizes.size.toLong()),
+                    *sizes.map { u16(it) }.toTypedArray(),
+                )
             } else {
                 fullBox("stsz", 0, 0, u32(0), u32(sizes.size.toLong()), *sizes.map { u32(it.toLong()) }.toTypedArray())
             }
@@ -137,7 +178,12 @@ internal object Mp4Writer {
         version: Int,
         flags: Int,
         vararg payload: ByteArray,
-    ): ByteArray = box(type, byteArrayOf(version.toByte(), (flags shr 16).toByte(), (flags shr 8).toByte(), flags.toByte()), *payload)
+    ): ByteArray =
+        box(
+            type,
+            byteArrayOf(version.toByte(), (flags shr 16).toByte(), (flags shr 8).toByte(), flags.toByte()),
+            *payload,
+        )
 
     private fun packLanguage(code: String): Int = code.fold(0) { acc, c -> (acc shl 5) or (c.code - 0x60) }
 

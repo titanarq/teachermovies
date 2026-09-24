@@ -63,7 +63,12 @@ class StreamWindowCalculatorTest {
     fun fileSmallerThanHeadPlusTailYieldsOneRangeCoveringTheFile() {
         assertEquals(
             listOf(ByteRange(0, 12)),
-            StreamWindowCalculator.openRanges(fileSizeBytes = 12, startPositionMs = 0, durationMs = 100, policy = policy),
+            StreamWindowCalculator.openRanges(
+                fileSizeBytes = 12,
+                startPositionMs = 0,
+                durationMs = 100,
+                policy = policy,
+            ),
         )
     }
 
@@ -72,7 +77,12 @@ class StreamWindowCalculatorTest {
         // Start offset 5 -> buffer [5, 25) overlaps head [0, 10); tail is [995, 1000).
         assertEquals(
             listOf(ByteRange(0, 25), ByteRange(995, 5)),
-            StreamWindowCalculator.openRanges(fileSizeBytes = 1_000, startPositionMs = 5, durationMs = 1_000, policy = policy),
+            StreamWindowCalculator.openRanges(
+                fileSizeBytes = 1_000,
+                startPositionMs = 5,
+                durationMs = 1_000,
+                policy = policy,
+            ),
         )
     }
 
@@ -81,7 +91,12 @@ class StreamWindowCalculatorTest {
         // Start offset 985 -> buffer [985, 1000) merges with tail [995, 1000).
         assertEquals(
             listOf(ByteRange(0, 10), ByteRange(985, 15)),
-            StreamWindowCalculator.openRanges(fileSizeBytes = 1_000, startPositionMs = 985, durationMs = 1_000, policy = policy),
+            StreamWindowCalculator.openRanges(
+                fileSizeBytes = 1_000,
+                startPositionMs = 985,
+                durationMs = 1_000,
+                policy = policy,
+            ),
         )
     }
 
@@ -89,7 +104,12 @@ class StreamWindowCalculatorTest {
     fun startInTheMiddleYieldsThreeAscendingRanges() {
         assertEquals(
             listOf(ByteRange(0, 10), ByteRange(500, 20), ByteRange(995, 5)),
-            StreamWindowCalculator.openRanges(fileSizeBytes = 1_000, startPositionMs = 500, durationMs = 1_000, policy = policy),
+            StreamWindowCalculator.openRanges(
+                fileSizeBytes = 1_000,
+                startPositionMs = 500,
+                durationMs = 1_000,
+                policy = policy,
+            ),
         )
     }
 
@@ -97,7 +117,12 @@ class StreamWindowCalculatorTest {
     fun startAtZeroOnlyRequestsHeadAndStartBufferOnce() {
         assertEquals(
             listOf(ByteRange(0, 20), ByteRange(995, 5)),
-            StreamWindowCalculator.openRanges(fileSizeBytes = 1_000, startPositionMs = 0, durationMs = 1_000, policy = policy),
+            StreamWindowCalculator.openRanges(
+                fileSizeBytes = 1_000,
+                startPositionMs = 0,
+                durationMs = 1_000,
+                policy = policy,
+            ),
         )
     }
 
@@ -106,7 +131,12 @@ class StreamWindowCalculatorTest {
         // Start offset 10 -> buffer [10, 30) touches head [0, 10).
         assertEquals(
             listOf(ByteRange(0, 30), ByteRange(995, 5)),
-            StreamWindowCalculator.openRanges(fileSizeBytes = 1_000, startPositionMs = 10, durationMs = 1_000, policy = policy),
+            StreamWindowCalculator.openRanges(
+                fileSizeBytes = 1_000,
+                startPositionMs = 10,
+                durationMs = 1_000,
+                policy = policy,
+            ),
         )
     }
 }

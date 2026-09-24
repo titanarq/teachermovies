@@ -12,7 +12,9 @@ sealed interface BootDecision {
     data object Disabled : BootDecision
 
     /** `autostartOnBoot` is on and [Autostart.start] ran once, with [result]. */
-    data class Started(val result: AutostartResult) : BootDecision
+    data class Started(
+        val result: AutostartResult,
+    ) : BootDecision
 }
 
 /**

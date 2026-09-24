@@ -11,7 +11,10 @@ import androidx.tv.material3.Text
  * holds no focusable element, so focus stays in the tab row until then.
  */
 @Composable
-internal fun PlaceholderScreen(title: String, modifier: Modifier = Modifier) {
+internal fun PlaceholderScreen(
+    title: String,
+    modifier: Modifier = Modifier,
+) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Text(text = title)
     }

@@ -33,8 +33,19 @@ class EngineErrorHttpTest {
     fun `already exists carries the existing id, other errors none`() {
         val id = TorrentId("a".repeat(40))
 
-        assertEquals(id.value, EngineError.AlreadyExists(id).toHttp().body.id)
-        assertEquals(null, EngineError.UnknownTorrent.toHttp().body.id)
+        assertEquals(
+            id.value,
+            EngineError
+                .AlreadyExists(id)
+                .toHttp()
+                .body.id,
+        )
+        assertEquals(
+            null,
+            EngineError.UnknownTorrent
+                .toHttp()
+                .body.id,
+        )
     }
 
     @Test

@@ -28,7 +28,9 @@ internal object Mp4Subtitles {
         try {
             file.openChannel().use { channel ->
                 val moov = readMoov(channel) ?: return Mp4TracksResult.NotMp4
-                Mp4TracksResult.Tracks(parseTracks(moov).filter { it.handler in SUBTITLE_HANDLERS }.map { it.toTextTrack() })
+                Mp4TracksResult.Tracks(
+                    parseTracks(moov).filter { it.handler in SUBTITLE_HANDLERS }.map { it.toTextTrack() },
+                )
             }
         } catch (e: Mp4Failure) {
             Mp4TracksResult.Failed(e.reason)
@@ -55,7 +57,12 @@ internal object Mp4Subtitles {
                         parseTracks(moov).firstOrNull { it.trackId == trackId && it.handler in SUBTITLE_HANDLERS }
                             ?: return SubtitleExtraction.TrackNotFound
                     classify(track)?.let { return it }
-                    if (moov.children(0, moov.size).any { it.type == MVEX }) return SubtitleExtraction.Failed("fragmented MP4 not supported")
+                    if (moov.children(0, moov.size).any {
+                            it.type == MVEX
+                        }
+                    ) {
+                        return SubtitleExtraction.Failed("fragmented MP4 not supported")
+                    }
                     readCues(channel, moov, track)
                 }
             val text = SubtitleWriter.srt(cues) ?: return SubtitleExtraction.Failed("no cues")
@@ -80,7 +87,8 @@ internal object Mp4Subtitles {
         var position = 0L
         var first = true
         while (position < length) {
-            val header = readHeaderAt(channel, position, length) ?: if (first) return null else throw TruncatedException()
+            val header =
+                readHeaderAt(channel, position, length) ?: if (first) return null else throw TruncatedException()
             if (first && header.type != FTYP) return null
             first = false
             if (header.end > length) throw TruncatedException()
@@ -111,13 +119,17 @@ internal object Mp4Subtitles {
         val size32 = Bytes(head).u32(0)
         val type = Bytes(head).type(4)
         return when (size32) {
-            0L -> FileBox(type, position + BOX_HEADER, length)
+            0L -> {
+                FileBox(type, position + BOX_HEADER, length)
+            }
+
             1L -> {
                 if (length - position < LARGE_BOX_HEADER) return null
                 val large = Bytes(readAt(channel, position + BOX_HEADER, 8)).u64(0)
                 if (large < LARGE_BOX_HEADER) throw CorruptException("bad box size")
                 FileBox(type, position + LARGE_BOX_HEADER, position + large)
             }
+
             else -> {
                 if (size32 < BOX_HEADER) throw CorruptException("bad box size")
                 FileBox(type, position + BOX_HEADER, position + size32)
@@ -179,9 +191,23 @@ internal object Mp4Subtitles {
     /** Null when the chosen track can be extracted; otherwise the result that says why not. */
     private fun classify(track: TrackInfo): SubtitleExtraction? =
         when {
-            track.sampleEntry == TX3G -> if (track.timescale <= 0) SubtitleExtraction.Failed("corrupt file: invalid timescale") else null
-            track.handler == HANDLER_SUBPICTURE -> SubtitleExtraction.NotTextBased
-            else -> SubtitleExtraction.Failed("unsupported subtitle codec ${track.sampleEntry.ifEmpty { track.handler }}")
+            track.sampleEntry == TX3G -> {
+                if (track.timescale <=
+                    0
+                ) {
+                    SubtitleExtraction.Failed("corrupt file: invalid timescale")
+                } else {
+                    null
+                }
+            }
+
+            track.handler == HANDLER_SUBPICTURE -> {
+                SubtitleExtraction.NotTextBased
+            }
+
+            else -> {
+                SubtitleExtraction.Failed("unsupported subtitle codec ${track.sampleEntry.ifEmpty { track.handler }}")
+            }
         }
 
     // endregion
@@ -241,15 +267,20 @@ internal object Mp4Subtitles {
                     (if (i % 2 == 0) byte shr 4 else byte and 0x0F).toLong()
                 }
             }
+
             8 -> {
                 requireTable(stz2, 12, count, 1)
                 LongArray(count) { moov.u8(base + it).toLong() }
             }
+
             16 -> {
                 requireTable(stz2, 12, count, 2)
                 LongArray(count) { moov.u16(base + 2 * it).toLong() }
             }
-            else -> throw CorruptException("bad stz2 field size")
+
+            else -> {
+                throw CorruptException("bad stz2 field size")
+            }
         }
     }
 
@@ -301,7 +332,14 @@ internal object Mp4Subtitles {
         for (r in 0 until runs) {
             val firstChunk = moov.u32(stsc.start + 8 + 12 * r)
             val perChunk = moov.u32(stsc.start + 12 + 12 * r)
-            val lastChunk = if (r + 1 < runs) moov.u32(stsc.start + 8 + 12 * (r + 1)) - 1 else chunkOffsets.size.toLong()
+            val lastChunk =
+                if (r + 1 <
+                    runs
+                ) {
+                    moov.u32(stsc.start + 8 + 12 * (r + 1)) - 1
+                } else {
+                    chunkOffsets.size.toLong()
+                }
             if (firstChunk < 1 || lastChunk > chunkOffsets.size) throw CorruptException("bad stsc")
             for (chunk in firstChunk..lastChunk) {
                 var offset = chunkOffsets[(chunk - 1).toInt()]
@@ -329,7 +367,11 @@ internal object Mp4Subtitles {
         entries: Int,
         entryBytes: Int,
     ) {
-        if (box.start + headerBytes + entries.toLong() * entryBytes > box.end) throw CorruptException("table overruns its box")
+        if (box.start + headerBytes + entries.toLong() * entryBytes >
+            box.end
+        ) {
+            throw CorruptException("table overruns its box")
+        }
     }
 
     private fun toMs(
@@ -375,7 +417,16 @@ internal object Mp4Subtitles {
         ): String {
             if (at + length > data.size) throw CorruptException("text overruns its sample")
             val bom = length >= 2 && byte(at) == 0xFE && byte(at + 1) == 0xFF
-            return if (bom) String(data, at + 2, length - 2, Charsets.UTF_16BE) else String(data, at, length, Charsets.UTF_8)
+            return if (bom) {
+                String(
+                    data,
+                    at + 2,
+                    length - 2,
+                    Charsets.UTF_16BE,
+                )
+            } else {
+                String(data, at, length, Charsets.UTF_8)
+            }
         }
 
         /** The boxes directly inside the payload range [start, end). */
@@ -434,8 +485,11 @@ internal object Mp4Subtitles {
     private fun IOException.toReason(): String =
         when (this) {
             is TruncatedException -> "truncated file"
+
             is CorruptException -> "corrupt file: $message"
+
             is ClosedByInterruptException -> "interrupted"
+
             // Never the exception's own message: it names the media's path.
             else -> "I/O error"
         }

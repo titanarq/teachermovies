@@ -20,7 +20,12 @@ class WindowDeadlinePlannerTest {
 
     @Test
     fun aWindowSlidForwardByOnePieceResetsTheLeaverAndSchedulesTheNewcomer() {
-        val plan = WindowDeadlinePlanner.plan(previous = PieceRange(3, 6), current = PieceRange(4, 7), deadlineStepMs = step)
+        val plan =
+            WindowDeadlinePlanner.plan(
+                previous = PieceRange(3, 6),
+                current = PieceRange(4, 7),
+                deadlineStepMs = step,
+            )
 
         assertEquals(mapOf(7 to 100), plan.deadlines)
         assertEquals(listOf(3), plan.reset)
@@ -28,14 +33,24 @@ class WindowDeadlinePlannerTest {
 
     @Test
     fun anUnchangedWindowPlansNothing() {
-        val plan = WindowDeadlinePlanner.plan(previous = PieceRange(3, 6), current = PieceRange(3, 6), deadlineStepMs = step)
+        val plan =
+            WindowDeadlinePlanner.plan(
+                previous = PieceRange(3, 6),
+                current = PieceRange(3, 6),
+                deadlineStepMs = step,
+            )
 
         assertEquals(WindowDeadlinePlan(emptyMap(), emptyList()), plan)
     }
 
     @Test
     fun aDisjointJumpResetsTheOldWindowAscendingAndSchedulesTheNewOne() {
-        val plan = WindowDeadlinePlanner.plan(previous = PieceRange(0, 2), current = PieceRange(8, 9), deadlineStepMs = 50)
+        val plan =
+            WindowDeadlinePlanner.plan(
+                previous = PieceRange(0, 2),
+                current = PieceRange(8, 9),
+                deadlineStepMs = 50,
+            )
 
         assertEquals(mapOf(8 to 50, 9 to 100), plan.deadlines)
         assertEquals(listOf(0, 1, 2), plan.reset)
@@ -54,7 +69,14 @@ class WindowDeadlinePlannerTest {
 
     @Test
     fun readinessWithEveryPiecePresentIsReadyForTheWholeLength() {
-        val readiness = readinessFor(PieceRange(1, 3), 100, fileOffsetInTorrent = 50L, byteOffset = 100L, lengthBytes = 200L) { true }
+        val readiness =
+            readinessFor(
+                PieceRange(1, 3),
+                100,
+                fileOffsetInTorrent = 50L,
+                byteOffset = 100L,
+                lengthBytes = 200L,
+            ) { true }
 
         assertEquals(RangeReadiness(ready = true, readyBytes = 200L, missingPieces = emptyList()), readiness)
     }
@@ -62,14 +84,25 @@ class WindowDeadlinePlannerTest {
     @Test
     fun readinessWithAHoleInTheMiddleStopsAtTheHole() {
         // Torrent bytes 150..349 are pieces 1..3; piece 2 (bytes 200..299) is missing.
-        val readiness = readinessFor(PieceRange(1, 3), 100, fileOffsetInTorrent = 50L, byteOffset = 100L, lengthBytes = 200L) { it != 2 }
+        val readiness =
+            readinessFor(PieceRange(1, 3), 100, fileOffsetInTorrent = 50L, byteOffset = 100L, lengthBytes = 200L) {
+                it !=
+                    2
+            }
 
         assertEquals(RangeReadiness(ready = false, readyBytes = 50L, missingPieces = listOf(2)), readiness)
     }
 
     @Test
     fun readinessWithNoPiecePresentHasNoReadyBytes() {
-        val readiness = readinessFor(PieceRange(1, 3), 100, fileOffsetInTorrent = 50L, byteOffset = 100L, lengthBytes = 200L) { false }
+        val readiness =
+            readinessFor(
+                PieceRange(1, 3),
+                100,
+                fileOffsetInTorrent = 50L,
+                byteOffset = 100L,
+                lengthBytes = 200L,
+            ) { false }
 
         assertEquals(RangeReadiness(ready = false, readyBytes = 0L, missingPieces = listOf(1, 2, 3)), readiness)
     }

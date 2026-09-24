@@ -19,5 +19,7 @@ sealed interface AutostartResult {
      * The HTTP server was started but the platform refused to start the foreground torrent
      * service from the boot broadcast (for example Android 15's `dataSync` boot restriction).
      */
-    data class TorrentServiceRefused(val reason: String) : AutostartResult
+    data class TorrentServiceRefused(
+        val reason: String,
+    ) : AutostartResult
 }
