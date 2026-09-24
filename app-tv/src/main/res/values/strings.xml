@@ -61,4 +61,7 @@
     <string name="downloads_confirm_no">No</string>
     <string name="downloads_choose_files_pending">La elección de archivos aún no está disponible.</string>
     <string name="downloads_close">Cerrar</string>
+    <string name="player_tracks_audio">Audio</string>
+    <string name="player_tracks_subtitles">Subtítulos</string>
+    <string name="player_tracks_no_audio">Sin pistas de audio</string>
 </resources>
