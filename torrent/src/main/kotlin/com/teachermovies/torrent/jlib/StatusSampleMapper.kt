@@ -91,6 +91,27 @@ internal object StatusSampleMapper {
         return AutoSelection(priorities, selection.mainFileIndex)
     }
 
+    /**
+     * The file list [TorrentEngine.files][com.teachermovies.torrent.api.TorrentEngine.files] reports,
+     * from per-file [paths] and [sizes] plus the handle's [libPriorities] and [progress] (bytes done
+     * per file). A missing priority reads as [FilePriority.Normal], missing progress as 0.
+     */
+    fun fileInfos(
+        paths: List<String>,
+        sizes: List<Long>,
+        libPriorities: List<Int>,
+        progress: List<Long>,
+    ): List<TorrentFileInfo> =
+        paths.mapIndexed { index, path ->
+            TorrentFileInfo(
+                index = index,
+                path = path,
+                sizeBytes = sizes.getOrElse(index) { 0L },
+                priority = libPriorities.getOrNull(index)?.let(::filePriorityOf) ?: FilePriority.Normal,
+                downloadedBytes = progress.getOrElse(index) { 0L },
+            )
+        }
+
     /** Skip/Normal/High -> libtorrent file priority 0/4/7. */
     fun libPriorityOf(priority: FilePriority): Int =
         when (priority) {

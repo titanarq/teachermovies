@@ -4,6 +4,7 @@ import com.frostwire.jlibtorrent.AddTorrentParams
 import com.frostwire.jlibtorrent.AlertListener
 import com.frostwire.jlibtorrent.InfoHash
 import com.frostwire.jlibtorrent.Priority
+import com.frostwire.jlibtorrent.SessionHandle
 import com.frostwire.jlibtorrent.SessionManager
 import com.frostwire.jlibtorrent.SessionParams
 import com.frostwire.jlibtorrent.SettingsPack
@@ -58,7 +59,9 @@ import java.io.File
  * and republishes [torrents] through [StatusSampleMapper]; [stop] cancels it. When a torrent's
  * metadata is known (a magnet's `metadata_received_alert`, or a `.torrent` file's successful add) the
  * engine applies `FileSelectionPolicy` through `prioritize_files` and records the chosen
- * [TorrentSnapshot.mainFileIndex]. Resume data (#53) answers [EngineError.Unsupported] until it lands.
+ * [TorrentSnapshot.mainFileIndex]. Control operations act on the session's handle for the id and
+ * republish at once; unknown ids answer [EngineError.UnknownTorrent]. Window prioritisation (E7) and
+ * resume data (#53) answer [EngineError.Unsupported] until they land.
  *
  * @param savePaths the per-torrent payload directory.
  * @param stateDir where the engine keeps its own state (session and resume data, #53).
@@ -189,32 +192,92 @@ class JLibTorrentEngine(
             EngineResult.Ok(id)
         }
 
-    override suspend fun files(id: TorrentId): EngineResult<List<TorrentFileInfo>> = notYet(id)
+    /** [EngineError.NotReady] until the torrent has metadata and a live handle. */
+    override suspend fun files(id: TorrentId): EngineResult<List<TorrentFileInfo>> =
+        onHandle(id, needsMetadata = true) { handle ->
+            val storage = handle.torrentFile()?.files() ?: return@onHandle failure(EngineError.NotReady)
+            val count = storage.numFiles()
+            EngineResult.Ok(
+                StatusSampleMapper.fileInfos(
+                    paths = List(count) { storage.filePath(it) },
+                    sizes = List(count) { storage.fileSize(it) },
+                    libPriorities = handle.filePriorities().map(Priority::swig),
+                    progress = handle.fileProgress().toList(),
+                ),
+            )
+        }
 
+    /**
+     * Skip/Normal/High become libtorrent priority 0/4/7 ([StatusSampleMapper.libPriorityOf]). Indices
+     * outside the torrent's file list are ignored, as they are by the fake.
+     */
     override suspend fun setFilePriorities(
         id: TorrentId,
         priorities: Map<Int, FilePriority>,
-    ): EngineResult<Unit> = notYet(id)
+    ): EngineResult<Unit> =
+        onHandle(id, needsMetadata = true) { handle ->
+            val count = handle.torrentFile()?.numFiles() ?: return@onHandle failure(EngineError.NotReady)
+            for ((index, priority) in priorities) {
+                if (index in 0 until count) handle.filePriority(index, Priority.fromSwig(StatusSampleMapper.libPriorityOf(priority)))
+            }
+            refreshAndPublish(id)
+            EngineResult.Ok(Unit)
+        }
 
-    override suspend fun pause(id: TorrentId): EngineResult<Unit> = notYet(id)
+    /** Takes the torrent out of libtorrent's auto-management so the queue never resumes it. */
+    override suspend fun pause(id: TorrentId): EngineResult<Unit> =
+        onHandle(id) { handle ->
+            handle.unsetFlags(TorrentFlags.AUTO_MANAGED)
+            handle.pause()
+            refreshAndPublish(id)
+            EngineResult.Ok(Unit)
+        }
 
-    override suspend fun resume(id: TorrentId): EngineResult<Unit> = notYet(id)
+    /** Resumes the torrent under manual control (not auto-managed), matching [pause]. */
+    override suspend fun resume(id: TorrentId): EngineResult<Unit> =
+        onHandle(id) { handle ->
+            handle.unsetFlags(TorrentFlags.AUTO_MANAGED)
+            handle.resume()
+            refreshAndPublish(id)
+            EngineResult.Ok(Unit)
+        }
 
+    /**
+     * Removes the torrent from the session (with `SessionHandle.DELETE_FILES` when [deleteFiles]) and
+     * from [torrents]. A torrent the session never accepted (its add failed) is simply forgotten.
+     */
     override suspend fun remove(
         id: TorrentId,
         deleteFiles: Boolean,
-    ): EngineResult<Unit> = notYet(id)
+    ): EngineResult<Unit> =
+        withContext(serial) {
+            if (id !in snapshots) return@withContext failure(EngineError.UnknownTorrent)
+            val manager = session ?: return@withContext failure(EngineError.NotReady)
+            val handle = handleOf(id)
+            if (handle != null) {
+                try {
+                    if (deleteFiles) manager.remove(handle, SessionHandle.DELETE_FILES) else manager.remove(handle)
+                } catch (e: RuntimeException) {
+                    return@withContext nativeFailure(e)
+                }
+            }
+            snapshots.remove(id)
+            publish()
+            EngineResult.Ok(Unit)
+        }
 
     override suspend fun saveResumeData(): EngineResult<Unit> = EngineResult.Failure(EngineError.Unsupported)
 
+    /** Window prioritisation is epic E7 (#8): [EngineError.Unsupported] for a known torrent. */
     override suspend fun prioritizeWindow(
         id: TorrentId,
         fileIndex: Int,
         byteOffset: Long,
         windowBytes: Long,
-    ): EngineResult<Unit> = notYet(id)
+    ): EngineResult<Unit> = unsupported(id)
 
-    override suspend fun clearWindow(id: TorrentId): EngineResult<Unit> = notYet(id)
+    /** Window prioritisation is epic E7 (#8): [EngineError.Unsupported] for a known torrent. */
+    override suspend fun clearWindow(id: TorrentId): EngineResult<Unit> = unsupported(id)
 
     // -- alert thread: copy plain values out, touch nothing else --------------------------------
 
@@ -377,7 +440,36 @@ class JLibTorrentEngine(
         return failure(EngineError.Io(e.message ?: e.javaClass.name))
     }
 
-    private suspend fun <T> notYet(id: TorrentId): EngineResult<T> =
+    /**
+     * Runs [block] on [serial] with torrent [id]'s live handle: [EngineError.UnknownTorrent] for an id
+     * the engine does not know, [EngineError.NotReady] while the session is stopped, the add is still
+     * pending, or ([needsMetadata]) the metadata has not arrived; a native failure becomes
+     * [EngineError.Io].
+     */
+    private suspend fun <T> onHandle(
+        id: TorrentId,
+        needsMetadata: Boolean = false,
+        block: (TorrentHandle) -> EngineResult<T>,
+    ): EngineResult<T> =
+        withContext(serial) {
+            val snapshot = snapshots[id] ?: return@withContext failure(EngineError.UnknownTorrent)
+            if (needsMetadata && !snapshot.hasMetadata) return@withContext failure(EngineError.NotReady)
+            val handle = handleOf(id) ?: return@withContext failure(EngineError.NotReady)
+            try {
+                block(handle)
+            } catch (e: RuntimeException) {
+                nativeFailure(e)
+            }
+        }
+
+    private fun refreshAndPublish(id: TorrentId) {
+        refresh(id)
+        publish()
+    }
+
+    private fun nativeFailure(e: RuntimeException): EngineResult<Nothing> = failure(EngineError.Io(e.message ?: e.javaClass.name))
+
+    private suspend fun <T> unsupported(id: TorrentId): EngineResult<T> =
         withContext(serial) {
             if (id in snapshots) failure(EngineError.Unsupported) else failure(EngineError.UnknownTorrent)
         }

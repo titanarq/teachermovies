@@ -156,6 +156,33 @@ class StatusSampleMapperTest {
         assertArrayEquals(intArrayOf(4, 4), selection.libPriorities)
     }
 
+    @Test
+    fun fileInfosCombinePathsSizesPrioritiesAndProgress() {
+        val files =
+            StatusSampleMapper.fileInfos(
+                paths = listOf("m/Movie.mkv", "m/sample.mkv"),
+                sizes = listOf(1_000L, 50L),
+                libPriorities = listOf(7, 0),
+                progress = listOf(400L, 0L),
+            )
+
+        assertEquals(
+            listOf(
+                TorrentFileInfo(index = 0, path = "m/Movie.mkv", sizeBytes = 1_000, priority = FilePriority.High, downloadedBytes = 400),
+                TorrentFileInfo(index = 1, path = "m/sample.mkv", sizeBytes = 50, priority = FilePriority.Skip, downloadedBytes = 0),
+            ),
+            files,
+        )
+    }
+
+    @Test
+    fun fileInfosDefaultMissingPriorityAndProgress() {
+        val file = StatusSampleMapper.fileInfos(listOf("a.mkv"), listOf(10L), emptyList(), emptyList()).single()
+
+        assertEquals(FilePriority.Normal, file.priority)
+        assertEquals(0L, file.downloadedBytes)
+    }
+
     private fun file(
         index: Int,
         path: String,
