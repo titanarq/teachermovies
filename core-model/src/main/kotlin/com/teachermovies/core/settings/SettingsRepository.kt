@@ -31,4 +31,7 @@ interface SettingsRepository {
     suspend fun clearAuthTokenHashes()
 
     suspend fun setFirstRunCompleted(done: Boolean)
+
+    /** Turns on or off opening the app by itself when the TV powers on. */
+    suspend fun setAutostartOnBoot(enabled: Boolean)
 }

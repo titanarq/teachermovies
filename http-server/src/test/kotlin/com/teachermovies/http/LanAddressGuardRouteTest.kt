@@ -1,5 +1,6 @@
 package com.teachermovies.http
 
+import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
 import com.teachermovies.http.auth.InMemorySettingsRepository
 import com.teachermovies.http.auth.PairingManager
 import com.teachermovies.http.auth.TEST_REMOTE_HEADER
@@ -26,6 +27,7 @@ class LanAddressGuardRouteTest {
             clock = { 0L },
             pairing = PairingManager(InMemorySettingsRepository(), SecureRandom(), { 0L }),
             subtitles = FakeSubtitleStore(),
+            library = InMemoryTorrentRepository(),
             allowTestRemoteHeader = allowTestRemoteHeader,
         )
 
