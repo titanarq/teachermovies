@@ -6,16 +6,23 @@ import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.TorrentEngine
 import java.io.File
+import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 
 /**
  * Supervises playback of a file that is still downloading (ADR-0001 §4), between a [Player] and a
  * [TorrentEngine]: [start] holds the file closed until the head, tail and start buffer are on
- * disk, then opens and plays it.
+ * disk, then opens and plays it; while it plays, the playback position is fed to the engine as a
+ * sliding read-ahead window ([StreamWindowCalculator.windowFor]), re-sent only once it has moved at
+ * least [minWindowMoveBytes] -- which is also how a seek reaches the engine, as a jump in
+ * [Player.positionMs].
  *
  * Everything runs on coroutines and virtual-time friendly `delay`s: [pollIntervalMs] paces every
  * readiness query.
@@ -32,6 +39,14 @@ class StreamingPlaybackController(
 
     /** What the controller is doing; starts at [StreamState.Idle]. */
     val state: StateFlow<StreamState> = mutableState.asStateFlow()
+
+    /** The file being supervised and the job running its loops; null while nothing is. */
+    private class Session(
+        val id: TorrentId,
+        val job: Job,
+    )
+
+    private var session: Session? = null
 
     /**
      * Opens [file] (file [fileIndex] of torrent [id], [fileSizeBytes] long, lasting [durationMs] or
@@ -87,7 +102,36 @@ class StreamingPlaybackController(
         player.open(file, startPositionMs)
         player.play()
         mutableState.value = StreamState.Streaming
+        val job =
+            scope.launch {
+                launch { feedWindow(id, fileIndex, fileSizeBytes, durationMs) }
+            }
+        session = Session(id, job)
         return StreamResult.Opened
+    }
+
+    /**
+     * Sends the read-ahead window at the player's position to the engine whenever its offset has
+     * moved at least [minWindowMoveBytes] since the last window the engine accepted. Uses
+     * [fallbackDurationMs] (what the caller knew) until the player has parsed the media's own.
+     * A failed call leaves the last offset alone, so the next position update tries again.
+     */
+    private suspend fun feedWindow(
+        id: TorrentId,
+        fileIndex: Int,
+        fileSizeBytes: Long,
+        fallbackDurationMs: Long,
+    ) {
+        var lastOffset: Long? = null
+        combine(player.positionMs, player.durationMs) { position, duration -> position to duration }
+            .collect { (position, duration) ->
+                val knownDuration = if (duration > 0) duration else fallbackDurationMs
+                val window = StreamWindowCalculator.windowFor(position, knownDuration, fileSizeBytes, policy)
+                val last = lastOffset
+                if (last != null && abs(window.offsetBytes - last) < minWindowMoveBytes) return@collect
+                val result = engine.prioritizeWindow(id, fileIndex, window.offsetBytes, window.lengthBytes)
+                if (result is EngineResult.Ok) lastOffset = window.offsetBytes
+            }
     }
 
     /**

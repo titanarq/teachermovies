@@ -229,4 +229,88 @@ class StreamingPlaybackControllerTest {
             assertEquals(StreamResult.Opened, result.await())
             assertEquals(PlayerState.Playing, player.state.value)
         }
+
+    // -- The window feed --
+
+    private val everyPiece = (0 until pieces).toSet()
+
+    /** Opens the file at [startPositionMs] with every piece on disk, so no buffering interferes. */
+    private suspend fun TestScope.openFully(startPositionMs: Long = 0L): StreamingPlaybackController {
+        addTorrent()
+        have(everyPiece)
+        val controller = controller(backgroundScope)
+        val result = startAsync(controller, startPositionMs)
+        runCurrent()
+        assertEquals(StreamResult.Opened, result.await())
+        return controller
+    }
+
+    private fun windowCalls() = fakeEngine.recordedCalls.filter { it.startsWith("prioritizeWindow(") }
+
+    @Test
+    fun theWindowAtTheStartPositionIsPrioritisedOnceOpened() =
+        runTest {
+            openFully()
+            assertEquals(Triple(0, 0L, 8L * piece), fakeEngine.lastWindow(id))
+        }
+
+    @Test
+    fun anIdlePositionSendsNothing() =
+        runTest {
+            openFully()
+            val before = windowCalls().size
+            advanceTimeBy(10 * poll)
+            runCurrent()
+            assertEquals(before, windowCalls().size)
+        }
+
+    @Test
+    fun aPositionThatBarelyAdvancesSendsNothing() =
+        runTest {
+            openFully()
+            val before = windowCalls().size
+            // 999 ms is 1022 bytes, under the 1024-byte minimum move.
+            for (ms in listOf(200L, 500L, 800L, 999L)) {
+                player.emitPosition(ms)
+                runCurrent()
+            }
+            assertEquals(before, windowCalls().size)
+        }
+
+    @Test
+    fun theWindowIsPrioritisedOncePerMoveBeyondTheMinimum() =
+        runTest {
+            openFully()
+            val before = windowCalls().size
+            player.emitPosition(1_000L)
+            runCurrent()
+            player.emitPosition(1_500L)
+            runCurrent()
+            player.emitPosition(2_000L)
+            runCurrent()
+
+            val sent = windowCalls().drop(before)
+            assertEquals(
+                listOf(
+                    "prioritizeWindow(${id.value},0,1024,${8 * piece})",
+                    "prioritizeWindow(${id.value},0,2048,${8 * piece})",
+                ),
+                sent,
+            )
+        }
+
+    @Test
+    fun aSeekReprioritisesAtTheNewOffsetWithExactlyOneCall() =
+        runTest {
+            openFully()
+            player.emitDuration(duration)
+            runCurrent()
+            val before = windowCalls().size
+
+            player.seekTo(50_000L)
+            runCurrent()
+
+            assertEquals(listOf("prioritizeWindow(${id.value},0,51200,${8 * piece})"), windowCalls().drop(before))
+            assertEquals(Triple(0, 51_200L, 8L * piece), fakeEngine.lastWindow(id))
+        }
 }
