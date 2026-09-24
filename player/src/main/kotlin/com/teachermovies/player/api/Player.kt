@@ -77,6 +77,20 @@ interface Player {
         select: Boolean,
     )
 
+    /**
+     * Writes the embedded text subtitle track [trackId] (an id published in [subtitleTracks]) of the
+     * media currently opened with [open] to [destination] as a standalone, timed `.srt`/`.ass`.
+     *
+     * It never throws: no open media, an unknown or external track, an image-based track, an
+     * unsupported container or codec, a corrupt file, an I/O error or a timeout all come back as a
+     * non-[SubtitleExtraction.Extracted] member, and a failure never leaves a partial [destination].
+     * It does not touch playback.
+     */
+    suspend fun extractTextSubtitle(
+        trackId: String,
+        destination: File,
+    ): SubtitleExtraction
+
     /** Frees the media resources; [open] may be called again afterwards. */
     fun release()
 }

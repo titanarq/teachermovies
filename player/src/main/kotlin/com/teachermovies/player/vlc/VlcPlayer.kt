@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.PlayerState
+import com.teachermovies.player.api.SubtitleExtraction
 import com.teachermovies.player.api.Track
 import com.teachermovies.player.api.VideoSurfaceHost
 import java.io.File
@@ -181,6 +182,11 @@ class VlcPlayer(
             publishTracks()
         }
     }
+
+    override suspend fun extractTextSubtitle(
+        trackId: String,
+        destination: File,
+    ): SubtitleExtraction = SubtitleExtraction.Failed("not implemented")
 
     override fun release() {
         detach()
