@@ -26,6 +26,8 @@ junit = "4.13.2"
 # Room DAO tests on the JVM (#40). ADR-0004 has no row for these yet and needs one.
 robolectric = "4.14.1"
 androidxTestCore = "1.6.1"
+# Official Anthropic Java SDK for AnthropicTranslationProvider (#90, post-MVP).
+anthropicJava = "2.65.0"
 
 [libraries]
 # :app-tv (Compose for TV UI -- #44)
@@ -75,6 +77,9 @@ libvlc-all = { group = "org.videolan.android", name = "libvlc-all", version.ref 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
+
+# :assistant (AnthropicTranslationProvider -- #90, post-MVP)
+anthropic-java = { group = "com.anthropic", name = "anthropic-java", version.ref = "anthropicJava" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

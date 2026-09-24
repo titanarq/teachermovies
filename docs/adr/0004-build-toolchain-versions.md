@@ -37,6 +37,8 @@ jlibtorrent and libVLC).
 | kotlinx-coroutines | 1.10.2 | Required by Room, DataStore and Ktor; version compatible with Kotlin 2.1.21. |
 | Robolectric (test-only) | 4.14.1 | JVM unit tests that need Android framework classes; introduced by #40 (PR #107). Supports SDK 35. |
 | `androidx.test:core` (test-only) | 1.6.1 | `ApplicationProvider` for Robolectric tests; introduced by #40 (PR #107). |
+| `kotlinx-coroutines-test` (test-only) | 1.10.2 | Same `coroutines` version ref as kotlinx-coroutines (must stay in lockstep); `runTest`/virtual time for the `:player` `StreamingPlaybackController` tests (#98). Already in the catalog; this row records it. |
+| `com.anthropic:anthropic-java` | 2.65.0 | Official Anthropic Java SDK, runtime dependency for `AnthropicTranslationProvider` (#90, post-MVP). Pure JVM jar (not an AAR), so AGP's `minCompileSdk`/AAR-metadata checks don't apply; requires Java 8+ (JDK 17 toolchain satisfies it) and pulls in OkHttp 4.12.0 and Jackson 2.19.4 (Jackson >= 2.13.4 required) transitively, both fine on minSdk 26. |
 
 Other notes for the skeleton:
 - `gradle.properties` must set `org.gradle.jvmargs=-Xmx4g`: with the native libVLC/jlibtorrent
