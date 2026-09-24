@@ -16,9 +16,12 @@ class AssistantKeyMapperTest {
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
             KeyEvent.KEYCODE_SPACE,
             KeyEvent.KEYCODE_MENU,
-            KeyEvent.KEYCODE_VOLUME_UP,
             KeyEvent.KEYCODE_A,
         )
+
+    /** Volume keys: never the assistant's, so the system changes the TV volume (#178). */
+    private val volumeKeys =
+        listOf(KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_MUTE)
 
     @Test
     fun withTheOverlayClosedDownAndCaptionsCaptureTheLine() {
@@ -74,5 +77,19 @@ class AssistantKeyMapperTest {
     fun withTheOverlayClosedLeftAndRightStayWithTheTransportMapping() {
         assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = false))
         assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT, overlayOpen = false))
+    }
+
+    @Test
+    fun withTheOverlayOpenVolumeKeysPassThrough() {
+        volumeKeys.forEach { keyCode ->
+            assertNull("keyCode $keyCode", AssistantKeyMapper.map(keyCode, overlayOpen = true))
+        }
+    }
+
+    @Test
+    fun withTheOverlayClosedVolumeKeysPassThrough() {
+        volumeKeys.forEach { keyCode ->
+            assertNull("keyCode $keyCode", AssistantKeyMapper.map(keyCode, overlayOpen = false))
+        }
     }
 }
