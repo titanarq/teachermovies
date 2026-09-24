@@ -63,6 +63,16 @@ class FakeSpeakerTest {
         }
 
     @Test
+    fun `unspeakable subtitle artefacts are refused`() =
+        runTest {
+            speaker.prepare()
+            assertFalse(speaker.speak("♪", SpeechLanguage.EN))
+            assertFalse(speaker.speak("- ...", SpeechLanguage.EN))
+            assertEquals(SpeakerState.Idle, speaker.state.value)
+            assertTrue(speaker.spoken.isEmpty())
+        }
+
+    @Test
     fun `accepted speak is recorded and goes speaking then idle on finish`() =
         runTest {
             speaker.prepare()

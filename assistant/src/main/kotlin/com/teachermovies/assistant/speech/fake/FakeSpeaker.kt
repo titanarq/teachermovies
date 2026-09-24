@@ -4,6 +4,7 @@ import com.teachermovies.assistant.speech.Speaker
 import com.teachermovies.assistant.speech.SpeakerAvailability
 import com.teachermovies.assistant.speech.SpeakerState
 import com.teachermovies.assistant.speech.SpeechLanguage
+import com.teachermovies.assistant.speech.SpeechRequests
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,7 +47,7 @@ class FakeSpeaker : Speaker {
     ): Boolean {
         if (isShutDown) return false
         if (mutableAvailability.value != SpeakerAvailability.Ready) return false
-        if (text.isBlank()) return false
+        if (!SpeechRequests.isSpeakable(text)) return false
         mutableSpoken += text to language
         mutableState.value = SpeakerState.Speaking(text, language)
         return true
