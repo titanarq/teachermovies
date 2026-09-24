@@ -238,6 +238,10 @@ class FirstRunViewModelTest {
         override suspend fun setFirstRunCompleted(done: Boolean) {
             state.update { it.copy(firstRunCompleted = done) }
         }
+
+        override suspend fun setAutostartOnBoot(enabled: Boolean) {
+            state.update { it.copy(autostartOnBoot = enabled) }
+        }
     }
 
     private class FakeVolumeProvider(var current: List<VolumeInfo>) : StorageVolumeProvider {

@@ -1,5 +1,6 @@
 package com.teachermovies.http
 
+import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
 import com.teachermovies.http.auth.InMemorySettingsRepository
 import com.teachermovies.http.auth.PairResult
 import com.teachermovies.http.auth.PairingManager
@@ -58,6 +59,7 @@ class EventsRouteTest {
             clock = { 0L },
             pairing = pairing,
             subtitles = FakeSubtitleStore(),
+            library = InMemoryTorrentRepository(),
             allowTestRemoteHeader = true, // both tests below send `X-Test-Remote` (#59).
         )
 
