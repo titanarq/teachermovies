@@ -54,4 +54,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
 
     testImplementation(libs.junit)
+    // `runTest`-free ViewModel tests still need `Dispatchers.setMain` for `viewModelScope`.
+    testImplementation(libs.kotlinx.coroutines.test)
 }

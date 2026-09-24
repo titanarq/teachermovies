@@ -6,4 +6,13 @@
     <string name="destination_library">Biblioteca</string>
     <string name="destination_downloads">Descargas</string>
     <string name="destination_settings">Configuración</string>
+
+    <!-- Configuración (#45). -->
+    <string name="settings_port_title">Puerto HTTP</string>
+    <string name="settings_port_hint">▲ ▼ cambia el puerto · OK para escribirlo</string>
+    <string name="settings_port_error">Puerto no válido: debe estar entre %1$d y %2$d</string>
+    <string name="settings_volume_title">Volumen de descarga</string>
+    <string name="settings_volume_missing">El volumen elegido no está conectado; las descargas irán al volumen marcado.</string>
+    <string name="settings_volume_none">No hay ningún volumen disponible.</string>
+    <string name="settings_volume_space">%1$s GB libres de %2$s GB</string>
 </resources>

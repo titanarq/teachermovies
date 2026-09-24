@@ -6,8 +6,10 @@ import androidx.datastore.preferences.core.Preferences
 import com.teachermovies.core.settings.DataStoreSettingsRepository
 import com.teachermovies.core.settings.SettingsRepository
 import com.teachermovies.core.settings.settingsDataStore
+import com.teachermovies.storage.AndroidStorageVolumeProvider
 import com.teachermovies.storage.FileSpaceProvider
 import com.teachermovies.storage.SpaceProvider
+import com.teachermovies.storage.StorageVolumeProvider
 
 /**
  * The whole object graph, built by hand: constructor injection only, no framework and no service
@@ -15,9 +17,8 @@ import com.teachermovies.storage.SpaceProvider
  * interfaces so a caller can never reach through to a concrete type.
  *
  * What is wired is what exists. `:torrent`, `:http-server` and `:player` still hold nothing but a
- * placeholder -- no interface to bind yet -- and the download volume root `:storage`'s
- * `DownloadLayout` needs is the persisted choice #43 implements. Nothing here invents either, and
- * no fake is wired in production code (ADR-0003 rule 3).
+ * placeholder -- no interface to bind yet. Nothing here invents one, and no fake is wired in
+ * production code (ADR-0003 rule 3).
  */
 class AppContainer(application: Application) {
 
@@ -28,4 +29,6 @@ class AppContainer(application: Application) {
     val settingsRepository: SettingsRepository = DataStoreSettingsRepository(dataStore)
 
     val spaceProvider: SpaceProvider = FileSpaceProvider()
+
+    val storageVolumeProvider: StorageVolumeProvider = AndroidStorageVolumeProvider(application)
 }
