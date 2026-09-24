@@ -21,8 +21,20 @@
   graceful and idempotent.
 - `fun Application.module(deps: ServerDeps)` holds all plugins and routing; tests run it in-process
   with `testApplication { application { module(fakeDeps) } }`.
-- `ServerDeps(engine: TorrentEngine, space: () -> SpaceInfo?, appVersion: String, clock: () -> Long)`,
-  extended by later issues.
+- `ServerDeps(engine: TorrentEngine, space: () -> SpaceInfo?, appVersion: String, clock: () -> Long,
+  pairing: PairingManager)`, extended by later issues.
+- `com.teachermovies.http.auth.PairingManager(settings: SettingsRepository, random: SecureRandom,
+  clock: () -> Long)`: `currentPin()` (6 digits, zero-padded; new every 10 min and after each
+  successful pairing), `suspend pair(pin): PairResult` (`Paired(token)` | `WrongPin` |
+  `TooManyAttempts` once 5 wrong PINs fall within 60 s), `suspend isValid(token)`. Tokens are 32
+  random bytes, base64url without padding; only their SHA-256 hex is persisted
+  (`SettingsRepository.addAuthTokenHash`), so they survive restarts.
+- `POST /api/pair` (public) body `{"pin":"482916","deviceName":"..."}` -> 200 `{"token":"..."}` |
+  400 `bad_request` | 401 `wrong_pin` | 429 `too_many_attempts`.
+- `fun Route.requireBearer(pairing, allowQueryToken = false) { ... }` wraps every protected route:
+  missing/invalid token -> 401 `unauthorized` + `WWW-Authenticate: Bearer`, handler not run. Only
+  `/api/events` passes `allowQueryToken = true`. `redactTokenQuery(uri)` is what any request
+  logging must apply (and it must never log the `Authorization` header).
 - `GET /api/status` (public) -> 200
   `{"version":"...","engine":"running","freeBytes":123,"totalBytes":456,"torrents":2}`; `engine` is
   the `EngineStatus` in lower case, `freeBytes`/`totalBytes` are `null` when unknown.
