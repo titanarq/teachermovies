@@ -49,7 +49,28 @@
     a percentage with one decimal (`17.4`). `FileDto(index, path, size, priority, downloadedBytes)`:
     `priority` is `FilePriority` lower-case (`skip`|`normal`|`high`). Mapped from `TorrentSnapshot`/
     `TorrentFileInfo` by `toDto()`.
-- Errors are JSON `{"error":"<code>","message":"..."}` (StatusPages): unknown `/api/*` route -> 404
+- Mutating routes (#60, `TorrentWriteRoutes.kt`), all wrapped in `requireBearer` (401 without a
+  valid token, engine never called):
+  - `POST /api/torrents/magnet` `{"magnet":"magnet:?xt=urn:btih:..."}` -> 201
+    `{"id":"<hash>","state":"fetching_metadata"}` | 400 `invalid_magnet` | 400 `bad_request`
+    (malformed body) | 409 `already_exists` with `"id":"<hash>"`.
+  - `POST /api/torrents/file` multipart field `torrent` -> 201 as above | 400 `invalid_torrent` |
+    400 `bad_request` (not multipart / no `torrent` field) | 413 `too_large` (over
+    `MAX_TORRENT_FILE_BYTES` = 10 MiB; never buffers more than that) | 409 `already_exists`.
+  - `POST /api/torrents/{id}/pause`, `POST /api/torrents/{id}/resume` -> 204.
+  - `DELETE /api/torrents/{id}?deleteFiles=true|false` (default `false`; anything else 400
+    `bad_request`) -> 204.
+  - `PUT /api/torrents/{id}/files` `[{"index":0,"priority":"skip|normal|high"}]` -> 204 | 409
+    `not_ready` before metadata | 400 `invalid_priority` | 400 `invalid_index` | 400 `bad_request`;
+    a rejected body applies no change at all.
+  - Every `{id}` route: 400 `invalid_id`, 404 `unknown_torrent`.
+  - `EngineError.toHttp(): HttpError(status, body)` is the one `EngineError` -> HTTP mapping:
+    `InvalidMagnet` 400 `invalid_magnet`, `InvalidTorrentFile` 400 `invalid_torrent`,
+    `UnknownTorrent` 404 `unknown_torrent`, `AlreadyExists` 409 `already_exists` (+`id`), `NotReady`
+    409 `not_ready`, `Unsupported` 501 `unsupported`, `Io` 500 `io_error` (engine text never
+    copied into the body).
+- Errors are JSON `{"error":"<code>","message":"..."}` (StatusPages); `ApiError.id` is present
+  only on `already_exists`: unknown `/api/*` route -> 404
   `not_found`; any uncaught exception -> 500 `internal`, never with a stack trace or exception
   message. A route that sends its own `ApiError` with `ApplicationCall.respondApiError` (e.g.
   `unknown_torrent`) is exempt from being overwritten by the shared `not_found` 404 page --

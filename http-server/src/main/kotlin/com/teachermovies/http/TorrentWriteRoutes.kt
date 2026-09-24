@@ -3,7 +3,9 @@ package com.teachermovies.http
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.http.auth.requireBearer
 import com.teachermovies.http.dto.toDto
+import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
+import com.teachermovies.torrent.api.FilePriority
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
 import io.ktor.server.application.ApplicationCall
@@ -13,7 +15,9 @@ import io.ktor.server.request.receive
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.utils.io.readRemaining
 import kotlinx.io.readByteArray
 import kotlinx.serialization.Serializable
@@ -66,6 +70,78 @@ internal fun Route.torrentWriteRoutes(deps: ServerDeps) {
                     )
             }
         }
+        post("/api/torrents/{id}/pause") {
+            val id = call.torrentIdOrRespond() ?: return@post
+            call.respondNoContentOr(deps.engine.pause(id))
+        }
+        post("/api/torrents/{id}/resume") {
+            val id = call.torrentIdOrRespond() ?: return@post
+            call.respondNoContentOr(deps.engine.resume(id))
+        }
+        delete("/api/torrents/{id}") {
+            val id = call.torrentIdOrRespond() ?: return@delete
+            val deleteFiles =
+                when (call.request.queryParameters["deleteFiles"]) {
+                    null, "false" -> false
+                    "true" -> true
+                    else -> {
+                        call.respondApiError(HttpStatusCode.BadRequest, ApiError("bad_request", "deleteFiles must be true or false"))
+                        return@delete
+                    }
+                }
+            call.respondNoContentOr(deps.engine.remove(id, deleteFiles))
+        }
+        put("/api/torrents/{id}/files") {
+            val id = call.torrentIdOrRespond() ?: return@put
+            val snapshot = deps.snapshotOf(id) ?: return@put call.respondUnknownTorrent()
+            if (!snapshot.hasMetadata) return@put call.respondEngineError(EngineError.NotReady)
+            val changes = call.receiveOrNull<List<FilePriorityChange>>()
+            if (changes == null) {
+                call.respondApiError(
+                    HttpStatusCode.BadRequest,
+                    ApiError("bad_request", "Expected [{\"index\":0,\"priority\":\"skip|normal|high\"}]"),
+                )
+                return@put
+            }
+            val files =
+                when (val result = deps.engine.files(id)) {
+                    is EngineResult.Ok -> result.value
+                    is EngineResult.Failure -> return@put call.respondEngineError(result.error)
+                }
+            val knownIndices = files.map { it.index }.toSet()
+            val priorities = mutableMapOf<Int, FilePriority>()
+            for (change in changes) {
+                if (change.index !in knownIndices) {
+                    call.respondApiError(HttpStatusCode.BadRequest, ApiError("invalid_index", "No file with index ${change.index}"))
+                    return@put
+                }
+                val priority = change.priority.toFilePriority()
+                if (priority == null) {
+                    call.respondApiError(HttpStatusCode.BadRequest, ApiError("invalid_priority", "Priority must be skip, normal or high"))
+                    return@put
+                }
+                priorities[change.index] = priority
+            }
+            call.respondNoContentOr(deps.engine.setFilePriorities(id, priorities))
+        }
+    }
+}
+
+/** One element of the `PUT /api/torrents/{id}/files` body; [priority] is `skip`|`normal`|`high`. */
+@Serializable
+data class FilePriorityChange(
+    val index: Int,
+    val priority: String,
+)
+
+/** The inverse of `FileDto.priority`: lower-case names only, anything else is `null`. */
+private fun String.toFilePriority(): FilePriority? = FilePriority.entries.firstOrNull { it.name.lowercase() == this }
+
+/** 204 on success, else the engine error mapped by [toHttp] (e.g. 404 `unknown_torrent`). */
+private suspend fun ApplicationCall.respondNoContentOr(result: EngineResult<Unit>) {
+    when (result) {
+        is EngineResult.Ok -> respond(HttpStatusCode.NoContent)
+        is EngineResult.Failure -> respondEngineError(result.error)
     }
 }
 
