@@ -42,6 +42,27 @@
 - `MainActivity.onCreate` calls `TorrentService.start(this)` and, on API 33+, requests
   `POST_NOTIFICATIONS` once (remembered in the activity's preferences; denial is not an error).
 
+## Descargas: formatters and view model (#69)
+- `com.teachermovies.tv.format.Formatters`: `bytes`/`speed` (decimal 1000-based B/KB/MB/GB/TB, one
+  decimal, Spanish comma), `sizeText(downloaded, total)` (both numbers scaled to one shared unit,
+  e.g. `"18,4 / 25,6 GB"`), `eta(seconds?)` (`"1 h 2 min"` / `"2 min 5 s"` / `"59 s"` / `"—"` for
+  `null`), `percent(Double)` (rounded, `"72 %"`), `ratio(Double)` (two decimals, `"0,46"`) and
+  `stateLabel(DownloadState)` (the Spanish label shown for each state). No raw number or state name
+  reaches Compose; every one of these is a pure function covered by `FormattersTest`.
+- `DownloadsViewModel(engine: TorrentEngine, sync: EngineRepositorySync, space: () -> SpaceInfo?)`
+  exposes `StateFlow<DownloadsUiState(rows: List<DownloadRow>, freeSpace: String?)>`, mapped
+  straight from `TorrentEngine.torrents`. `DownloadRow` carries the raw `DownloadState` (so the
+  screen can call `Formatters.stateLabel` and style per state) plus every other field already
+  formatted, and `canPause`/`canResume`, derived from `DownloadState.canTransitionTo(Paused)` (a
+  completed, still-seeding torrent can be paused too). `pause`/`resume` call `TorrentEngine`
+  directly; `remove(id, deleteFiles)` goes through `EngineRepositorySync.remove` so the persisted
+  row is deleted only once the engine confirms it. `space` is a snapshot, not a stream, re-read on
+  every `torrents` update. Does not build the screen itself (#70).
+- `AppContainer.torrentRepository: TorrentRepository` (`RoomTorrentRepository` over
+  `TeacherMoviesDatabase.build(application)`) and `AppContainer.engineRepositorySync:
+  EngineRepositorySync` (#68), started when the container is built, on its own
+  application-lifetime `CoroutineScope`.
+
 ## Boundaries
 - Depends on feature modules' public interfaces only; contains no torrent, HTTP or VLC logic itself.
 - All screens fully usable with the D-pad; focus order and initial focus are acceptance criteria.
