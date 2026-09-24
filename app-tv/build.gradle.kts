@@ -42,6 +42,7 @@ dependencies {
     implementation(project(":http-server"))
     implementation(project(":player"))
     implementation(project(":assistant"))
+    implementation(project(":discovery"))
 
     // The Compose-for-TV shell (#44). The BOM aligns every compose artifact with the combination
     // ADR-0004 verified against compileSdk 35; `tv-material` (package `androidx.tv.material3`) is
