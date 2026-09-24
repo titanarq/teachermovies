@@ -1,5 +1,6 @@
 package com.teachermovies.http
 
+import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
 import com.teachermovies.http.auth.InMemorySettingsRepository
 import com.teachermovies.http.auth.PairingManager
 import com.teachermovies.http.auth.lanClient
@@ -27,6 +28,7 @@ class StatusRouteTest {
             clock = { 0L },
             pairing = PairingManager(InMemorySettingsRepository(), SecureRandom(), { 0L }),
             subtitles = FakeSubtitleStore(),
+            library = InMemoryTorrentRepository(),
             allowTestRemoteHeader = true,
         )
 
