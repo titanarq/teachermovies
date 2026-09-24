@@ -1,0 +1,20 @@
+# Formatting rules read by ktlint (#38: `./gradlew ktlintCheck` / `ktlintFormat`) and by the IDE.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+[*.{kt,kts}]
+indent_style = space
+indent_size = 4
+ktlint_code_style = ktlint_official
+max_line_length = 120
+# No wildcard imports (AGENTS.md): the IDE never collapses imports into `.*`, and ktlint's
+# no-wildcard-imports rule gets no package allowance.
+ij_kotlin_name_count_to_use_star_import = 2147483647
+ij_kotlin_name_count_to_use_star_import_for_members = 2147483647
+ij_kotlin_packages_to_use_import_on_demand = unset
+# Compose convention: @Composable functions are PascalCase.
+ktlint_function_naming_ignore_when_annotated_with = Composable

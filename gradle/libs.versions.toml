@@ -28,6 +28,9 @@ robolectric = "4.14.1"
 androidxTestCore = "1.6.1"
 # Official Anthropic Java SDK for AnthropicTranslationProvider (#90, post-MVP).
 anthropicJava = "2.65.0"
+# Formatting (#38): the ktlint Gradle plugin and the ktlint engine it runs. ADR-0004 needs rows.
+ktlintGradle = "14.2.0"
+ktlint = "1.8.0"
 
 [libraries]
 # :app-tv (Compose for TV UI -- #44)
@@ -88,3 +91,4 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle" }
