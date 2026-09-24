@@ -1,5 +1,7 @@
 package com.teachermovies.http
 
+import com.teachermovies.http.auth.InMemorySettingsRepository
+import com.teachermovies.http.auth.PairingManager
 import com.teachermovies.torrent.fake.FakeTorrentEngine
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
@@ -13,6 +15,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.security.SecureRandom
 
 class ErrorPagesTest {
     private val deps =
@@ -21,6 +24,7 @@ class ErrorPagesTest {
             space = { null },
             appVersion = "test",
             clock = { 0L },
+            pairing = PairingManager(InMemorySettingsRepository(), SecureRandom(), { 0L }),
         )
 
     @Test
