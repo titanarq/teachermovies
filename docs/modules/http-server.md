@@ -25,8 +25,9 @@
 - `fun Application.module(deps: ServerDeps)` holds all plugins and routing; tests run it in-process
   with `testApplication { application { module(fakeDeps) } }`.
 - `ServerDeps(engine: TorrentEngine, space: () -> SpaceInfo?, appVersion: String, clock: () -> Long,
-  pairing: PairingManager, allowTestRemoteHeader: Boolean = false)`, extended by later issues.
-  `allowTestRemoteHeader` is test-only (#59) and must stay `false` in production.
+  pairing: PairingManager, subtitles: SubtitleStore, allowTestRemoteHeader: Boolean = false)`,
+  extended by later issues. `allowTestRemoteHeader` is test-only (#59) and must stay `false` in
+  production.
 - `com.teachermovies.http.auth.LanAddressPolicy.isAllowed(address: String): Boolean` (#59): whether
   a literal IPv4/IPv6 address is on the LAN -- loopback, `10/8`, `172.16/12`, `192.168/16`,
   `169.254/16`, `fe80::/10`, `fc00::/7`, and the IPv4-mapped IPv6 form of any allowed IPv4 range.
@@ -80,6 +81,16 @@
     `UnknownTorrent` 404 `unknown_torrent`, `AlreadyExists` 409 `already_exists` (+`id`), `NotReady`
     409 `not_ready`, `Unsupported` 501 `unsupported`, `Io` 500 `io_error` (engine text never
     copied into the body).
+- `POST /api/subtitles` (#61, `SubtitleRoutes.kt`), wrapped in `requireBearer`: a phone uploads an
+  external subtitle for a torrent. Multipart fields `torrentId` and `file`; accepted extensions
+  `srt`/`ass`/`ssa`/`vtt` (case-insensitive); at most `MAX_SUBTITLE_FILE_BYTES` = 2 MiB (never
+  buffers more) -> 201 `{"path":"subs/<sanitized name>"}` | 400 `invalid_id` | 404
+  `unknown_torrent` | 400 `unsupported_subtitle` | 413 `too_large` | 400 `bad_request` (not
+  multipart / missing a field) | 500 `io_error` if the store itself fails. Writes through
+  `ServerDeps.subtitles: SubtitleStore` (`fun save(torrentId, fileName, bytes): Result<String>`,
+  package `com.teachermovies.http`); `LayoutSubtitleStore(layoutFor: (String) -> DownloadLayout?)`
+  sanitises `fileName` to `[A-Za-z0-9._-]` (rejecting a name that sanitises to empty, `"."` or
+  `".."`) and writes to `DownloadLayout.resolveInTorrent(id, "subs/<sanitized name>")`.
 - Errors are JSON `{"error":"<code>","message":"..."}` (StatusPages); `ApiError.id` is present
   only on `already_exists`: unknown `/api/*` route -> 404
   `not_found`; any uncaught exception -> 500 `internal`, never with a stack trace or exception
