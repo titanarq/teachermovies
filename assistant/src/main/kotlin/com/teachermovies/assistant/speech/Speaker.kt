@@ -27,10 +27,18 @@ sealed interface SpeakerAvailability {
     /** The engine is up and has a voice for every [SpeechLanguage]. */
     data object Ready : SpeakerAvailability
 
-    /** The engine is up but has no voice for [language]; the feature degrades to text only. */
+    /**
+     * The engine is up but has no voice for [languages] (never empty); only those languages
+     * degrade to text only, every other [SpeechLanguage] is still spoken. When every voice is
+     * missing this is `MissingVoice(setOf(EN, ES))`, not [EngineUnavailable].
+     */
     data class MissingVoice(
-        val language: SpeechLanguage,
-    ) : SpeakerAvailability
+        val languages: Set<SpeechLanguage>,
+    ) : SpeakerAvailability {
+        init {
+            require(languages.isNotEmpty()) { "MissingVoice needs at least one language" }
+        }
+    }
 
     /** No speech engine on the device, it failed to initialise, or it did not answer in time. */
     data object EngineUnavailable : SpeakerAvailability
@@ -43,9 +51,11 @@ sealed interface SpeakerAvailability {
  *
  * Contract:
  * - [availability] is `null` until [prepare] has run once, then holds its last result.
- * - [speak] returns `false` and leaves [state] at [SpeakerState.Idle] unless [prepare] returned
- *   [SpeakerAvailability.Ready] (so never for the language a [SpeakerAvailability.MissingVoice]
- *   reports), and for blank or otherwise unspeakable text. It never throws.
+ * - [speak] accepts a language when [prepare] returned [SpeakerAvailability.Ready], or returned
+ *   [SpeakerAvailability.MissingVoice] whose `languages` does not contain it
+ *   ([SpeechRequests.allows]). It returns `false` and leaves [state] at [SpeakerState.Idle] for a
+ *   language `MissingVoice` reports, for [SpeakerAvailability.EngineUnavailable], before
+ *   [prepare], and for blank or otherwise unspeakable text. It never throws.
  * - A new [speak] replaces whatever is being said (flush, not queue).
  * - [stop] silences the engine and sets [state] to [SpeakerState.Idle].
  * - [shutdown] releases the engine; it is idempotent and safe before [prepare]. After it,
