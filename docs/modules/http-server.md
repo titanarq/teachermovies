@@ -54,6 +54,14 @@
   message. A route that sends its own `ApiError` with `ApplicationCall.respondApiError` (e.g.
   `unknown_torrent`) is exempt from being overwritten by the shared `not_found` 404 page --
   `StatusPages`'s `status(NotFound)` handler otherwise fires on any 404, not only an unmatched route.
+- `HttpServerController(settings: SettingsRepository, depsFactory: () -> ServerDeps, scope:
+  CoroutineScope, serverFactory: (ServerDeps, Int) -> RunningServer)`: follows
+  `settings.settings.map { it.httpPort }.distinctUntilChanged()`, starting the server on the first
+  port and, on every later change, stopping the running one before starting the new one (never both
+  at once). `fun interface RunningServer { fun stop() }` lets tests avoid opening sockets. `val
+  state: StateFlow<ServerState>` reports `Stopped` | `Running(port)` | `Failed(port, reason)`; a
+  bind failure is `Failed`, never a crash. `start()`/`stop()` are idempotent. Hosting this in the
+  app/service and showing the pairing PIN is #66.
 
 ## Boundaries
 - Talks to `TorrentEngine` and repositories through interfaces only. No UPnP, nothing exposed to the Internet. Never log tokens/PINs.
