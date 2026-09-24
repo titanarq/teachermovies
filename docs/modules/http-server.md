@@ -38,8 +38,22 @@
 - `GET /api/status` (public) -> 200
   `{"version":"...","engine":"running","freeBytes":123,"totalBytes":456,"torrents":2}`; `engine` is
   the `EngineStatus` in lower case, `freeBytes`/`totalBytes` are `null` when unknown.
+- Read routes (#57), all wrapped in `requireBearer`, DTOs in `com.teachermovies.http.dto`:
+  - `GET /api/torrents` -> 200 `[TorrentDto]`.
+  - `GET /api/torrents/{id}` -> 200 `TorrentDto` | 404 `unknown_torrent` | 400 `invalid_id`.
+  - `GET /api/torrents/{id}/files` -> 200 `[FileDto]` | 409 `not_ready` before metadata | 404
+    `unknown_torrent` | 400 `invalid_id`.
+  - `TorrentDto(id, name, state, progress, downloadedBytes, totalBytes, downloadSpeed, uploadSpeed,
+    peers, etaSeconds, ratio)`: `state` is `DownloadState` in snake_case
+    (`fetching_metadata`|`queued`|`downloading`|`paused`|`verifying`|`completed`|`error`), `progress`
+    a percentage with one decimal (`17.4`). `FileDto(index, path, size, priority, downloadedBytes)`:
+    `priority` is `FilePriority` lower-case (`skip`|`normal`|`high`). Mapped from `TorrentSnapshot`/
+    `TorrentFileInfo` by `toDto()`.
 - Errors are JSON `{"error":"<code>","message":"..."}` (StatusPages): unknown `/api/*` route -> 404
-  `not_found`; any uncaught exception -> 500 `internal`, never with a stack trace or exception message.
+  `not_found`; any uncaught exception -> 500 `internal`, never with a stack trace or exception
+  message. A route that sends its own `ApiError` with `ApplicationCall.respondApiError` (e.g.
+  `unknown_torrent`) is exempt from being overwritten by the shared `not_found` 404 page --
+  `StatusPages`'s `status(NotFound)` handler otherwise fires on any 404, not only an unmatched route.
 
 ## Boundaries
 - Talks to `TorrentEngine` and repositories through interfaces only. No UPnP, nothing exposed to the Internet. Never log tokens/PINs.
