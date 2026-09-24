@@ -151,17 +151,33 @@ class AnthropicTranslationProvider internal constructor(
         /** Maps a failure to a [TranslationError]; never looks at (or keeps) any message text. */
         fun classify(e: Throwable): TranslationError =
             when (e) {
-                is UnauthorizedException, is PermissionDeniedException -> TranslationError.AuthenticationRejected
-                is RateLimitException -> TranslationError.RateLimited
-                is AnthropicServiceException -> TranslationError.ApiError(e.statusCode())
-                is AnthropicInvalidDataException -> TranslationError.MalformedResponse
-                is AnthropicIoException, is AnthropicRetryableException, is IOException -> TranslationError.Offline
-                else ->
+                is UnauthorizedException, is PermissionDeniedException -> {
+                    TranslationError.AuthenticationRejected
+                }
+
+                is RateLimitException -> {
+                    TranslationError.RateLimited
+                }
+
+                is AnthropicServiceException -> {
+                    TranslationError.ApiError(e.statusCode())
+                }
+
+                is AnthropicInvalidDataException -> {
+                    TranslationError.MalformedResponse
+                }
+
+                is AnthropicIoException, is AnthropicRetryableException, is IOException -> {
+                    TranslationError.Offline
+                }
+
+                else -> {
                     if (e.causes().any { it is IOException }) {
                         TranslationError.Offline
                     } else {
                         TranslationError.Unexpected(e.javaClass.simpleName)
                     }
+                }
             }
 
         private fun Throwable.causes(): Sequence<Throwable> =

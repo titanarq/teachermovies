@@ -1,12 +1,11 @@
 package com.teachermovies.tv.net
 
-import java.net.InetAddress
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.net.InetAddress
 
 class LanAddressResolverTest {
-
     private val resolver = LanAddressResolver(interfaces = { emptyList() })
 
     @Test
@@ -110,6 +109,10 @@ class LanAddressResolverTest {
         isLoopback: Boolean = false,
     ) = NetIf(name = name, isUp = isUp, isLoopback = isLoopback, addresses = addresses.toList())
 
-    private fun ipv4(a: Int, b: Int, c: Int, d: Int): InetAddress =
-        InetAddress.getByAddress(byteArrayOf(a.toByte(), b.toByte(), c.toByte(), d.toByte()))
+    private fun ipv4(
+        a: Int,
+        b: Int,
+        c: Int,
+        d: Int,
+    ): InetAddress = InetAddress.getByAddress(byteArrayOf(a.toByte(), b.toByte(), c.toByte(), d.toByte()))
 }

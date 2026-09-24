@@ -25,7 +25,6 @@ data class NetIf(
 class LanAddressResolver(
     private val interfaces: () -> List<NetIf> = ::systemInterfaces,
 ) {
-
     /**
      * The first site-local IPv4 address (10/8, 172.16/12, 192.168/16) of an interface that is up
      * and not loopback, or null when there is none. Wired Ethernet (`eth*`) wins over Wi-Fi

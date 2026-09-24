@@ -17,7 +17,6 @@ import com.teachermovies.torrent.api.RangeReadiness
 import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.api.TorrentFileInfo
 import com.teachermovies.torrent.fake.FakeTorrentEngine
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
@@ -32,6 +31,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackSessionTest {
@@ -516,7 +516,11 @@ class PlaybackSessionTest {
             engine.emitMetadata(
                 id,
                 "Movie",
-                listOf("Movie.mkv" to fileSize, "Sample/sample.mkv" to extras - piece, "Movie.en.srt" to piece.toLong()),
+                listOf(
+                    "Movie.mkv" to fileSize,
+                    "Sample/sample.mkv" to extras - piece,
+                    "Movie.en.srt" to piece.toLong(),
+                ),
             )
             engine.setPieces(id, piece, (0 until 130).toSet())
             val recording = RecordingEngine(engine)

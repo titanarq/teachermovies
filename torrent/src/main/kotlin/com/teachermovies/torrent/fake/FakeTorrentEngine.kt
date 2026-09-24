@@ -36,7 +36,10 @@ class FakeTorrentEngine : TorrentEngine {
     private val filesByTorrent = mutableMapOf<TorrentId, List<TorrentFileInfo>>()
 
     /** The piece model per torrent, set by [setPieces]: piece length and the pieces on disk. */
-    private data class PieceModel(val pieceLengthBytes: Int, val have: Set<Int>)
+    private data class PieceModel(
+        val pieceLengthBytes: Int,
+        val have: Set<Int>,
+    )
 
     private val piecesByTorrent = mutableMapOf<TorrentId, PieceModel>()
 
@@ -166,13 +169,22 @@ class FakeTorrentEngine : TorrentEngine {
         val torrentBytes = files.sumOf { it.sizeBytes }
         val totalPieces = ((torrentBytes + pieceLength - 1) / pieceLength).coerceAtLeast(1L).toInt()
         val fileOffset = files.take(fileIndex).sumOf { it.sizeBytes }
-        val range = PieceWindowCalculator.piecesFor(fileOffset, model.pieceLengthBytes, totalPieces, byteOffset, lengthBytes)
+        val range =
+            PieceWindowCalculator.piecesFor(
+                fileOffset,
+                model.pieceLengthBytes,
+                totalPieces,
+                byteOffset,
+                lengthBytes,
+            )
         val missing = (range.firstPiece..range.lastPiece).filterNot { it in model.have }
         val start = fileOffset + byteOffset
         val windowEnd = (start + lengthBytes.coerceAtLeast(0L)).coerceAtMost(fileOffset + file.sizeBytes)
         val contiguousEnd = missing.firstOrNull()?.let { it * pieceLength } ?: Long.MAX_VALUE
         val readyBytes = (minOf(windowEnd, contiguousEnd) - start).coerceAtLeast(0L)
-        return EngineResult.Ok(RangeReadiness(ready = missing.isEmpty(), readyBytes = readyBytes, missingPieces = missing))
+        return EngineResult.Ok(
+            RangeReadiness(ready = missing.isEmpty(), readyBytes = readyBytes, missingPieces = missing),
+        )
     }
 
     // -- Test controls: not part of TorrentEngine, drive the fake deterministically from a test. --
@@ -191,10 +203,19 @@ class FakeTorrentEngine : TorrentEngine {
     ) {
         val listed =
             files.mapIndexed { index, (path, sizeBytes) ->
-                TorrentFileInfo(index = index, path = path, sizeBytes = sizeBytes, priority = FilePriority.Normal, downloadedBytes = 0L)
+                TorrentFileInfo(
+                    index = index,
+                    path = path,
+                    sizeBytes = sizeBytes,
+                    priority = FilePriority.Normal,
+                    downloadedBytes = 0L,
+                )
             }
         val selection = FileSelectionPolicy.select(listed)
-        val fileInfos = listed.map { file -> selection.priorities[file.index]?.let { file.copy(priority = it) } ?: file }
+        val fileInfos =
+            listed.map { file ->
+                selection.priorities[file.index]?.let { file.copy(priority = it) } ?: file
+            }
         filesByTorrent[id] = fileInfos
         val totalBytes = fileInfos.filter { it.priority != FilePriority.Skip }.sumOf { it.sizeBytes }
         replaceSnapshot(id) { snapshot ->

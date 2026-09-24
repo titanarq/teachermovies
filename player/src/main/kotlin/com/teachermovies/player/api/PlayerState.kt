@@ -21,5 +21,7 @@ sealed interface PlayerState {
     data object Ended : PlayerState
 
     /** Playback cannot continue; [message] is what the implementation reports to the user. */
-    data class Error(val message: String) : PlayerState
+    data class Error(
+        val message: String,
+    ) : PlayerState
 }

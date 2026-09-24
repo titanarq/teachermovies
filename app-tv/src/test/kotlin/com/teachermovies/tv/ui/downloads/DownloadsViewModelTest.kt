@@ -30,7 +30,6 @@ import org.junit.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class DownloadsViewModelTest {
-
     private val validMagnet = "magnet:?xt=urn:btih:${"a".repeat(40)}&dn=Movie"
 
     private val engine = FakeTorrentEngine()
@@ -51,9 +50,13 @@ class DownloadsViewModelTest {
 
     @Test
     fun emptyEngineMeansNoRowsAndFreeSpaceFromSpace() {
-        val viewModel = DownloadsViewModel(engine, sync) { SpaceInfo(freeBytes = 5_000_000_000, totalBytes = 16_000_000_000) }
+        val viewModel =
+            DownloadsViewModel(engine, sync) { SpaceInfo(freeBytes = 5_000_000_000, totalBytes = 16_000_000_000) }
 
-        assertTrue(viewModel.uiState.value.rows.isEmpty())
+        assertTrue(
+            viewModel.uiState.value.rows
+                .isEmpty(),
+        )
         assertEquals("5,0 GB", viewModel.uiState.value.freeSpace)
     }
 
@@ -71,7 +74,9 @@ class DownloadsViewModelTest {
         engine.emitMetadata(id, "Movie", listOf("Movie.mkv" to 25_600_000_000L))
         engine.advance(id, bytes = 18_400_000_000L, rateBps = 8_300_000L, peers = 4)
 
-        val row = viewModel.uiState.value.rows.single()
+        val row =
+            viewModel.uiState.value.rows
+                .single()
 
         assertEquals(id, row.id)
         assertEquals("Movie", row.name)
@@ -94,7 +99,9 @@ class DownloadsViewModelTest {
 
         viewModel.pause(id)
 
-        val row = viewModel.uiState.value.rows.single()
+        val row =
+            viewModel.uiState.value.rows
+                .single()
         assertEquals(DownloadState.Paused, row.state)
         assertFalse(row.canPause)
         assertTrue(row.canResume)
@@ -106,11 +113,21 @@ class DownloadsViewModelTest {
         val id = addMagnet()
         engine.emitMetadata(id, "Movie", listOf("Movie.mkv" to 1_000L))
         viewModel.pause(id)
-        assertEquals(DownloadState.Paused, viewModel.uiState.value.rows.single().state)
+        assertEquals(
+            DownloadState.Paused,
+            viewModel.uiState.value.rows
+                .single()
+                .state,
+        )
 
         viewModel.resume(id)
 
-        assertEquals(DownloadState.Downloading, viewModel.uiState.value.rows.single().state)
+        assertEquals(
+            DownloadState.Downloading,
+            viewModel.uiState.value.rows
+                .single()
+                .state,
+        )
     }
 
     @Test
@@ -121,7 +138,10 @@ class DownloadsViewModelTest {
 
         viewModel.remove(id, deleteFiles = false)
 
-        assertTrue(viewModel.uiState.value.rows.isEmpty())
+        assertTrue(
+            viewModel.uiState.value.rows
+                .isEmpty(),
+        )
         assertNull(runBlocking { repo.get(id) })
     }
 
@@ -145,7 +165,12 @@ class DownloadsViewModelTest {
         assertEquals(id, state.selectedRowId)
         val dialog = state.dialog as DownloadsDialog.Actions
         assertEquals(
-            listOf(DownloadAction.PauseResume, DownloadAction.ChooseFiles, DownloadAction.Delete, DownloadAction.Cancel),
+            listOf(
+                DownloadAction.PauseResume,
+                DownloadAction.ChooseFiles,
+                DownloadAction.Delete,
+                DownloadAction.Cancel,
+            ),
             dialog.items.map { it.action },
         )
         assertTrue(dialog.items.all { it.enabled })
@@ -193,14 +218,24 @@ class DownloadsViewModelTest {
 
         viewModel.onAction(DownloadAction.PauseResume)
 
-        assertEquals(DownloadState.Paused, viewModel.uiState.value.rows.single().state)
+        assertEquals(
+            DownloadState.Paused,
+            viewModel.uiState.value.rows
+                .single()
+                .state,
+        )
     }
 
     @Test
     fun chooseFilesIsDisabledWhileFetchingMetadata() {
         val viewModel = DownloadsViewModel(engine, sync) { null }
         val id = addMagnet()
-        assertEquals(DownloadState.FetchingMetadata, viewModel.uiState.value.rows.single().state)
+        assertEquals(
+            DownloadState.FetchingMetadata,
+            viewModel.uiState.value.rows
+                .single()
+                .state,
+        )
 
         viewModel.openActions(id)
 
@@ -216,14 +251,24 @@ class DownloadsViewModelTest {
         viewModel.openActions(id)
         viewModel.onAction(DownloadAction.PauseResume)
 
-        assertEquals(DownloadState.Paused, viewModel.uiState.value.rows.single().state)
+        assertEquals(
+            DownloadState.Paused,
+            viewModel.uiState.value.rows
+                .single()
+                .state,
+        )
         assertNull(viewModel.uiState.value.dialog)
         assertEquals(id, viewModel.uiState.value.selectedRowId)
 
         viewModel.openActions(id)
         viewModel.onAction(DownloadAction.PauseResume)
 
-        assertEquals(DownloadState.Downloading, viewModel.uiState.value.rows.single().state)
+        assertEquals(
+            DownloadState.Downloading,
+            viewModel.uiState.value.rows
+                .single()
+                .state,
+        )
         assertNull(viewModel.uiState.value.dialog)
     }
 
@@ -248,7 +293,12 @@ class DownloadsViewModelTest {
 
         assertNull(viewModel.uiState.value.dialog)
         assertEquals(id, viewModel.uiState.value.selectedRowId)
-        assertEquals(DownloadState.Downloading, viewModel.uiState.value.rows.single().state)
+        assertEquals(
+            DownloadState.Downloading,
+            viewModel.uiState.value.rows
+                .single()
+                .state,
+        )
     }
 
     @Test
@@ -285,7 +335,10 @@ class DownloadsViewModelTest {
         viewModel.confirmDelete(deleteFiles = true)
 
         assertTrue("remove(${id.value},true)" in engine.recordedCalls)
-        assertTrue(viewModel.uiState.value.rows.isEmpty())
+        assertTrue(
+            viewModel.uiState.value.rows
+                .isEmpty(),
+        )
         assertNull(viewModel.uiState.value.dialog)
         assertNull(runBlocking { repo.get(id) })
     }
@@ -300,7 +353,10 @@ class DownloadsViewModelTest {
         viewModel.confirmDelete(deleteFiles = false)
 
         assertTrue("remove(${id.value},false)" in engine.recordedCalls)
-        assertTrue(viewModel.uiState.value.rows.isEmpty())
+        assertTrue(
+            viewModel.uiState.value.rows
+                .isEmpty(),
+        )
         assertNull(viewModel.uiState.value.dialog)
     }
 
@@ -314,7 +370,12 @@ class DownloadsViewModelTest {
         viewModel.dismissDialog()
 
         assertNull(viewModel.uiState.value.dialog)
-        assertEquals(id, viewModel.uiState.value.rows.single().id)
+        assertEquals(
+            id,
+            viewModel.uiState.value.rows
+                .single()
+                .id,
+        )
     }
 
     @Test
@@ -325,7 +386,12 @@ class DownloadsViewModelTest {
 
         viewModel.confirmDelete(deleteFiles = true)
 
-        assertEquals(id, viewModel.uiState.value.rows.single().id)
+        assertEquals(
+            id,
+            viewModel.uiState.value.rows
+                .single()
+                .id,
+        )
     }
 
     @Test

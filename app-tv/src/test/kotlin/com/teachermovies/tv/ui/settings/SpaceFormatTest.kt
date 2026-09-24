@@ -4,7 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class SpaceFormatTest {
-
     @Test
     fun freeSpaceHasOneDecimalWithComma() {
         assertEquals("5,0", SpaceFormat.freeGb(5_000_000_000))

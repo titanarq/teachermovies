@@ -7,7 +7,6 @@ import com.teachermovies.storage.SpaceInfo
 import com.teachermovies.storage.SpaceProvider
 import com.teachermovies.storage.StorageVolumeProvider
 import com.teachermovies.storage.VolumeInfo
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -26,10 +25,10 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
-
     private val internal = volume(id = "primary", label = "Almacenamiento interno", primary = true)
     private val usb = volume(id = "USB-1", label = "USB", removable = true)
 
@@ -59,7 +58,10 @@ class SettingsViewModelTest {
     @Test
     fun initialStateShowsPersistedPortVolumesAndSpace() {
         val settings = InMemorySettingsRepository(AppSettings(httpPort = 9000, downloadVolumeId = "primary"))
-        val viewModel = SettingsViewModel(settings, FakeVolumeProvider(listOf(internal, usb)), space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            SettingsViewModel(settings, FakeVolumeProvider(listOf(internal, usb)), space, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         val state = viewModel.uiState.value
 
@@ -133,7 +135,10 @@ class SettingsViewModelTest {
     @Test
     fun initialStateWithoutPersistedVolumeSelectsTheFallback() {
         val settings = InMemorySettingsRepository(AppSettings())
-        val viewModel = SettingsViewModel(settings, FakeVolumeProvider(listOf(internal, usb)), space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            SettingsViewModel(settings, FakeVolumeProvider(listOf(internal, usb)), space, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         assertEquals("USB-1", viewModel.uiState.value.selectedVolumeId)
         assertFalse(viewModel.uiState.value.volumeMissing)
@@ -142,7 +147,10 @@ class SettingsViewModelTest {
     @Test
     fun validPortIsSaved() {
         val settings = InMemorySettingsRepository(AppSettings())
-        val viewModel = SettingsViewModel(settings, FakeVolumeProvider(listOf(internal)), space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            SettingsViewModel(settings, FakeVolumeProvider(listOf(internal)), space, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         viewModel.changePort(8080)
 
@@ -154,7 +162,10 @@ class SettingsViewModelTest {
     @Test
     fun portOutsideRangeIsNotSavedAndFlagsError() {
         val settings = InMemorySettingsRepository(AppSettings(httpPort = 8787))
-        val viewModel = SettingsViewModel(settings, FakeVolumeProvider(listOf(internal)), space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            SettingsViewModel(settings, FakeVolumeProvider(listOf(internal)), space, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         listOf(0, 80, 1023, 65536).forEach { port ->
             viewModel.changePort(port)
@@ -169,7 +180,10 @@ class SettingsViewModelTest {
     @Test
     fun rangeBoundsAreValid() {
         val settings = InMemorySettingsRepository(AppSettings())
-        val viewModel = SettingsViewModel(settings, FakeVolumeProvider(listOf(internal)), space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            SettingsViewModel(settings, FakeVolumeProvider(listOf(internal)), space, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         viewModel.changePort(1024)
         assertEquals(1024, settings.current.httpPort)
@@ -181,7 +195,10 @@ class SettingsViewModelTest {
     @Test
     fun validPortAfterInvalidOneClearsError() {
         val settings = InMemorySettingsRepository(AppSettings())
-        val viewModel = SettingsViewModel(settings, FakeVolumeProvider(listOf(internal)), space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            SettingsViewModel(settings, FakeVolumeProvider(listOf(internal)), space, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         viewModel.changePort(70000)
         assertTrue(viewModel.uiState.value.portError)
@@ -195,7 +212,10 @@ class SettingsViewModelTest {
     @Test
     fun selectingVolumePersistsIt() {
         val settings = InMemorySettingsRepository(AppSettings(downloadVolumeId = "primary"))
-        val viewModel = SettingsViewModel(settings, FakeVolumeProvider(listOf(internal, usb)), space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            SettingsViewModel(settings, FakeVolumeProvider(listOf(internal, usb)), space, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         viewModel.selectVolume("USB-1")
 
@@ -207,7 +227,10 @@ class SettingsViewModelTest {
     @Test
     fun selectingUnknownVolumeIsIgnored() {
         val settings = InMemorySettingsRepository(AppSettings(downloadVolumeId = "primary"))
-        val viewModel = SettingsViewModel(settings, FakeVolumeProvider(listOf(internal, usb)), space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            SettingsViewModel(settings, FakeVolumeProvider(listOf(internal, usb)), space, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         viewModel.selectVolume("gone")
 
@@ -217,7 +240,10 @@ class SettingsViewModelTest {
     @Test
     fun missingPersistedVolumeSetsFlagAndSelectsFallback() {
         val settings = InMemorySettingsRepository(AppSettings(downloadVolumeId = "USB-1"))
-        val viewModel = SettingsViewModel(settings, FakeVolumeProvider(listOf(internal)), space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            SettingsViewModel(settings, FakeVolumeProvider(listOf(internal)), space, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         val state = viewModel.uiState.value
 
@@ -232,16 +258,24 @@ class SettingsViewModelTest {
     fun unmountedPersistedVolumeIsMissingAndNotListed() {
         val settings = InMemorySettingsRepository(AppSettings(downloadVolumeId = "USB-1"))
         val volumes = FakeVolumeProvider(listOf(internal, usb.copy(mounted = false)))
-        val viewModel = SettingsViewModel(settings, volumes, space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            SettingsViewModel(settings, volumes, space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
 
         assertTrue(viewModel.uiState.value.volumeMissing)
-        assertEquals(listOf("primary"), viewModel.uiState.value.volumes.map { it.id })
+        assertEquals(
+            listOf("primary"),
+            viewModel.uiState.value.volumes
+                .map { it.id },
+        )
     }
 
     @Test
     fun choosingAnotherVolumeClearsMissingFlag() {
         val settings = InMemorySettingsRepository(AppSettings(downloadVolumeId = "USB-1"))
-        val viewModel = SettingsViewModel(settings, FakeVolumeProvider(listOf(internal)), space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            SettingsViewModel(settings, FakeVolumeProvider(listOf(internal)), space, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         viewModel.selectVolume("primary")
 
@@ -253,7 +287,8 @@ class SettingsViewModelTest {
     fun refreshPicksUpReattachedVolume() {
         val settings = InMemorySettingsRepository(AppSettings(downloadVolumeId = "USB-1"))
         val volumes = FakeVolumeProvider(listOf(internal))
-        val viewModel = SettingsViewModel(settings, volumes, space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            SettingsViewModel(settings, volumes, space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
         assertTrue(viewModel.uiState.value.volumeMissing)
 
         volumes.current = listOf(internal, usb)
@@ -266,7 +301,10 @@ class SettingsViewModelTest {
     @Test
     fun noVolumesAtAll() {
         val settings = InMemorySettingsRepository(AppSettings())
-        val viewModel = SettingsViewModel(settings, FakeVolumeProvider(emptyList()), space, pin = { pin }, serverState = serverState, pinTicks = pinTicks)
+        val viewModel =
+            SettingsViewModel(settings, FakeVolumeProvider(emptyList()), space, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
 
         assertEquals(emptyList<VolumeRow>(), viewModel.uiState.value.volumes)
         assertNull(viewModel.uiState.value.selectedVolumeId)
@@ -288,7 +326,9 @@ class SettingsViewModelTest {
     )
 
     /** Mirrors `DataStoreSettingsRepository`: same defaults, same port validation. */
-    private class InMemorySettingsRepository(initial: AppSettings) : SettingsRepository {
+    private class InMemorySettingsRepository(
+        initial: AppSettings,
+    ) : SettingsRepository {
         private val state = MutableStateFlow(initial)
         var setHttpPortCalls = 0
             private set
@@ -324,11 +364,15 @@ class SettingsViewModelTest {
         }
     }
 
-    private class FakeVolumeProvider(var current: List<VolumeInfo>) : StorageVolumeProvider {
+    private class FakeVolumeProvider(
+        var current: List<VolumeInfo>,
+    ) : StorageVolumeProvider {
         override fun volumes(): List<VolumeInfo> = current
     }
 
-    private class FakeSpaceProvider(private val byRoot: Map<File, SpaceInfo>) : SpaceProvider {
+    private class FakeSpaceProvider(
+        private val byRoot: Map<File, SpaceInfo>,
+    ) : SpaceProvider {
         override fun spaceOf(root: File): SpaceInfo = byRoot[root] ?: SpaceInfo(0, 0)
     }
 }

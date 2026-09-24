@@ -22,7 +22,9 @@ internal fun Route.statusRoutes(deps: ServerDeps) {
         call.respond(
             StatusResponse(
                 version = deps.appVersion,
-                engine = deps.engine.engineStatus.value.name.lowercase(),
+                engine =
+                    deps.engine.engineStatus.value.name
+                        .lowercase(),
                 freeBytes = space?.freeBytes,
                 totalBytes = space?.totalBytes,
                 torrents = deps.engine.torrents.value.size,

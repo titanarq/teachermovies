@@ -22,7 +22,8 @@ class TorrentDaoTest {
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db =
-            Room.inMemoryDatabaseBuilder(context, TeacherMoviesDatabase::class.java)
+            Room
+                .inMemoryDatabaseBuilder(context, TeacherMoviesDatabase::class.java)
                 .allowMainThreadQueries()
                 .build()
         dao = db.torrentDao()

@@ -14,8 +14,10 @@ import java.io.File
  * does not have that shape -- the upload then fails instead of guessing a volume.
  */
 object SubtitleLayoutResolver {
-
-    fun layoutFor(torrentId: String, torrents: List<TorrentSnapshot>): DownloadLayout? {
+    fun layoutFor(
+        torrentId: String,
+        torrents: List<TorrentSnapshot>,
+    ): DownloadLayout? {
         val savePath = torrents.firstOrNull { it.id.value == torrentId }?.savePath ?: return null
         val torrentDir = File(savePath)
         if (torrentDir.name != torrentId) return null

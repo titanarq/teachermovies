@@ -25,8 +25,14 @@ class AssistantKeyMapperTest {
 
     @Test
     fun withTheOverlayClosedDownAndCaptionsCaptureTheLine() {
-        assertEquals(AssistantAction.CaptureLine, AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_DOWN, overlayOpen = false))
-        assertEquals(AssistantAction.CaptureLine, AssistantKeyMapper.map(KeyEvent.KEYCODE_CAPTIONS, overlayOpen = false))
+        assertEquals(
+            AssistantAction.CaptureLine,
+            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_DOWN, overlayOpen = false),
+        )
+        assertEquals(
+            AssistantAction.CaptureLine,
+            AssistantKeyMapper.map(KeyEvent.KEYCODE_CAPTIONS, overlayOpen = false),
+        )
     }
 
     @Test
@@ -48,29 +54,48 @@ class AssistantKeyMapperTest {
 
     @Test
     fun withTheOverlayOpenOkEnterAndPlayPauseReplayTheFragment() {
-        listOf(KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE).forEach { keyCode ->
-            assertEquals("keyCode $keyCode", AssistantAction.ReplayFragment, AssistantKeyMapper.map(keyCode, overlayOpen = true))
+        val replayKeys = listOf(KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+        replayKeys.forEach { keyCode ->
+            assertEquals(
+                "keyCode $keyCode",
+                AssistantAction.ReplayFragment,
+                AssistantKeyMapper.map(keyCode, overlayOpen = true),
+            )
         }
     }
 
     @Test
     fun withTheOverlayOpenBackDownAndCaptionsDismissIt() {
         listOf(KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CAPTIONS).forEach { keyCode ->
-            assertEquals("keyCode $keyCode", AssistantAction.DismissOverlay, AssistantKeyMapper.map(keyCode, overlayOpen = true))
+            assertEquals(
+                "keyCode $keyCode",
+                AssistantAction.DismissOverlay,
+                AssistantKeyMapper.map(keyCode, overlayOpen = true),
+            )
         }
     }
 
     @Test
     fun withTheOverlayOpenEveryOtherKeyIsConsumed() {
         otherKeys.forEach { keyCode ->
-            assertEquals("keyCode $keyCode", AssistantAction.Consumed, AssistantKeyMapper.map(keyCode, overlayOpen = true))
+            assertEquals(
+                "keyCode $keyCode",
+                AssistantAction.Consumed,
+                AssistantKeyMapper.map(keyCode, overlayOpen = true),
+            )
         }
     }
 
     @Test
     fun withTheOverlayOpenRightSpeaksTheLineAndLeftTranslatesIt() {
-        assertEquals(AssistantAction.SpeakOriginal, AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = true))
-        assertEquals(AssistantAction.TranslateLine, AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT, overlayOpen = true))
+        assertEquals(
+            AssistantAction.SpeakOriginal,
+            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = true),
+        )
+        assertEquals(
+            AssistantAction.TranslateLine,
+            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT, overlayOpen = true),
+        )
     }
 
     @Test

@@ -29,12 +29,14 @@ class RoomTorrentRepository(
     override suspend fun get(id: TorrentId): Torrent? = dao.get(id.value)?.toDomain()
 
     override suspend fun getLibraryItem(id: TorrentId): LibraryItem? =
-        dao.get(id.value)
+        dao
+            .get(id.value)
             ?.takeIf { it.state == DownloadState.Completed.name && it.mainFilePath != null }
             ?.toLibraryItem()
 
     override suspend fun getPlaybackItem(id: TorrentId): LibraryItem? =
-        dao.get(id.value)
+        dao
+            .get(id.value)
             ?.takeIf { it.mainFilePath != null }
             ?.toLibraryItem()
 
@@ -82,8 +84,7 @@ class RoomTorrentRepository(
 private fun TorrentEntity?.completedAtEpochMsOr(
     now: Long,
     newState: DownloadState,
-): Long? =
-    this?.completedAtEpochMs ?: if (newState == DownloadState.Completed) now else null
+): Long? = this?.completedAtEpochMs ?: if (newState == DownloadState.Completed) now else null
 
 private fun TorrentEntity.toDomain(): Torrent =
     Torrent(

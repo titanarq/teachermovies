@@ -14,7 +14,8 @@ class RoomTorrentRepositoryTest : TorrentRepositoryContractTest() {
     override fun createRepository(): TorrentRepository {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db =
-            Room.inMemoryDatabaseBuilder(context, TeacherMoviesDatabase::class.java)
+            Room
+                .inMemoryDatabaseBuilder(context, TeacherMoviesDatabase::class.java)
                 .allowMainThreadQueries()
                 .build()
         return RoomTorrentRepository(db.torrentDao())

@@ -39,7 +39,11 @@ data class TracksPanelState(
                 subtitles =
                     listOf(TrackOption(null, SUBTITLES_OFF, selectedSubtitleId == null)) +
                         subtitles.mapIndexed { index, track ->
-                            TrackOption(track.id, label(track, "Subtítulo ${index + 1}"), track.id == selectedSubtitleId)
+                            TrackOption(
+                                track.id,
+                                label(track, "Subtítulo ${index + 1}"),
+                                track.id == selectedSubtitleId,
+                            )
                         },
             )
 

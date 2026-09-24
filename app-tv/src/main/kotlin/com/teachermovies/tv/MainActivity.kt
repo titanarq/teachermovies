@@ -19,6 +19,7 @@ import androidx.tv.material3.MaterialTheme
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.torrent.service.TorrentService
 import com.teachermovies.tv.di.AppContainer
+import com.teachermovies.tv.player.PlayerViewModel
 import com.teachermovies.tv.ui.AppRoute
 import com.teachermovies.tv.ui.MainShell
 import com.teachermovies.tv.ui.MainViewModel
@@ -29,7 +30,6 @@ import com.teachermovies.tv.ui.firstrun.FirstRunRoute
 import com.teachermovies.tv.ui.firstrun.FirstRunViewModel
 import com.teachermovies.tv.ui.library.LibraryRoute
 import com.teachermovies.tv.ui.library.LibraryViewModel
-import com.teachermovies.tv.player.PlayerViewModel
 import com.teachermovies.tv.ui.player.PlayerRoute
 import com.teachermovies.tv.ui.settings.SettingsRoute
 import com.teachermovies.tv.ui.settings.SettingsViewModel
@@ -56,7 +56,6 @@ import kotlinx.coroutines.flow.map
  * notification is hidden.
  */
 class MainActivity : ComponentActivity() {
-
     private val mainViewModel: MainViewModel by viewModels()
 
     private val settingsViewModel: SettingsViewModel by viewModels {
@@ -110,12 +109,18 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 val firstRunCompleted by firstRunViewModel.firstRunCompleted.collectAsStateWithLifecycle()
                 when (firstRunCompleted) {
-                    null -> Unit
-                    false -> FirstRunRoute(viewModel = firstRunViewModel)
+                    null -> {
+                        Unit
+                    }
+
+                    false -> {
+                        FirstRunRoute(viewModel = firstRunViewModel)
+                    }
+
                     true -> {
                         val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
                         when (val route = uiState.route) {
-                            is AppRoute.Player ->
+                            is AppRoute.Player -> {
                                 // Keyed by the route so each play gets its own ViewModel and session.
                                 key(route.route) {
                                     PlayerRoute(
@@ -126,12 +131,18 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
-                            AppRoute.Shell ->
+                            }
+
+                            AppRoute.Shell -> {
                                 MainShell(
                                     uiState = uiState,
                                     onSelect = mainViewModel::select,
                                     libraryContent = { modifier ->
-                                        LibraryRoute(viewModel = libraryViewModel, onPlay = mainViewModel::openPlayer, modifier = modifier)
+                                        LibraryRoute(
+                                            viewModel = libraryViewModel,
+                                            onPlay = mainViewModel::openPlayer,
+                                            modifier = modifier,
+                                        )
                                     },
                                     downloadsContent = { modifier ->
                                         DownloadsScreen(
@@ -140,8 +151,11 @@ class MainActivity : ComponentActivity() {
                                             modifier = modifier,
                                         )
                                     },
-                                    settingsContent = { modifier -> SettingsRoute(viewModel = settingsViewModel, modifier = modifier) },
+                                    settingsContent = { modifier ->
+                                        SettingsRoute(viewModel = settingsViewModel, modifier = modifier)
+                                    },
                                 )
+                            }
                         }
                     }
                 }

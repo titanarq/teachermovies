@@ -63,11 +63,16 @@ class SubtitleRouteTest {
             application { module(deps) }
             val api = lanClient()
             val body =
-                api.post("/api/pair") {
-                    contentType(ContentType.Application.Json)
-                    setBody("""{"pin":"${pairing.currentPin()}"}""")
-                }.bodyAsText()
-            val token = Json.parseToJsonElement(body).jsonObject["token"]!!.jsonPrimitive.content
+                api
+                    .post("/api/pair") {
+                        contentType(ContentType.Application.Json)
+                        setBody("""{"pin":"${pairing.currentPin()}"}""")
+                    }.bodyAsText()
+            val token =
+                Json
+                    .parseToJsonElement(body)
+                    .jsonObject["token"]!!
+                    .jsonPrimitive.content
             block(api, token)
         }
 
@@ -98,7 +103,11 @@ class SubtitleRouteTest {
                 },
         ) { token?.let { bearerAuth(it) } }
 
-    private fun HttpResponse.errorCode(body: String): String = Json.parseToJsonElement(body).jsonObject["error"]!!.jsonPrimitive.content
+    private fun HttpResponse.errorCode(body: String): String =
+        Json
+            .parseToJsonElement(body)
+            .jsonObject["error"]!!
+            .jsonPrimitive.content
 
     @Test
     fun `upload saves the file and answers 201 with its path`() =
@@ -181,7 +190,13 @@ class SubtitleRouteTest {
         withApi { client, token ->
             val id = addTorrent('a')
 
-            val noTorrentId = client.uploadSubtitle(torrentId = null, fileName = "Movie.srt", bytes = srtBytes, token = token)
+            val noTorrentId =
+                client.uploadSubtitle(
+                    torrentId = null,
+                    fileName = "Movie.srt",
+                    bytes = srtBytes,
+                    token = token,
+                )
             assertEquals(HttpStatusCode.BadRequest, noTorrentId.status)
             assertEquals("bad_request", noTorrentId.errorCode(noTorrentId.bodyAsText()))
 

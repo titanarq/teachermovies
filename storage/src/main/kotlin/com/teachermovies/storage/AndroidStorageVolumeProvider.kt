@@ -19,16 +19,21 @@ private const val PRIMARY_VOLUME_ID = "primary"
  * Runs only on a device (needs `Context`/`StorageManager`), so it has no JVM unit test; that it
  * compiles is what CI checks, behaviour on a real TV with a USB drive is a manual check (#43).
  */
-class AndroidStorageVolumeProvider(private val context: Context) : StorageVolumeProvider {
-
+class AndroidStorageVolumeProvider(
+    private val context: Context,
+) : StorageVolumeProvider {
     override fun volumes(): List<VolumeInfo> {
         val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as StorageManager
-        return context.getExternalFilesDirs(null)
+        return context
+            .getExternalFilesDirs(null)
             .filterNotNull()
             .mapNotNull { dir -> toVolumeInfo(dir, storageManager) }
     }
 
-    private fun toVolumeInfo(dir: File, storageManager: StorageManager): VolumeInfo? {
+    private fun toVolumeInfo(
+        dir: File,
+        storageManager: StorageManager,
+    ): VolumeInfo? {
         // A dir whose volume is currently unavailable has no StorageVolume to match it to.
         val volume: StorageVolume = storageManager.getStorageVolume(dir) ?: return null
         return VolumeInfo(

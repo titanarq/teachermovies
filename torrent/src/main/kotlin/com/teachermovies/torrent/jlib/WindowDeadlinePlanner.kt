@@ -8,7 +8,10 @@ import com.teachermovies.torrent.api.RangeReadiness
  * window moves: [deadlines] maps each piece that entered the window to its deadline in
  * milliseconds, and [reset] lists, ascending, the pieces that left it.
  */
-internal data class WindowDeadlinePlan(val deadlines: Map<Int, Int>, val reset: List<Int>)
+internal data class WindowDeadlinePlan(
+    val deadlines: Map<Int, Int>,
+    val reset: List<Int>,
+)
 
 /**
  * Pure planning behind the real engine's read-ahead window (#94): plain values only, no jlibtorrent
@@ -36,7 +39,13 @@ internal object WindowDeadlinePlanner {
             deadlines[piece] = deadlineStepMs * step
         }
         val reset =
-            if (previous == null) emptyList() else (previous.firstPiece..previous.lastPiece).filterNot { current.covers(it) }
+            if (previous ==
+                null
+            ) {
+                emptyList()
+            } else {
+                (previous.firstPiece..previous.lastPiece).filterNot { current.covers(it) }
+            }
         return WindowDeadlinePlan(deadlines, reset)
     }
 }

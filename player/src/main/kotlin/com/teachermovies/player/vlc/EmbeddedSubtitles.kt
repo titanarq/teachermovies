@@ -61,13 +61,20 @@ internal object EmbeddedSubtitles {
     ): SubtitleExtraction =
         when (val tracks = MatroskaSubtitles.textTracks(file)) {
             // EBML, but a DocType other than matroska/webm.
-            MkvTracksResult.NotMatroska -> SubtitleExtraction.Failed(NOT_SUPPORTED)
-            is MkvTracksResult.Failed -> SubtitleExtraction.Failed(tracks.reason)
-            is MkvTracksResult.Tracks ->
+            MkvTracksResult.NotMatroska -> {
+                SubtitleExtraction.Failed(NOT_SUPPORTED)
+            }
+
+            is MkvTracksResult.Failed -> {
+                SubtitleExtraction.Failed(tracks.reason)
+            }
+
+            is MkvTracksResult.Tracks -> {
                 when (val number = MkvTrackMapping.resolve(trackId, vlcSubtitleTracks, tracks.tracks)) {
                     null -> SubtitleExtraction.TrackNotFound
                     else -> MatroskaSubtitles.extract(file, number, destination)
                 }
+            }
         }
 
     private fun extractMp4(
@@ -77,13 +84,27 @@ internal object EmbeddedSubtitles {
         destination: File,
     ): SubtitleExtraction =
         when (val tracks = Mp4Subtitles.textTracks(file)) {
-            Mp4TracksResult.NotMp4 -> SubtitleExtraction.Failed(NOT_SUPPORTED)
-            is Mp4TracksResult.Failed -> SubtitleExtraction.Failed(tracks.reason)
-            is Mp4TracksResult.Tracks ->
-                when (val id = MkvTrackMapping.resolveNumber(trackId, vlcSubtitleTracks, tracks.tracks.map { it.trackId })) {
+            Mp4TracksResult.NotMp4 -> {
+                SubtitleExtraction.Failed(NOT_SUPPORTED)
+            }
+
+            is Mp4TracksResult.Failed -> {
+                SubtitleExtraction.Failed(tracks.reason)
+            }
+
+            is Mp4TracksResult.Tracks -> {
+                when (
+                    val id =
+                        MkvTrackMapping.resolveNumber(
+                            trackId,
+                            vlcSubtitleTracks,
+                            tracks.tracks.map { it.trackId },
+                        )
+                ) {
                     null -> SubtitleExtraction.TrackNotFound
                     else -> Mp4Subtitles.extract(file, id, destination)
                 }
+            }
         }
 
     const val NOT_SUPPORTED = "container not supported"

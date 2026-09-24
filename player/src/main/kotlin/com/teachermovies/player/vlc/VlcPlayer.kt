@@ -9,9 +9,6 @@ import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.SubtitleExtraction
 import com.teachermovies.player.api.Track
 import com.teachermovies.player.api.VideoSurfaceHost
-import java.io.File
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +20,9 @@ import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.interfaces.IMedia
 import org.videolan.libvlc.util.VLCVideoLayout
+import java.io.File
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * [Player] over libVLC Android 3.x (ADR-0001 §2): the only class in the product that touches an
@@ -147,7 +147,9 @@ class VlcPlayer(
     override fun togglePlayPause() {
         when (mutableState.value) {
             PlayerState.Playing -> pause()
+
             PlayerState.Paused -> play()
+
             // Nothing to toggle: no media is loaded, it is not ready, or playback is over.
             PlayerState.Idle,
             PlayerState.Opening,
@@ -257,19 +259,36 @@ class VlcPlayer(
 
     private fun onVlcEvent(event: MediaPlayer.Event) {
         when (event.type) {
-            MediaPlayer.Event.Playing -> mutableState.value = PlayerState.Playing
-            MediaPlayer.Event.Paused -> mutableState.value = PlayerState.Paused
+            MediaPlayer.Event.Playing -> {
+                mutableState.value = PlayerState.Playing
+            }
+
+            MediaPlayer.Event.Paused -> {
+                mutableState.value = PlayerState.Paused
+            }
+
             MediaPlayer.Event.EndReached -> {
                 mutablePositionMs.value = mutableDurationMs.value
                 mutableState.value = PlayerState.Ended
             }
 
-            MediaPlayer.Event.EncounteredError -> mutableState.value = PlayerState.Error(PLAYBACK_FAILED)
-            MediaPlayer.Event.TimeChanged -> mutablePositionMs.value = event.timeChanged
-            MediaPlayer.Event.LengthChanged -> mutableDurationMs.value = event.lengthChanged
+            MediaPlayer.Event.EncounteredError -> {
+                mutableState.value = PlayerState.Error(PLAYBACK_FAILED)
+            }
+
+            MediaPlayer.Event.TimeChanged -> {
+                mutablePositionMs.value = event.timeChanged
+            }
+
+            MediaPlayer.Event.LengthChanged -> {
+                mutableDurationMs.value = event.lengthChanged
+            }
+
             MediaPlayer.Event.ESAdded,
             MediaPlayer.Event.ESDeleted,
-            -> publishTracks()
+            -> {
+                publishTracks()
+            }
 
             // libVLC also selects tracks on its own -- the default audio and subtitle of a freshly
             // opened file -- so the selection is read back from the player, not only written to it.

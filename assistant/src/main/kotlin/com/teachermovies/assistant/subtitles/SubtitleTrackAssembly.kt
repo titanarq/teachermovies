@@ -16,15 +16,16 @@ internal data class RawCue(
  * single bad timestamp does not silently discard real cue text).
  */
 internal fun buildTrack(rawCues: List<RawCue>): SubtitleTrack {
-    val cues = rawCues
-        .sortedBy { it.startMs }
-        .mapIndexed { index, raw ->
-            SubtitleCue(
-                index = index,
-                startMs = raw.startMs,
-                endMs = maxOf(raw.startMs, raw.endMs),
-                text = raw.text,
-            )
-        }
+    val cues =
+        rawCues
+            .sortedBy { it.startMs }
+            .mapIndexed { index, raw ->
+                SubtitleCue(
+                    index = index,
+                    startMs = raw.startMs,
+                    endMs = maxOf(raw.startMs, raw.endMs),
+                    text = raw.text,
+                )
+            }
     return SubtitleTrack(cues)
 }

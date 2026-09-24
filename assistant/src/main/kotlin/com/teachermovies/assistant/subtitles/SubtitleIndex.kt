@@ -7,7 +7,9 @@ package com.teachermovies.assistant.subtitles
  * A cue covers the half-open range `[startMs, endMs)`: a position exactly at [SubtitleCue.endMs]
  * belongs to whatever comes next, not to that cue.
  */
-class SubtitleIndex(track: SubtitleTrack) {
+class SubtitleIndex(
+    track: SubtitleTrack,
+) {
     private val cues: List<SubtitleCue> = track.cues.sortedBy { it.startMs }
 
     /**

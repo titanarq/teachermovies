@@ -6,8 +6,6 @@ import com.teachermovies.player.api.PlayerState
 import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.TorrentEngine
-import java.io.File
-import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -21,6 +19,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.io.File
+import kotlin.math.abs
 
 /**
  * Supervises playback of a file that is still downloading (ADR-0001 §4), between a [Player] and a
@@ -105,6 +105,7 @@ class StreamingPlaybackController(
                 val first = ranges.first()
                 when (val result = engine.prioritizeWindow(id, fileIndex, first.offsetBytes, first.lengthBytes)) {
                     is EngineResult.Ok -> openRangePrioritised = true
+
                     // Metadata may still be arriving: ask again on the next tick.
                     is EngineResult.Failure -> gateFailure(result.error)?.let { return it }
                 }
@@ -118,6 +119,7 @@ class StreamingPlaybackController(
                         readyBytes += result.value.readyBytes.coerceIn(0L, range.lengthBytes)
                         allReady = allReady && result.value.ready
                     }
+
                     is EngineResult.Failure -> {
                         gateFailure(result.error)?.let { return it }
                         allReady = false
@@ -160,14 +162,18 @@ class StreamingPlaybackController(
         fileIndex: Int,
     ): EngineResult<Long> =
         when (val result = engine.files(id)) {
-            is EngineResult.Ok ->
+            is EngineResult.Ok -> {
                 result.value
                     .firstOrNull { it.index == fileIndex }
                     ?.sizeBytes
                     ?.takeIf { it > 0L }
                     ?.let { EngineResult.Ok(it) }
                     ?: EngineResult.Failure(EngineError.NotReady)
-            is EngineResult.Failure -> result
+            }
+
+            is EngineResult.Failure -> {
+                result
+            }
         }
 
     /**
@@ -208,10 +214,21 @@ class StreamingPlaybackController(
         combine(player.positionMs, player.durationMs) { position, duration -> position to duration }
             .collect { (position, duration) ->
                 val window =
-                    StreamWindowCalculator.windowFor(position, session.duration(duration), session.fileSizeBytes, policy)
+                    StreamWindowCalculator.windowFor(
+                        position,
+                        session.duration(duration),
+                        session.fileSizeBytes,
+                        policy,
+                    )
                 val last = lastOffset
                 if (last != null && abs(window.offsetBytes - last) < minWindowMoveBytes) return@collect
-                val result = engine.prioritizeWindow(session.id, session.fileIndex, window.offsetBytes, window.lengthBytes)
+                val result =
+                    engine.prioritizeWindow(
+                        session.id,
+                        session.fileIndex,
+                        window.offsetBytes,
+                        window.lengthBytes,
+                    )
                 if (result is EngineResult.Ok) lastOffset = window.offsetBytes
             }
     }
@@ -254,12 +271,19 @@ class StreamingPlaybackController(
                 }
                 mutableState.value = StreamState.Buffering(readyBytes, policy.resumeBytes)
             }
+
             previous == BufferDecision.Wait && next == BufferDecision.Play -> {
                 mutableState.value = StreamState.Streaming
                 if (!session.viewerPaused) player.play()
             }
-            next == BufferDecision.Wait -> mutableState.value = StreamState.Buffering(readyBytes, policy.resumeBytes)
-            else -> Unit
+
+            next == BufferDecision.Wait -> {
+                mutableState.value = StreamState.Buffering(readyBytes, policy.resumeBytes)
+            }
+
+            else -> {
+                Unit
+            }
         }
     }
 
@@ -271,16 +295,22 @@ class StreamingPlaybackController(
         val end =
             player.state.first { playerState ->
                 when (playerState) {
-                    PlayerState.Paused ->
+                    PlayerState.Paused -> {
                         session.lock.withLock {
                             if (!session.pausedByController) session.viewerPaused = true
                         }
-                    PlayerState.Playing ->
+                    }
+
+                    PlayerState.Playing -> {
                         session.lock.withLock {
                             session.viewerPaused = false
                             session.pausedByController = false
                         }
-                    PlayerState.Idle, PlayerState.Opening, PlayerState.Ended, is PlayerState.Error -> Unit
+                    }
+
+                    PlayerState.Idle, PlayerState.Opening, PlayerState.Ended, is PlayerState.Error -> {
+                        Unit
+                    }
                 }
                 playerState == PlayerState.Ended || playerState is PlayerState.Error
             }
@@ -300,9 +330,13 @@ class StreamingPlaybackController(
         val result =
             when (error) {
                 EngineError.NotReady -> return null
+
                 EngineError.UnknownTorrent -> StreamResult.UnknownTorrent
+
                 EngineError.Unsupported -> StreamResult.Unsupported
+
                 is EngineError.Io -> StreamResult.Failed(error.message)
+
                 // Not answers any range call gives; report them rather than guess.
                 EngineError.InvalidMagnet,
                 EngineError.InvalidTorrentFile,

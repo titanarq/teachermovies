@@ -11,14 +11,14 @@ import com.teachermovies.player.mkv.EbmlWriter.compression
 import com.teachermovies.player.mkv.EbmlWriter.mkv
 import com.teachermovies.player.mkv.EbmlWriter.simpleBlock
 import com.teachermovies.player.mkv.EbmlWriter.trackEntry
-import java.io.File
-import java.util.zip.Deflater
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
+import java.util.zip.Deflater
 
 /**
  * [MatroskaSubtitles] against tiny Matroska files built in memory by [EbmlWriter]: the track list,
@@ -39,7 +39,11 @@ class MatroskaSubtitlesTest {
 
     private fun write(bytes: ByteArray): File = tmp.newFile().apply { writeBytes(bytes) }
 
-    private val destination: File get() = tmp.root.resolve("out").apply { mkdirs() }.resolve("extracted.sub")
+    private val destination: File get() =
+        tmp.root
+            .resolve("out")
+            .apply { mkdirs() }
+            .resolve("extracted.sub")
 
     @Test
     fun textTracksListsOnlyTheSubtitleTracksWithTheirMetadata() {
@@ -51,7 +55,14 @@ class MatroskaSubtitlesTest {
                         video,
                         audio,
                         srtTrack,
-                        trackEntry(4, TYPE_SUBTITLE, "S_TEXT/ASS", language = "spa", languageIetf = "es-ES", codecPrivate = header),
+                        trackEntry(
+                            4,
+                            TYPE_SUBTITLE,
+                            "S_TEXT/ASS",
+                            language = "spa",
+                            languageIetf = "es-ES",
+                            codecPrivate = header,
+                        ),
                     ),
                     cluster(0, videoFrame(0)),
                 ),
@@ -72,7 +83,8 @@ class MatroskaSubtitlesTest {
 
     @Test
     fun textTracksDefaultsTheLanguageToEnglishAndReportsAnMp4AsNotMatroska() {
-        val file = write(mkv(listOf(trackEntry(5, TYPE_SUBTITLE, "S_TEXT/UTF8")), timecodeScale = 1_000_000, docType = "webm"))
+        val file =
+            write(mkv(listOf(trackEntry(5, TYPE_SUBTITLE, "S_TEXT/UTF8")), timecodeScale = 1_000_000, docType = "webm"))
 
         assertEquals(
             MkvTracksResult.Tracks(listOf(MkvTextTrack(5, "S_TEXT/UTF8", "eng", null, null, null))),
@@ -130,19 +142,32 @@ class MatroskaSubtitlesTest {
             """.trimIndent(),
             out.readText(),
         )
-        assertEquals(listOf("extracted.sub"), tmp.root.resolve("out").list()!!.toList())
+        assertEquals(
+            listOf("extracted.sub"),
+            tmp.root
+                .resolve("out")
+                .list()!!
+                .toList(),
+        )
     }
 
     @Test
     fun assIsRebuiltInReadOrderWithAnEventsSectionAdded() {
-        val header = "[Script Info]\r\nScriptType: v4.00+\r\n\r\n[V4+ Styles]\r\nFormat: Name, Fontname\r\nStyle: Default,Arial\r\n"
+        val header =
+            "[Script Info]\r\nScriptType: v4.00+\r\n\r\n" +
+                "[V4+ Styles]\r\nFormat: Name, Fontname\r\nStyle: Default,Arial\r\n"
         val file =
             write(
                 mkv(
                     listOf(video, trackEntry(3, TYPE_SUBTITLE, "S_TEXT/ASS", codecPrivate = header.toByteArray())),
                     cluster(
                         0,
-                        blockGroup(3, 1_000, "1,0,Default,,0,0,0,,Later in the file, first on screen", duration = 1_500),
+                        blockGroup(
+                            3,
+                            1_000,
+                            "1,0,Default,,0,0,0,,Later in the file, first on screen",
+                            duration = 1_500,
+                        ),
                         videoFrame(1_500),
                         blockGroup(3, 2_000, "0,0,Default,Bob,0,0,0,,Hello, world", duration = 500),
                     ),
@@ -235,7 +260,9 @@ class MatroskaSubtitlesTest {
         val file =
             write(
                 mkv(
-                    listOf(trackEntry(3, TYPE_SUBTITLE, "S_TEXT/UTF8", encodings = compression(3, "Hel".toByteArray()))),
+                    listOf(
+                        trackEntry(3, TYPE_SUBTITLE, "S_TEXT/UTF8", encodings = compression(3, "Hel".toByteArray())),
+                    ),
                     cluster(0, blockGroup(3, 0, "lo there", duration = 2_000)),
                 ),
             )
@@ -247,11 +274,24 @@ class MatroskaSubtitlesTest {
 
     @Test
     fun otherCompressionsAndEncryptionFail() {
-        val bzip = write(mkv(listOf(trackEntry(3, TYPE_SUBTITLE, "S_TEXT/UTF8", encodings = compression(1))), cluster(0)))
-        val encrypted = write(mkv(listOf(trackEntry(3, TYPE_SUBTITLE, "S_TEXT/UTF8", encodings = EbmlWriter.encryption())), cluster(0)))
+        val bzip =
+            write(mkv(listOf(trackEntry(3, TYPE_SUBTITLE, "S_TEXT/UTF8", encodings = compression(1))), cluster(0)))
+        val encrypted =
+            write(
+                mkv(
+                    listOf(trackEntry(3, TYPE_SUBTITLE, "S_TEXT/UTF8", encodings = EbmlWriter.encryption())),
+                    cluster(0),
+                ),
+            )
 
-        assertEquals(SubtitleExtraction.Failed("unsupported content compression"), MatroskaSubtitles.extract(bzip, 3, destination))
-        assertEquals(SubtitleExtraction.Failed("encrypted subtitle track"), MatroskaSubtitles.extract(encrypted, 3, destination))
+        assertEquals(
+            SubtitleExtraction.Failed("unsupported content compression"),
+            MatroskaSubtitles.extract(bzip, 3, destination),
+        )
+        assertEquals(
+            SubtitleExtraction.Failed("encrypted subtitle track"),
+            MatroskaSubtitles.extract(encrypted, 3, destination),
+        )
         assertFalse(destination.exists())
     }
 
@@ -276,12 +316,20 @@ class MatroskaSubtitlesTest {
         val file =
             write(
                 mkv(
-                    listOf(video, trackEntry(3, TYPE_SUBTITLE, "S_TEXT/WEBVTT", language = "eng", codecPrivate = header)),
+                    listOf(
+                        video,
+                        trackEntry(3, TYPE_SUBTITLE, "S_TEXT/WEBVTT", language = "eng", codecPrivate = header),
+                    ),
                     cluster(
                         0,
                         blockGroup(3, 1_250, "<v Bob>Hello, <c.yellow>world</c></v>!", duration = 1_000),
                         videoFrame(2_000),
-                        blockGroup(3, 3_000, "<i.loud>Tom &amp; Jerry</i>\n<b>&lt;3</b> <00:00:03.500>later", duration = 2_000),
+                        blockGroup(
+                            3,
+                            3_000,
+                            "<i.loud>Tom &amp; Jerry</i>\n<b>&lt;3</b> <00:00:03.500>later",
+                            duration = 2_000,
+                        ),
                         simpleBlock(3, 6_000, "No duration"),
                     ),
                 ),
@@ -376,8 +424,17 @@ class MatroskaSubtitlesTest {
                     EbmlWriter.unknownSize(
                         EbmlWriter.SEGMENT,
                         EbmlWriter.element(EbmlWriter.TRACKS, video, srtTrack),
-                        EbmlWriter.unknownSize(EbmlWriter.CLUSTER, EbmlWriter.uint(EbmlWriter.TIMECODE, 1_000), videoFrame(0), simpleBlock(3, 0, "A")),
-                        EbmlWriter.unknownSize(EbmlWriter.CLUSTER, EbmlWriter.uint(EbmlWriter.TIMECODE, 4_000), simpleBlock(3, 0, "B")),
+                        EbmlWriter.unknownSize(
+                            EbmlWriter.CLUSTER,
+                            EbmlWriter.uint(EbmlWriter.TIMECODE, 1_000),
+                            videoFrame(0),
+                            simpleBlock(3, 0, "A"),
+                        ),
+                        EbmlWriter.unknownSize(
+                            EbmlWriter.CLUSTER,
+                            EbmlWriter.uint(EbmlWriter.TIMECODE, 4_000),
+                            simpleBlock(3, 0, "B"),
+                        ),
                         EbmlWriter.element(EbmlWriter.CUES, ByteArray(16)),
                     ),
                 ),
@@ -409,7 +466,10 @@ class MatroskaSubtitlesTest {
         val result = MatroskaSubtitles.extract(tmp.root.resolve("secret/movie.mkv"), 3, destination)
 
         assertEquals(SubtitleExtraction.Failed("I/O error"), result)
-        assertEquals(MkvTracksResult.Failed("I/O error"), MatroskaSubtitles.textTracks(tmp.root.resolve("secret/movie.mkv")))
+        assertEquals(
+            MkvTracksResult.Failed("I/O error"),
+            MatroskaSubtitles.textTracks(tmp.root.resolve("secret/movie.mkv")),
+        )
     }
 
     @Test
@@ -423,7 +483,8 @@ class MatroskaSubtitlesTest {
     }
 
     private fun mp4Header(): ByteArray =
-        byteArrayOf(0, 0, 0, 0x20) + "ftypisom".toByteArray() + ByteArray(20) + byteArrayOf(0, 0, 0, 8) + "mdat".toByteArray()
+        byteArrayOf(0, 0, 0, 0x20) + "ftypisom".toByteArray() + ByteArray(20) + byteArrayOf(0, 0, 0, 8) +
+            "mdat".toByteArray()
 
     private fun deflate(text: String): ByteArray {
         val deflater = Deflater()

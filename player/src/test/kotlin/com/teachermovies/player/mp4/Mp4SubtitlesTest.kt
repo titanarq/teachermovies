@@ -8,13 +8,13 @@ import com.teachermovies.player.mp4.Mp4Writer.box
 import com.teachermovies.player.mp4.Mp4Writer.gap
 import com.teachermovies.player.mp4.Mp4Writer.mp4
 import com.teachermovies.player.mp4.Mp4Writer.tx3g
-import java.io.File
-import java.io.RandomAccessFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
+import java.io.RandomAccessFile
 
 /**
  * [Mp4Subtitles] against tiny MP4 files built in memory by [Mp4Writer]: the track list, exact SRT
@@ -25,8 +25,10 @@ class Mp4SubtitlesTest {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    private val video = TrackSpec(1, "vide", "avc1", timescale = 90_000, samples = listOf(Sample(ByteArray(3_000) { 0x5A }, 3_000)))
-    private val audio = TrackSpec(2, "soun", "mp4a", language = "spa", samples = listOf(Sample(ByteArray(500) { 0x33 }, 1_024)))
+    private val video =
+        TrackSpec(1, "vide", "avc1", timescale = 90_000, samples = listOf(Sample(ByteArray(3_000) { 0x5A }, 3_000)))
+    private val audio =
+        TrackSpec(2, "soun", "mp4a", language = "spa", samples = listOf(Sample(ByteArray(500) { 0x33 }, 1_024)))
 
     private fun textTrack(
         vararg samples: Sample,
@@ -35,11 +37,24 @@ class Mp4SubtitlesTest {
         compactSizes: Boolean = false,
         samplesPerChunk: Int = 1,
         handler: String = "sbtl",
-    ) = TrackSpec(3, handler, "tx3g", timescale, samples.toList(), co64 = co64, compactSizes = compactSizes, samplesPerChunk = samplesPerChunk)
+    ) = TrackSpec(
+        3,
+        handler,
+        "tx3g",
+        timescale,
+        samples.toList(),
+        co64 = co64,
+        compactSizes = compactSizes,
+        samplesPerChunk = samplesPerChunk,
+    )
 
     private fun write(bytes: ByteArray): File = tmp.newFile().apply { writeBytes(bytes) }
 
-    private val destination: File get() = tmp.root.resolve("out").apply { mkdirs() }.resolve("extracted.srt")
+    private val destination: File get() =
+        tmp.root
+            .resolve("out")
+            .apply { mkdirs() }
+            .resolve("extracted.srt")
 
     @Test
     fun textTracksListsOnlyTheSubtitleTracksWithTheirLanguage() {
@@ -47,7 +62,9 @@ class Mp4SubtitlesTest {
         val file = write(mp4(listOf(video, audio, textTrack(tx3g("Hi", 1_000)), vobsub)))
 
         assertEquals(
-            Mp4TracksResult.Tracks(listOf(Mp4TextTrack(3, "sbtl", "tx3g", "eng"), Mp4TextTrack(4, "subp", "mp4s", "fre"))),
+            Mp4TracksResult.Tracks(
+                listOf(Mp4TextTrack(3, "sbtl", "tx3g", "eng"), Mp4TextTrack(4, "subp", "mp4s", "fre")),
+            ),
             Mp4Subtitles.textTracks(file),
         )
     }
@@ -99,7 +116,13 @@ class Mp4SubtitlesTest {
             """.trimIndent(),
             out.readText(),
         )
-        assertEquals(listOf("extracted.srt"), tmp.root.resolve("out").list()!!.toList())
+        assertEquals(
+            listOf("extracted.srt"),
+            tmp.root
+                .resolve("out")
+                .list()!!
+                .toList(),
+        )
     }
 
     @Test
@@ -152,7 +175,10 @@ class Mp4SubtitlesTest {
         val file = write(mp4(listOf(video, audio, vobsub, webvtt)))
 
         assertEquals(SubtitleExtraction.NotTextBased, Mp4Subtitles.extract(file, 4, destination))
-        assertEquals(SubtitleExtraction.Failed("unsupported subtitle codec wvtt"), Mp4Subtitles.extract(file, 5, destination))
+        assertEquals(
+            SubtitleExtraction.Failed("unsupported subtitle codec wvtt"),
+            Mp4Subtitles.extract(file, 5, destination),
+        )
         assertEquals(SubtitleExtraction.TrackNotFound, Mp4Subtitles.extract(file, 1, destination))
         assertEquals(SubtitleExtraction.TrackNotFound, Mp4Subtitles.extract(file, 9, destination))
         assertFalse(destination.exists())
@@ -170,7 +196,10 @@ class Mp4SubtitlesTest {
     fun aFragmentedFileIsNotSupported() {
         val file = write(mp4(listOf(textTrack(tx3g("Hi", 1_000))), extraMoovBoxes = listOf(box("mvex"))))
 
-        assertEquals(SubtitleExtraction.Failed("fragmented MP4 not supported"), Mp4Subtitles.extract(file, 3, destination))
+        assertEquals(
+            SubtitleExtraction.Failed("fragmented MP4 not supported"),
+            Mp4Subtitles.extract(file, 3, destination),
+        )
     }
 
     @Test
@@ -186,12 +215,19 @@ class Mp4SubtitlesTest {
     @Test
     fun aFileCutInsideMdatIsTruncatedAndLeavesNoDestination() {
         // moov first, so the tables are whole but the last sample's bytes are missing.
-        val whole = mp4(listOf(textTrack(tx3g("First", 1_000), tx3g("Second, never downloaded", 1_000))), moovFirst = true)
+        val whole =
+            mp4(listOf(textTrack(tx3g("First", 1_000), tx3g("Second, never downloaded", 1_000))), moovFirst = true)
         val file = write(whole.copyOfRange(0, whole.size - 5))
 
         assertEquals(SubtitleExtraction.Failed("truncated file"), Mp4Subtitles.extract(file, 3, destination))
         assertFalse(destination.exists())
-        assertEquals(listOf<String>(), tmp.root.resolve("out").list()!!.toList())
+        assertEquals(
+            listOf<String>(),
+            tmp.root
+                .resolve("out")
+                .list()!!
+                .toList(),
+        )
     }
 
     @Test

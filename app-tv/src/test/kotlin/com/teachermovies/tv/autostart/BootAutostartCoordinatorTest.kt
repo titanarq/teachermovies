@@ -7,8 +7,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class BootAutostartCoordinatorTest {
-
-    private class RecordingAutostart(private val result: AutostartResult = AutostartResult.Started) : Autostart {
+    private class RecordingAutostart(
+        private val result: AutostartResult = AutostartResult.Started,
+    ) : Autostart {
         var calls = 0
             private set
 
@@ -60,7 +61,10 @@ class BootAutostartCoordinatorTest {
             val coordinator =
                 BootAutostartCoordinator(InMemorySettingsRepository(AppSettings(autostartOnBoot = true)), autostart)
 
-            assertEquals(BootDecision.IgnoredAction, coordinator.onBroadcast("android.intent.action.LOCKED_BOOT_COMPLETED"))
+            assertEquals(
+                BootDecision.IgnoredAction,
+                coordinator.onBroadcast("android.intent.action.LOCKED_BOOT_COMPLETED"),
+            )
             assertEquals(BootDecision.IgnoredAction, coordinator.onBroadcast(null))
             assertEquals(0, autostart.calls)
         }

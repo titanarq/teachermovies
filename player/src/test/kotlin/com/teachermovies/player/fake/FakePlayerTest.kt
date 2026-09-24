@@ -4,7 +4,6 @@ import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.SubtitleExtraction
 import com.teachermovies.player.api.SubtitleFormat
 import com.teachermovies.player.api.Track
-import java.io.File
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -12,6 +11,7 @@ import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 /**
  * The fake is the `Player` every test above `:player` programs against, so what it does here is the
@@ -306,7 +306,10 @@ class FakePlayerTest {
             assertEquals(SubtitleExtraction.NotTextBased, player.extractTextSubtitle("4", tmp.root.resolve("a.srt")))
 
             player.emitExtraction(SubtitleExtraction.Failed("no cues"))
-            assertEquals(SubtitleExtraction.Failed("no cues"), player.extractTextSubtitle("4", tmp.root.resolve("b.srt")))
+            assertEquals(
+                SubtitleExtraction.Failed("no cues"),
+                player.extractTextSubtitle("4", tmp.root.resolve("b.srt")),
+            )
         }
 
     @Test

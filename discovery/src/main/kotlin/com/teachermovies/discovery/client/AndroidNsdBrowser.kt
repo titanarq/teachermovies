@@ -14,7 +14,9 @@ import java.net.InetAddress
  * that completes after its service was lost, or after [stop], is dropped. Platform errors are
  * reported through [BrowseCallback.onFailed]; neither method throws.
  */
-class AndroidNsdBrowser(context: Context) : NsdBrowser {
+class AndroidNsdBrowser(
+    context: Context,
+) : NsdBrowser {
     private val nsdManager: NsdManager by lazy {
         context.applicationContext.getSystemService(Context.NSD_SERVICE) as NsdManager
     }
@@ -22,7 +24,10 @@ class AndroidNsdBrowser(context: Context) : NsdBrowser {
     private val lock = Any()
     private var session: Session? = null
 
-    override fun start(serviceType: String, callback: BrowseCallback) {
+    override fun start(
+        serviceType: String,
+        callback: BrowseCallback,
+    ) {
         stop()
         val newSession = Session(callback)
         synchronized(lock) { session = newSession }
@@ -45,7 +50,9 @@ class AndroidNsdBrowser(context: Context) : NsdBrowser {
         }
     }
 
-    private inner class Session(val callback: BrowseCallback) : NsdManager.DiscoveryListener {
+    private inner class Session(
+        val callback: BrowseCallback,
+    ) : NsdManager.DiscoveryListener {
         // Guarded by `this`.
         private var closed = false
         private val found = mutableMapOf<String, NsdServiceInfo>()
@@ -64,13 +71,19 @@ class AndroidNsdBrowser(context: Context) : NsdBrowser {
 
         override fun onDiscoveryStopped(serviceType: String) = Unit
 
-        override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+        override fun onStartDiscoveryFailed(
+            serviceType: String,
+            errorCode: Int,
+        ) {
             synchronized(lock) { if (session === this) session = null }
             close()
             callback.onFailed("NSD discovery failed to start (error $errorCode)")
         }
 
-        override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
+        override fun onStopDiscoveryFailed(
+            serviceType: String,
+            errorCode: Int,
+        ) {
             callback.onFailed("NSD discovery failed to stop (error $errorCode)")
         }
 
@@ -121,7 +134,9 @@ class AndroidNsdBrowser(context: Context) : NsdBrowser {
                 stillWanted
             }
 
-        private inner class ResolveListener(private val name: String) : NsdManager.ResolveListener {
+        private inner class ResolveListener(
+            private val name: String,
+        ) : NsdManager.ResolveListener {
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                 val stillWanted = finishResolving()
                 val tv = serviceInfo.toDiscoveredTv(name)
@@ -133,7 +148,10 @@ class AndroidNsdBrowser(context: Context) : NsdBrowser {
                 resolveNext()
             }
 
-            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+            override fun onResolveFailed(
+                serviceInfo: NsdServiceInfo,
+                errorCode: Int,
+            ) {
                 if (finishResolving()) callback.onFailed("NSD resolution of $name failed (error $errorCode)")
                 resolveNext()
             }

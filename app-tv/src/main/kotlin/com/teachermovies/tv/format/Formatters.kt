@@ -42,7 +42,10 @@ object Formatters {
         totalBytes: Long,
     ): String {
         val unitIndex = unitIndexFor(if (totalBytes > 0) totalBytes else downloadedBytes)
-        return "${formatAtUnit(downloadedBytes, unitIndex)} / ${formatAtUnit(totalBytes, unitIndex)} ${UNITS[unitIndex]}"
+        return "${formatAtUnit(
+            downloadedBytes,
+            unitIndex,
+        )} / ${formatAtUnit(totalBytes, unitIndex)} ${UNITS[unitIndex]}"
     }
 
     /** `3725` -> `"1 h 2 min"`; `59` -> `"59 s"`; `null` -> `"—"` (no estimate yet). */

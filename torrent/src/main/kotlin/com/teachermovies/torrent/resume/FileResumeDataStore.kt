@@ -31,7 +31,12 @@ class FileResumeDataStore(
         val tmp = File(dir, target.name + TMP_SUFFIX)
         tmp.writeBytes(bytes)
         try {
-            Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            Files.move(
+                tmp.toPath(),
+                target.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
         } catch (e: AtomicMoveNotSupportedException) {
             Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
@@ -93,8 +98,15 @@ internal object Bencode {
         return when (val c = bytes[start].toInt().toChar()) {
             'i' -> {
                 val end = indexOf(bytes, 'e', start + 1)
-                if (end < 0 || !INTEGER.matches(String(bytes, start + 1, end - start - 1, Charsets.US_ASCII))) -1 else end + 1
+                if (end < 0 ||
+                    !INTEGER.matches(String(bytes, start + 1, end - start - 1, Charsets.US_ASCII))
+                ) {
+                    -1
+                } else {
+                    end + 1
+                }
             }
+
             'l', 'd' -> {
                 var i = start + 1
                 var isKey = true
@@ -106,6 +118,7 @@ internal object Bencode {
                 }
                 if (i >= bytes.size || (c == 'd' && !isKey)) -1 else i + 1
             }
+
             in '0'..'9' -> {
                 val colon = indexOf(bytes, ':', start)
                 if (colon < 0) return -1
@@ -113,7 +126,10 @@ internal object Bencode {
                 val end = colon + 1 + length
                 if (end > bytes.size) -1 else end.toInt()
             }
-            else -> -1
+
+            else -> {
+                -1
+            }
         }
     }
 

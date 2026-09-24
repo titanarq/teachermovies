@@ -4,13 +4,12 @@ import com.teachermovies.core.model.DownloadState
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.storage.DownloadLayout
 import com.teachermovies.torrent.api.TorrentSnapshot
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.io.File
 
 class SubtitleLayoutResolverTest {
-
     private val id = "a".repeat(40)
     private val usbRoot = File("/volumes/USB-1")
 
@@ -41,21 +40,23 @@ class SubtitleLayoutResolverTest {
         assertNull(SubtitleLayoutResolver.layoutFor(id, listOf(snapshot(id, "/volumes/USB-1/Movies/other"))))
     }
 
-    private fun snapshot(id: String, savePath: String?) =
-        TorrentSnapshot(
-            id = TorrentId(id),
-            name = "Movie",
-            state = DownloadState.Downloading,
-            progressPercent = 0.0,
-            downloadedBytes = 0,
-            totalBytes = 0,
-            downloadRateBps = 0,
-            uploadRateBps = 0,
-            peers = 0,
-            etaSeconds = null,
-            ratio = 0.0,
-            hasMetadata = savePath != null,
-            savePath = savePath,
-            errorMessage = null,
-        )
+    private fun snapshot(
+        id: String,
+        savePath: String?,
+    ) = TorrentSnapshot(
+        id = TorrentId(id),
+        name = "Movie",
+        state = DownloadState.Downloading,
+        progressPercent = 0.0,
+        downloadedBytes = 0,
+        totalBytes = 0,
+        downloadRateBps = 0,
+        uploadRateBps = 0,
+        peers = 0,
+        etaSeconds = null,
+        ratio = 0.0,
+        hasMetadata = savePath != null,
+        savePath = savePath,
+        errorMessage = null,
+    )
 }

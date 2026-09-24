@@ -1,11 +1,10 @@
 package com.teachermovies.storage
 
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.io.File
 
 class VolumeSelectorTest {
-
     @Test
     fun noVolumesIsNoneAvailableRegardlessOfPersistedId() {
         assertEquals(VolumeSelection.NoneAvailable, select(emptyList(), persistedId = null))
@@ -94,8 +93,10 @@ class VolumeSelectorTest {
 
     /** [VolumeSelector.select] with a [FakeSpaceProvider] that reports no free space anywhere: for
      *  tests where free-space ordering is not what is under test. */
-    private fun select(volumes: List<VolumeInfo>, persistedId: String?): VolumeSelection =
-        VolumeSelector.select(volumes, persistedId, FakeSpaceProvider(emptyMap()))
+    private fun select(
+        volumes: List<VolumeInfo>,
+        persistedId: String?,
+    ): VolumeSelection = VolumeSelector.select(volumes, persistedId, FakeSpaceProvider(emptyMap()))
 
     private fun volume(
         id: String,
@@ -113,7 +114,9 @@ class VolumeSelectorTest {
         )
 
     /** [SpaceProvider] over a fixed map from a volume's root to its free space; 0 for anything else. */
-    private class FakeSpaceProvider(private val freeBytesByRoot: Map<File, Long>) : SpaceProvider {
+    private class FakeSpaceProvider(
+        private val freeBytesByRoot: Map<File, Long>,
+    ) : SpaceProvider {
         override fun spaceOf(root: File): SpaceInfo =
             SpaceInfo(freeBytes = freeBytesByRoot[root] ?: 0L, totalBytes = 0L)
     }

@@ -5,7 +5,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FormattersTest {
-
     @Test
     fun bytesUsesDecimalUnitsOneDecimalAndTheSpanishComma() {
         assertEquals("1,5 GB", Formatters.bytes(1_500_000_000))

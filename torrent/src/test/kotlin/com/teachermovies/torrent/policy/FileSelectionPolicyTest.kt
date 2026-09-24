@@ -17,7 +17,13 @@ class FileSelectionPolicyTest {
         index: Int,
         path: String,
         sizeBytes: Long,
-    ) = TorrentFileInfo(index = index, path = path, sizeBytes = sizeBytes, priority = FilePriority.Normal, downloadedBytes = 0)
+    ) = TorrentFileInfo(
+        index = index,
+        path = path,
+        sizeBytes = sizeBytes,
+        priority = FilePriority.Normal,
+        downloadedBytes = 0,
+    )
 
     private fun assertSelection(
         files: List<TorrentFileInfo>,

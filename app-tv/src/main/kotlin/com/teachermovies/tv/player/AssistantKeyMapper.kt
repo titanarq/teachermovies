@@ -49,16 +49,21 @@ object AssistantKeyMapper {
                 KeyEvent.KEYCODE_ENTER,
                 KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                 -> AssistantAction.ReplayFragment
+
                 KeyEvent.KEYCODE_DPAD_RIGHT -> AssistantAction.SpeakOriginal
+
                 KeyEvent.KEYCODE_DPAD_LEFT -> AssistantAction.TranslateLine
+
                 KeyEvent.KEYCODE_BACK,
                 KeyEvent.KEYCODE_DPAD_DOWN,
                 KeyEvent.KEYCODE_CAPTIONS,
                 -> AssistantAction.DismissOverlay
+
                 KeyEvent.KEYCODE_VOLUME_UP,
                 KeyEvent.KEYCODE_VOLUME_DOWN,
                 KeyEvent.KEYCODE_VOLUME_MUTE,
                 -> null
+
                 else -> AssistantAction.Consumed
             }
         } else {
@@ -66,6 +71,7 @@ object AssistantKeyMapper {
                 KeyEvent.KEYCODE_DPAD_DOWN,
                 KeyEvent.KEYCODE_CAPTIONS,
                 -> AssistantAction.CaptureLine
+
                 else -> null
             }
         }

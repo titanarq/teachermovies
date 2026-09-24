@@ -61,10 +61,20 @@ abstract class TorrentEngineContractTest {
             val id = (engine.addMagnet(validMagnet) as EngineResult.Ok).value
 
             assertEquals(EngineResult.Ok(Unit), engine.pause(id))
-            assertEquals(DownloadState.Paused, engine.torrents.value.first { it.id == id }.state)
+            assertEquals(
+                DownloadState.Paused,
+                engine.torrents.value
+                    .first { it.id == id }
+                    .state,
+            )
 
             assertEquals(EngineResult.Ok(Unit), engine.resume(id))
-            assertEquals(DownloadState.Queued, engine.torrents.value.first { it.id == id }.state)
+            assertEquals(
+                DownloadState.Queued,
+                engine.torrents.value
+                    .first { it.id == id }
+                    .state,
+            )
         }
 
     @Test

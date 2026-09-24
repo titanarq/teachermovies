@@ -9,7 +9,6 @@ import com.teachermovies.http.auth.lanClient
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.fake.FakeTorrentEngine
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO as ClientCIO
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
@@ -17,7 +16,6 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
-import io.ktor.server.cio.CIO as ServerCIO
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.testing.testApplication
 import io.ktor.utils.io.ByteReadChannel
@@ -32,6 +30,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.SecureRandom
+import io.ktor.client.engine.cio.CIO as ClientCIO
+import io.ktor.server.cio.CIO as ServerCIO
 
 /**
  * `GET /api/events` (#62): the first `torrents` snapshot arrives immediately, the next one after
@@ -88,28 +88,40 @@ class EventsRouteTest {
             val server = embeddedServer(ServerCIO, port = 0) { module(deps) }.start(wait = false)
             val client = HttpClient(ClientCIO)
             try {
-                val port = server.engine.resolvedConnectors().first().port
+                val port =
+                    server.engine
+                        .resolvedConnectors()
+                        .first()
+                        .port
                 val token = (pairing.pair(pairing.currentPin()) as PairResult.Paired).token
 
-                client.prepareGet("http://127.0.0.1:$port/api/events?token=$token") {
-                    header(TEST_REMOTE_HEADER, "127.0.0.1")
-                }.execute { response ->
-                    assertEquals(HttpStatusCode.OK, response.status)
-                    assertTrue(response.contentType()!!.match(ContentType.Text.EventStream))
-                    assertEquals("no-cache", response.headers["Cache-Control"])
+                client
+                    .prepareGet("http://127.0.0.1:$port/api/events?token=$token") {
+                        header(TEST_REMOTE_HEADER, "127.0.0.1")
+                    }.execute { response ->
+                        assertEquals(HttpStatusCode.OK, response.status)
+                        assertTrue(response.contentType()!!.match(ContentType.Text.EventStream))
+                        assertEquals("no-cache", response.headers["Cache-Control"])
 
-                    val channel = response.bodyAsChannel()
-                    assertEquals("[]", readTorrentsEvent(channel))
+                        val channel = response.bodyAsChannel()
+                        assertEquals("[]", readTorrentsEvent(channel))
 
-                    val id = (engine.addMagnet("magnet:?xt=urn:btih:${"a".repeat(40)}") as EngineResult.Ok).value
-                    engine.emitMetadata(id, "Movie", listOf("Movie.mkv" to 100L))
-                    engine.advance(id, bytes = 50L, rateBps = 10L, peers = 2)
+                        val id = (engine.addMagnet("magnet:?xt=urn:btih:${"a".repeat(40)}") as EngineResult.Ok).value
+                        engine.emitMetadata(id, "Movie", listOf("Movie.mkv" to 100L))
+                        engine.advance(id, bytes = 50L, rateBps = 10L, peers = 2)
 
-                    val second = Json.parseToJsonElement(readTorrentsEvent(channel)).jsonArray
-                    assertEquals(1, second.size)
-                    assertEquals("downloading", second[0].jsonObject["state"]!!.jsonPrimitive.content)
-                    assertEquals(50.0, second[0].jsonObject["progress"]!!.jsonPrimitive.content.toDouble(), 0.0)
-                }
+                        val second = Json.parseToJsonElement(readTorrentsEvent(channel)).jsonArray
+                        assertEquals(1, second.size)
+                        assertEquals("downloading", second[0].jsonObject["state"]!!.jsonPrimitive.content)
+                        assertEquals(
+                            50.0,
+                            second[0]
+                                .jsonObject["progress"]!!
+                                .jsonPrimitive.content
+                                .toDouble(),
+                            0.0,
+                        )
+                    }
             } finally {
                 client.close()
                 server.stop(gracePeriodMillis = 0, timeoutMillis = 1_000)

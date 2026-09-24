@@ -14,7 +14,9 @@ sealed interface EngineError {
     data object UnknownTorrent : EngineError
 
     /** A torrent with this [id] is already known to the engine. */
-    data class AlreadyExists(val id: TorrentId) : EngineError
+    data class AlreadyExists(
+        val id: TorrentId,
+    ) : EngineError
 
     /** The call needs metadata or a running engine that is not there yet. */
     data object NotReady : EngineError
@@ -23,5 +25,7 @@ sealed interface EngineError {
     data object Unsupported : EngineError
 
     /** An I/O failure the engine could not recover from; [message] is its own text. */
-    data class Io(val message: String) : EngineError
+    data class Io(
+        val message: String,
+    ) : EngineError
 }

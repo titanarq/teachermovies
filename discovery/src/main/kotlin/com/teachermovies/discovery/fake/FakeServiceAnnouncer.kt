@@ -15,7 +15,9 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class FakeServiceAnnouncer : ServiceAnnouncer {
     sealed interface Call {
-        data class Announce(val info: TvServiceInfo) : Call
+        data class Announce(
+            val info: TvServiceInfo,
+        ) : Call
 
         data object Stop : Call
     }

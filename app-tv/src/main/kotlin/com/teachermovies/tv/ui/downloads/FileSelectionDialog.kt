@@ -43,7 +43,10 @@ import com.teachermovies.tv.R
  * `Aplicar` has succeeded.
  */
 @Composable
-fun FileSelectionRoute(factory: ViewModelProvider.Factory, onClose: () -> Unit) {
+fun FileSelectionRoute(
+    factory: ViewModelProvider.Factory,
+    onClose: () -> Unit,
+) {
     val store = remember { ViewModelStore() }
     DisposableEffect(store) { onDispose { store.clear() } }
     val viewModel = remember(store) { ViewModelProvider(store, factory)[FileSelectionViewModel::class.java] }
@@ -75,7 +78,10 @@ fun FileSelectionDialog(
                 modifier = Modifier.width(DIALOG_WIDTH).padding(32.dp).focusGroup(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(text = stringResource(R.string.downloads_action_choose_files), style = MaterialTheme.typography.titleLarge)
+                Text(
+                    text = stringResource(R.string.downloads_action_choose_files),
+                    style = MaterialTheme.typography.titleLarge,
+                )
                 val message =
                     when {
                         uiState.notReady -> stringResource(R.string.file_selection_not_ready)
@@ -97,8 +103,15 @@ fun FileSelectionDialog(
                                 onClick = { onToggle(row.index) },
                                 modifier =
                                     Modifier
-                                        .then(if (position == 0) Modifier.focusRequester(firstRowRequester) else Modifier)
-                                        .focusProperties {
+                                        .then(
+                                            if (position ==
+                                                0
+                                            ) {
+                                                Modifier.focusRequester(firstRowRequester)
+                                            } else {
+                                                Modifier
+                                            },
+                                        ).focusProperties {
                                             if (isLast) down = if (uiState.canApply) applyRequester else cancelRequester
                                         },
                             )
@@ -109,7 +122,11 @@ fun FileSelectionDialog(
                     Button(
                         onClick = onApply,
                         enabled = uiState.canApply,
-                        modifier = Modifier.focusRequester(applyRequester).focusProperties { canFocus = uiState.canApply },
+                        modifier =
+                            Modifier
+                                .focusRequester(
+                                    applyRequester,
+                                ).focusProperties { canFocus = uiState.canApply },
                     ) {
                         Text(text = stringResource(R.string.file_selection_apply))
                     }
@@ -129,7 +146,11 @@ fun FileSelectionDialog(
 }
 
 @Composable
-private fun FileRowItem(row: FileSelectionRow, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun FileRowItem(
+    row: FileSelectionRow,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     ListItem(
         selected = row.checked,
         onClick = onClick,

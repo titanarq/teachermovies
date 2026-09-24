@@ -15,7 +15,12 @@ import kotlinx.coroutines.flow.first
 internal fun Route.libraryRoutes(deps: ServerDeps) {
     requireBearer(deps.pairing) {
         get("/api/library") {
-            call.respond(deps.library.observeLibrary().first().map { it.toDto() })
+            call.respond(
+                deps.library
+                    .observeLibrary()
+                    .first()
+                    .map { it.toDto() },
+            )
         }
     }
 }

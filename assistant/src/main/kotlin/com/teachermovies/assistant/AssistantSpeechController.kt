@@ -6,7 +6,6 @@ import com.teachermovies.assistant.speech.SpeakerState
 import com.teachermovies.assistant.speech.SpeechLanguage
 import com.teachermovies.assistant.translation.TranslationProvider
 import com.teachermovies.assistant.translation.TranslationResult
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +16,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.coroutines.cancellation.CancellationException
 
 /** Why a translation could not be shown. */
 enum class TranslationFailure {
@@ -132,12 +132,16 @@ class AssistantSpeechController(
                     if (speak) speakTranslation()
                     return
                 }
+
                 TranslationUiState.Loading -> {
                     if (speak) speakWhenReady = true
                     return
                 }
+
                 // Idle or Failed: a later attempt may succeed (Offline), so ask again.
-                else -> Unit
+                else -> {
+                    Unit
+                }
             }
         }
         translationJob?.cancel()

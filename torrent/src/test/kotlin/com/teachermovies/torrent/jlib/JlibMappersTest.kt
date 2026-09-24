@@ -61,7 +61,14 @@ class JlibMappersTest {
 
     @Test
     fun torrentFileSnapshotIsQueuedWithItsMetadata() {
-        val snapshot = JlibMappers.addedSnapshot(id, "Movie", hasMetadata = true, totalBytes = 1_000, savePath = "/movies/$v1")
+        val snapshot =
+            JlibMappers.addedSnapshot(
+                id,
+                "Movie",
+                hasMetadata = true,
+                totalBytes = 1_000,
+                savePath = "/movies/$v1",
+            )
 
         assertEquals(DownloadState.Queued, snapshot.state)
         assertTrue(snapshot.hasMetadata)

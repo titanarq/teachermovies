@@ -1,7 +1,7 @@
 package com.teachermovies.player.api
 
-import java.io.File
 import kotlinx.coroutines.flow.StateFlow
+import java.io.File
 
 /**
  * The one contract every other module programs against for playback.

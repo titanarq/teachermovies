@@ -16,8 +16,14 @@ class TranslationLineTest {
     fun eachStateHasItsSpanishLine() {
         assertEquals("Traduciendo…", translationLine(TranslationUiState.Loading))
         assertEquals("Hola.", translationLine(TranslationUiState.Ready("Hola.")))
-        assertEquals("Sin conexión para traducir", translationLine(TranslationUiState.Failed(TranslationFailure.OFFLINE)))
-        assertEquals("Traducción no disponible", translationLine(TranslationUiState.Failed(TranslationFailure.UNAVAILABLE)))
+        assertEquals(
+            "Sin conexión para traducir",
+            translationLine(TranslationUiState.Failed(TranslationFailure.OFFLINE)),
+        )
+        assertEquals(
+            "Traducción no disponible",
+            translationLine(TranslationUiState.Failed(TranslationFailure.UNAVAILABLE)),
+        )
     }
 
     @Test

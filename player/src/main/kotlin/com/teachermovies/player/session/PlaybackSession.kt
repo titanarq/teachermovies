@@ -11,7 +11,6 @@ import com.teachermovies.player.streaming.StreamResult
 import com.teachermovies.player.streaming.StreamingPlaybackController
 import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -21,6 +20,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * Plays one library item on [player]: resumes where the viewer left off, adds the subtitle files
@@ -108,19 +108,27 @@ class PlaybackSession(
         // torrent also counts its sample, subtitles and extras there.
         val fileSizeBytes =
             when (val size = controller.fileSizeBytes(id, fileIndex)) {
-                is EngineResult.Ok -> size.value
-                is EngineResult.Failure ->
+                is EngineResult.Ok -> {
+                    size.value
+                }
+
+                is EngineResult.Failure -> {
                     return when (val error = size.error) {
                         EngineError.NotReady -> SessionResult.FileMissing(item.mainFilePath)
+
                         EngineError.UnknownTorrent -> SessionResult.StreamingFailed(StreamResult.UnknownTorrent)
+
                         EngineError.Unsupported -> SessionResult.StreamingFailed(StreamResult.Unsupported)
+
                         is EngineError.Io -> SessionResult.StreamingFailed(StreamResult.Failed(error.message))
+
                         // `files` never answers these; mapped all the same so nothing throws.
                         EngineError.InvalidMagnet,
                         EngineError.InvalidTorrentFile,
                         is EngineError.AlreadyExists,
                         -> SessionResult.StreamingFailed(StreamResult.Failed(error.toString()))
                     }
+                }
             }
 
         val result =
@@ -135,6 +143,7 @@ class PlaybackSession(
             )
         when (result) {
             StreamResult.Opened -> Unit
+
             StreamResult.UnknownTorrent,
             StreamResult.Unsupported,
             is StreamResult.Failed,
@@ -147,7 +156,8 @@ class PlaybackSession(
 
     // The library does not store the media's length, so only the "barely started" rule applies
     // here; the end-of-media rule is covered by storing 0 when playback ends.
-    private fun startPosition(item: LibraryItem): Long = ResumePolicy.startPosition(item.lastPositionMs, durationMs = null)
+    private fun startPosition(item: LibraryItem): Long =
+        ResumePolicy.startPosition(item.lastPositionMs, durationMs = null)
 
     /** What follows opening [file], whoever opened it: subtitles, then watching the player. */
     private fun begin(
@@ -184,7 +194,9 @@ class PlaybackSession(
                 player.state.collect { state ->
                     when (state) {
                         PlayerState.Paused -> save(item, player.positionMs.value)
+
                         PlayerState.Ended -> save(item, 0L)
+
                         PlayerState.Idle,
                         PlayerState.Opening,
                         PlayerState.Playing,

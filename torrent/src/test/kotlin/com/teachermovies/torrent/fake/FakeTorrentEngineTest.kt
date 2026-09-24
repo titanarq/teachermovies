@@ -97,14 +97,22 @@ class FakeTorrentEngineTest : TorrentEngineContractTest() {
             engine.emitMetadata(
                 id,
                 "Movie",
-                listOf("Movie/Sample/sample.mkv" to 50L, "Movie/Movie.mkv" to 1_000L, "Movie/Movie.srt" to 10L, "Movie/cover.jpg" to 5L),
+                listOf(
+                    "Movie/Sample/sample.mkv" to 50L,
+                    "Movie/Movie.mkv" to 1_000L,
+                    "Movie/Movie.srt" to 10L,
+                    "Movie/cover.jpg" to 5L,
+                ),
             )
 
             val snapshot = engine.torrents.value.first { it.id == id }
             assertEquals(1, snapshot.mainFileIndex)
             assertEquals(1_010L, snapshot.totalBytes)
             val priorities = (engine.files(id) as EngineResult.Ok).value.map { it.priority }
-            assertEquals(listOf(FilePriority.Skip, FilePriority.Normal, FilePriority.Normal, FilePriority.Skip), priorities)
+            assertEquals(
+                listOf(FilePriority.Skip, FilePriority.Normal, FilePriority.Normal, FilePriority.Skip),
+                priorities,
+            )
         }
 
     @Test
@@ -112,7 +120,11 @@ class FakeTorrentEngineTest : TorrentEngineContractTest() {
         runTest {
             val engine = FakeTorrentEngine()
             val id = (engine.addMagnet(validMagnet) as EngineResult.Ok).value
-            assertNull(engine.torrents.value.first { it.id == id }.mainFileIndex)
+            assertNull(
+                engine.torrents.value
+                    .first { it.id == id }
+                    .mainFileIndex,
+            )
 
             engine.emitMetadata(id, "Docs", listOf("a.txt" to 1L, "b.pdf" to 2L))
 
@@ -282,7 +294,10 @@ class FakeTorrentEngineTest : TorrentEngineContractTest() {
 
             val result = engine.rangeReadiness(id, fileIndex = 0, byteOffset = 150L, lengthBytes = 400L)
 
-            assertEquals(EngineResult.Ok(RangeReadiness(ready = true, readyBytes = 400L, missingPieces = emptyList())), result)
+            assertEquals(
+                EngineResult.Ok(RangeReadiness(ready = true, readyBytes = 400L, missingPieces = emptyList())),
+                result,
+            )
         }
 
     @Test
@@ -295,7 +310,10 @@ class FakeTorrentEngineTest : TorrentEngineContractTest() {
 
             val result = engine.rangeReadiness(id, fileIndex = 0, byteOffset = 150L, lengthBytes = 400L)
 
-            assertEquals(EngineResult.Ok(RangeReadiness(ready = false, readyBytes = 150L, missingPieces = listOf(3))), result)
+            assertEquals(
+                EngineResult.Ok(RangeReadiness(ready = false, readyBytes = 150L, missingPieces = listOf(3))),
+                result,
+            )
         }
 
     @Test
@@ -308,7 +326,10 @@ class FakeTorrentEngineTest : TorrentEngineContractTest() {
 
             val result = engine.rangeReadiness(id, fileIndex = 1, byteOffset = 0L, lengthBytes = 300L)
 
-            assertEquals(EngineResult.Ok(RangeReadiness(ready = false, readyBytes = 50L, missingPieces = listOf(3, 4))), result)
+            assertEquals(
+                EngineResult.Ok(RangeReadiness(ready = false, readyBytes = 50L, missingPieces = listOf(3, 4))),
+                result,
+            )
         }
 
     @Test
@@ -320,7 +341,10 @@ class FakeTorrentEngineTest : TorrentEngineContractTest() {
 
             val result = engine.rangeReadiness(id, fileIndex = 0, byteOffset = 0L, lengthBytes = 100L)
 
-            assertEquals(EngineResult.Ok(RangeReadiness(ready = false, readyBytes = 0L, missingPieces = listOf(0))), result)
+            assertEquals(
+                EngineResult.Ok(RangeReadiness(ready = false, readyBytes = 0L, missingPieces = listOf(0))),
+                result,
+            )
         }
 
     @Test

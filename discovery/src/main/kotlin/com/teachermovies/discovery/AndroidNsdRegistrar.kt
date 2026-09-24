@@ -9,7 +9,9 @@ import android.net.nsd.NsdServiceInfo
  * `android.net.nsd`. Exceptions from the platform propagate to [NsdServiceAnnouncer], which
  * turns them into [AnnouncementState.Failed].
  */
-class AndroidNsdRegistrar(context: Context) : NsdRegistrar {
+class AndroidNsdRegistrar(
+    context: Context,
+) : NsdRegistrar {
     private val nsdManager: NsdManager by lazy {
         context.applicationContext.getSystemService(Context.NSD_SERVICE) as NsdManager
     }
@@ -17,7 +19,10 @@ class AndroidNsdRegistrar(context: Context) : NsdRegistrar {
     private val lock = Any()
     private var listener: NsdManager.RegistrationListener? = null
 
-    override fun register(info: TvServiceInfo, callback: RegistrationCallback) {
+    override fun register(
+        info: TvServiceInfo,
+        callback: RegistrationCallback,
+    ) {
         val serviceInfo =
             NsdServiceInfo().apply {
                 serviceName = info.instanceName
@@ -42,13 +47,17 @@ class AndroidNsdRegistrar(context: Context) : NsdRegistrar {
         nsdManager.unregisterService(active)
     }
 
-    private inner class Listener(private val callback: RegistrationCallback) :
-        NsdManager.RegistrationListener {
+    private inner class Listener(
+        private val callback: RegistrationCallback,
+    ) : NsdManager.RegistrationListener {
         override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {
             callback.onRegistered(serviceInfo.serviceName)
         }
 
-        override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+        override fun onRegistrationFailed(
+            serviceInfo: NsdServiceInfo,
+            errorCode: Int,
+        ) {
             // A listener whose registration failed is not registered; unregistering it would throw.
             synchronized(lock) { if (listener === this) listener = null }
             callback.onFailed("NSD registration failed (error $errorCode)")
@@ -58,7 +67,10 @@ class AndroidNsdRegistrar(context: Context) : NsdRegistrar {
             callback.onUnregistered()
         }
 
-        override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+        override fun onUnregistrationFailed(
+            serviceInfo: NsdServiceInfo,
+            errorCode: Int,
+        ) {
             callback.onFailed("NSD unregistration failed (error $errorCode)")
         }
     }

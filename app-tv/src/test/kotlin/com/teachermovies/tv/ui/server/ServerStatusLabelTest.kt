@@ -5,7 +5,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ServerStatusLabelTest {
-
     @Test
     fun runningNeedsNoStatusLine() {
         assertEquals(ServerStatusLabel.Running, ServerStatusLabel.of(ServerState.Running(8787)))
@@ -18,12 +17,21 @@ class ServerStatusLabelTest {
 
     @Test
     fun bindFailureIsPortInUse() {
-        assertEquals(ServerStatusLabel.PortInUse, ServerStatusLabel.of(ServerState.Failed(8787, "Address already in use")))
-        assertEquals(ServerStatusLabel.PortInUse, ServerStatusLabel.of(ServerState.Failed(8787, "bind failed: EADDRINUSE (Address already in use)")))
+        assertEquals(
+            ServerStatusLabel.PortInUse,
+            ServerStatusLabel.of(ServerState.Failed(8787, "Address already in use")),
+        )
+        assertEquals(
+            ServerStatusLabel.PortInUse,
+            ServerStatusLabel.of(ServerState.Failed(8787, "bind failed: EADDRINUSE (Address already in use)")),
+        )
     }
 
     @Test
     fun otherFailureKeepsItsReason() {
-        assertEquals(ServerStatusLabel.Failed("Permission denied"), ServerStatusLabel.of(ServerState.Failed(80, "Permission denied")))
+        assertEquals(
+            ServerStatusLabel.Failed("Permission denied"),
+            ServerStatusLabel.of(ServerState.Failed(80, "Permission denied")),
+        )
     }
 }

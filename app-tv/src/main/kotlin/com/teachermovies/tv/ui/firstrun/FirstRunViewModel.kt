@@ -66,7 +66,6 @@ class FirstRunViewModel(
     private val serverState: StateFlow<ServerState>,
     pinTicks: Flow<Unit> = pinRefreshTicker(),
 ) : ViewModel() {
-
     private val lanAddress = MutableStateFlow(lan.current())
     private val volumeSnapshot = MutableStateFlow(volumes.volumes())
     private val currentPin = MutableStateFlow(pin())
@@ -74,12 +73,22 @@ class FirstRunViewModel(
     private val server = combine(currentPin, serverState) { p, state -> p to state }
 
     val uiState: StateFlow<FirstRunUiState> =
-        combine(settings.settings, volumeSnapshot, lanAddress, engine.engineStatus, server) { appSettings, available, ip, status, (p, state) ->
+        combine(
+            settings.settings,
+            volumeSnapshot,
+            lanAddress,
+            engine.engineStatus,
+            server,
+        ) { appSettings, available, ip, status, (p, state) ->
             buildState(appSettings, available, ip, status).copy(pin = p, serverState = state)
         }.stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
-            FirstRunUiState(engineStatus = engine.engineStatus.value, pin = currentPin.value, serverState = serverState.value),
+            FirstRunUiState(
+                engineStatus = engine.engineStatus.value,
+                pin = currentPin.value,
+                serverState = serverState.value,
+            ),
         )
 
     init {

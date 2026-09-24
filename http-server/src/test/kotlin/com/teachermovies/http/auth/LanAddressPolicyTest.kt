@@ -4,7 +4,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LanAddressPolicyTest {
-    private data class Case(val address: String, val allowed: Boolean)
+    private data class Case(
+        val address: String,
+        val allowed: Boolean,
+    )
 
     private val cases =
         listOf(

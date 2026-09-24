@@ -5,12 +5,11 @@ import com.teachermovies.storage.SpaceInfo
 import com.teachermovies.storage.SpaceProvider
 import com.teachermovies.storage.StorageVolumeProvider
 import com.teachermovies.storage.VolumeInfo
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.io.File
 
 class SavePathProviderFactoryTest {
-
     private val hash = TorrentId("0123456789abcdef0123456789abcdef01234567")
     private val fallbackRoot = File("/data/app/files")
 
@@ -18,7 +17,10 @@ class SavePathProviderFactoryTest {
     fun returnsMoviesDirOfThePersistedSelectedVolume() {
         val provider =
             SavePathProviderFactory.create(
-                volumes = FakeVolumeProvider(listOf(volume("primary", primary = true), volume("usb", removable = true))),
+                volumes =
+                    FakeVolumeProvider(
+                        listOf(volume("primary", primary = true), volume("usb", removable = true)),
+                    ),
                 space = FakeSpaceProvider,
                 persistedVolumeId = { "primary" },
                 fallbackRoot = fallbackRoot,
@@ -31,7 +33,10 @@ class SavePathProviderFactoryTest {
     fun withNoPersistedChoiceUsesTheSelectorsFallbackVolume() {
         val provider =
             SavePathProviderFactory.create(
-                volumes = FakeVolumeProvider(listOf(volume("primary", primary = true), volume("usb", removable = true))),
+                volumes =
+                    FakeVolumeProvider(
+                        listOf(volume("primary", primary = true), volume("usb", removable = true)),
+                    ),
                 space = FakeSpaceProvider,
                 persistedVolumeId = { null },
                 fallbackRoot = fallbackRoot,
@@ -71,7 +76,10 @@ class SavePathProviderFactoryTest {
         var persisted: String? = "primary"
         val provider =
             SavePathProviderFactory.create(
-                volumes = FakeVolumeProvider(listOf(volume("primary", primary = true), volume("usb", removable = true))),
+                volumes =
+                    FakeVolumeProvider(
+                        listOf(volume("primary", primary = true), volume("usb", removable = true)),
+                    ),
                 space = FakeSpaceProvider,
                 persistedVolumeId = { persisted },
                 fallbackRoot = fallbackRoot,
@@ -96,7 +104,9 @@ class SavePathProviderFactoryTest {
         mounted = true,
     )
 
-    private class FakeVolumeProvider(private val current: List<VolumeInfo>) : StorageVolumeProvider {
+    private class FakeVolumeProvider(
+        private val current: List<VolumeInfo>,
+    ) : StorageVolumeProvider {
         override fun volumes(): List<VolumeInfo> = current
     }
 

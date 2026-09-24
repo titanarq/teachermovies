@@ -49,14 +49,24 @@ const val TRANSLATION_UNAVAILABLE = "Traducción no disponible"
  */
 fun translationLine(translation: TranslationUiState): String? =
     when (translation) {
-        TranslationUiState.Idle -> null
-        TranslationUiState.Loading -> TRANSLATION_LOADING
-        is TranslationUiState.Ready -> translation.text
-        is TranslationUiState.Failed ->
+        TranslationUiState.Idle -> {
+            null
+        }
+
+        TranslationUiState.Loading -> {
+            TRANSLATION_LOADING
+        }
+
+        is TranslationUiState.Ready -> {
+            translation.text
+        }
+
+        is TranslationUiState.Failed -> {
             when (translation.reason) {
                 TranslationFailure.OFFLINE -> TRANSLATION_OFFLINE
                 TranslationFailure.UNAVAILABLE -> TRANSLATION_UNAVAILABLE
             }
+        }
     }
 
 /**

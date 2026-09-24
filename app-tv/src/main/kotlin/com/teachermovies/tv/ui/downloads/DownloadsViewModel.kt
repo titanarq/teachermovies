@@ -114,7 +114,6 @@ class DownloadsViewModel(
     serverUrl: Flow<String?> = flowOf(null),
     private val space: () -> SpaceInfo?,
 ) : ViewModel() {
-
     /** Which row the dialog is about and which dialog is open; rows themselves come from the engine. */
     private data class DialogState(
         val selectedRowId: TorrentId? = null,
@@ -166,9 +165,18 @@ class DownloadsViewModel(
                 if (row.canResume) resume(id) else pause(id)
                 dismissDialog()
             }
-            DownloadAction.ChooseFiles -> dialogState.value = dialogState.value.copy(kind = DialogKind.ChooseFiles)
-            DownloadAction.Delete -> dialogState.value = dialogState.value.copy(kind = DialogKind.ConfirmDelete)
-            DownloadAction.Cancel -> dismissDialog()
+
+            DownloadAction.ChooseFiles -> {
+                dialogState.value = dialogState.value.copy(kind = DialogKind.ChooseFiles)
+            }
+
+            DownloadAction.Delete -> {
+                dialogState.value = dialogState.value.copy(kind = DialogKind.ConfirmDelete)
+            }
+
+            DownloadAction.Cancel -> {
+                dismissDialog()
+            }
         }
     }
 
@@ -220,7 +228,10 @@ class DownloadsViewModel(
             items =
                 listOf(
                     DownloadActionItem(DownloadAction.PauseResume, enabled = row.canPause || row.canResume),
-                    DownloadActionItem(DownloadAction.ChooseFiles, enabled = row.state != DownloadState.FetchingMetadata),
+                    DownloadActionItem(
+                        DownloadAction.ChooseFiles,
+                        enabled = row.state != DownloadState.FetchingMetadata,
+                    ),
                     DownloadActionItem(DownloadAction.Delete, enabled = true),
                     DownloadActionItem(DownloadAction.Cancel, enabled = true),
                 ),

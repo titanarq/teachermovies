@@ -10,7 +10,11 @@ class FakeSubtitleStore(
 ) : SubtitleStore {
     val recordedCalls = mutableListOf<String>()
 
-    override fun save(torrentId: String, fileName: String, bytes: ByteArray): Result<String> {
+    override fun save(
+        torrentId: String,
+        fileName: String,
+        bytes: ByteArray,
+    ): Result<String> {
         recordedCalls += "save($torrentId,$fileName,${bytes.size} bytes)"
         return nextResult(torrentId, fileName, bytes)
     }

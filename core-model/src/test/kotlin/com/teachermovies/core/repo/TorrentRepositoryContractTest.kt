@@ -175,7 +175,12 @@ abstract class TorrentRepositoryContractTest {
             val t = torrent('a', state = DownloadState.Completed)
             repository.upsert(t, mainFilePath = "a.mkv", now = 1L)
 
-            repository.updatePlayback(id('a'), positionMs = 42_000L, audioTrackId = "audio-1", subtitleTrackId = "sub-en")
+            repository.updatePlayback(
+                id('a'),
+                positionMs = 42_000L,
+                audioTrackId = "audio-1",
+                subtitleTrackId = "sub-en",
+            )
 
             val item = repository.getLibraryItem(id('a'))
             assertEquals(42_000L, item?.lastPositionMs)

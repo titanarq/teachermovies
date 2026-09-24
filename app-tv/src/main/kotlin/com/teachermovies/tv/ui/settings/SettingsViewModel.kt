@@ -82,7 +82,6 @@ class SettingsViewModel(
     serverUrl: Flow<String?> = flowOf(null),
     pinTicks: Flow<Unit> = pinRefreshTicker(),
 ) : ViewModel() {
-
     private val portError = MutableStateFlow(false)
     private val volumeSnapshot = MutableStateFlow(volumes.volumes())
     private val currentPin = MutableStateFlow(pin())
@@ -90,9 +89,18 @@ class SettingsViewModel(
     private val server = combine(serverUrl, currentPin, serverState) { url, p, state -> Triple(url, p, state) }
 
     val uiState: StateFlow<SettingsUiState> =
-        combine(settings.settings, volumeSnapshot, portError, server) { appSettings, available, error, (url, p, state) ->
+        combine(
+            settings.settings,
+            volumeSnapshot,
+            portError,
+            server,
+        ) { appSettings, available, error, (url, p, state) ->
             buildState(appSettings, available, error).copy(serverUrl = url, pin = p, serverState = state)
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsUiState(pin = currentPin.value, serverState = serverState.value))
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            SettingsUiState(pin = currentPin.value, serverState = serverState.value),
+        )
 
     init {
         serverState.onEach { currentPin.value = pin() }.launchIn(viewModelScope)

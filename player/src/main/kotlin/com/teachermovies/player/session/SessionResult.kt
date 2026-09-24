@@ -6,7 +6,9 @@ import com.teachermovies.player.streaming.StreamResult
 /** Outcome of [PlaybackSession.open] and [PlaybackSession.openStreaming]; sealed so the screen handles every case exhaustively. */
 sealed interface SessionResult {
     /** [item] is loaded into the player, with its external subtitles added. */
-    data class Opened(val item: LibraryItem) : SessionResult
+    data class Opened(
+        val item: LibraryItem,
+    ) : SessionResult
 
     /** No completed library item with that id: never downloaded, still downloading, or deleted. */
     data object NotFound : SessionResult
@@ -17,7 +19,9 @@ sealed interface SessionResult {
      * [path] is its save folder (empty if even that is unknown), or the engine does not know the
      * main file's size yet (metadata still arriving), when [path] is the main file's path.
      */
-    data class FileMissing(val path: String) : SessionResult
+    data class FileMissing(
+        val path: String,
+    ) : SessionResult
 
     /**
      * [PlaybackSession.openStreaming] could not supervise the in-progress download: [failure] is
@@ -26,5 +30,7 @@ sealed interface SessionResult {
      * [StreamResult.UnknownTorrent], [StreamResult.Unsupported] or a [StreamResult.Failed] -- and the
      * player was never opened.
      */
-    data class StreamingFailed(val failure: StreamResult) : SessionResult
+    data class StreamingFailed(
+        val failure: StreamResult,
+    ) : SessionResult
 }

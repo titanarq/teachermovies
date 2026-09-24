@@ -136,9 +136,12 @@ fun PlayerScreen(
                 .onKeyEvent { event ->
                     when {
                         panelOpen || assistantOpen -> false
+
                         event.type == KeyEventType.KeyDown -> onKey(event.key.nativeKeyCode)
+
                         // Swallow the key-up of a player key so nothing else reacts to it.
                         event.type == KeyEventType.KeyUp -> isPlayerKey(event.key.nativeKeyCode)
+
                         else -> false
                     }
                 }.focusable(),
@@ -203,7 +206,14 @@ private fun TransportOverlay(
                     .clip(RoundedCornerShape(3.dp))
                     .background(Color.White.copy(alpha = 0.3f)),
         ) {
-            Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(state.progress).background(MaterialTheme.colorScheme.primary))
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(
+                            state.progress,
+                        ).background(MaterialTheme.colorScheme.primary),
+            )
         }
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text(text = (if (state.isPlaying) "▶ " else "❚❚ ") + state.positionText, color = Color.White)

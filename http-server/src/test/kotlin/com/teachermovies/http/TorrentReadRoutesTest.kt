@@ -58,7 +58,10 @@ class TorrentReadRoutesTest {
                 contentType(ContentType.Application.Json)
                 setBody("""{"pin":"${pairing.currentPin()}"}""")
             }.bodyAsText()
-        return Json.parseToJsonElement(body).jsonObject["token"]!!.jsonPrimitive.content
+        return Json
+            .parseToJsonElement(body)
+            .jsonObject["token"]!!
+            .jsonPrimitive.content
     }
 
     private suspend fun addTorrent(magnetByte: Char): com.teachermovies.core.model.TorrentId {
@@ -100,8 +103,19 @@ class TorrentReadRoutesTest {
             assertEquals(2, array.size)
             val first = array.first { it.jsonObject["id"]!!.jsonPrimitive.content == id.value }
             assertEquals("downloading", first.jsonObject["state"]!!.jsonPrimitive.content)
-            assertEquals(50.0, first.jsonObject["progress"]!!.jsonPrimitive.content.toDouble(), 0.0)
-            assertEquals(3, first.jsonObject["peers"]!!.jsonPrimitive.content.toInt())
+            assertEquals(
+                50.0,
+                first.jsonObject["progress"]!!
+                    .jsonPrimitive.content
+                    .toDouble(),
+                0.0,
+            )
+            assertEquals(
+                3,
+                first.jsonObject["peers"]!!
+                    .jsonPrimitive.content
+                    .toInt(),
+            )
         }
 
     @Test
@@ -115,7 +129,10 @@ class TorrentReadRoutesTest {
             assertEquals(HttpStatusCode.OK, beforeMetadata.status)
             assertEquals(
                 "fetching_metadata",
-                Json.parseToJsonElement(beforeMetadata.bodyAsText()).jsonObject["state"]!!.jsonPrimitive.content,
+                Json
+                    .parseToJsonElement(beforeMetadata.bodyAsText())
+                    .jsonObject["state"]!!
+                    .jsonPrimitive.content,
             )
 
             engine.emitMetadata(id, "Movie", listOf("Movie.mkv" to 100L))
@@ -123,7 +140,10 @@ class TorrentReadRoutesTest {
             assertEquals(HttpStatusCode.OK, afterMetadata.status)
             assertEquals(
                 "downloading",
-                Json.parseToJsonElement(afterMetadata.bodyAsText()).jsonObject["state"]!!.jsonPrimitive.content,
+                Json
+                    .parseToJsonElement(afterMetadata.bodyAsText())
+                    .jsonObject["state"]!!
+                    .jsonPrimitive.content,
             )
 
             val unknown = client.get("/api/torrents/$unknownId") { bearerAuth(token) }
@@ -157,7 +177,13 @@ class TorrentReadRoutesTest {
             val files = Json.parseToJsonElement(afterMetadata.bodyAsText()).jsonArray
             assertEquals(2, files.size)
             assertEquals("Movie.mkv", files[0].jsonObject["path"]!!.jsonPrimitive.content)
-            assertEquals(100L, files[0].jsonObject["size"]!!.jsonPrimitive.content.toLong())
+            assertEquals(
+                100L,
+                files[0]
+                    .jsonObject["size"]!!
+                    .jsonPrimitive.content
+                    .toLong(),
+            )
             assertEquals("normal", files[0].jsonObject["priority"]!!.jsonPrimitive.content)
 
             val unknown = client.get("/api/torrents/$unknownId/files") { bearerAuth(token) }

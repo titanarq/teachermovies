@@ -9,7 +9,9 @@ import java.util.Base64
 /** Outcome of [PairingManager.pair]. */
 sealed interface PairResult {
     /** The PIN matched; [token] is the bearer token the phone sends from now on. */
-    data class Paired(val token: String) : PairResult {
+    data class Paired(
+        val token: String,
+    ) : PairResult {
         // Never print the token (AGENTS.md: never log tokens).
         override fun toString(): String = "Paired(token=<redacted>)"
     }

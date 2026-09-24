@@ -43,7 +43,14 @@ class PieceWindowCalculatorTest {
 
     @Test
     fun aNonZeroFileOffsetShiftsTheWindowToAbsolutePieces() {
-        val range = PieceWindowCalculator.piecesFor(fileOffsetInTorrent = 350L, pieceLength, 10, byteOffset = 0L, lengthBytes = 100L)
+        val range =
+            PieceWindowCalculator.piecesFor(
+                fileOffsetInTorrent = 350L,
+                pieceLength,
+                10,
+                byteOffset = 0L,
+                lengthBytes = 100L,
+            )
 
         assertEquals(PieceRange(3, 4), range)
     }

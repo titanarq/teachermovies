@@ -50,24 +50,33 @@ internal fun Route.torrentWriteRoutes(deps: ServerDeps) {
         post("/api/torrents/magnet") {
             val request = call.receiveOrNull<AddMagnetRequest>()
             if (request == null) {
-                call.respondApiError(HttpStatusCode.BadRequest, ApiError("bad_request", "Expected {\"magnet\":\"magnet:?...\"}"))
+                call.respondApiError(
+                    HttpStatusCode.BadRequest,
+                    ApiError("bad_request", "Expected {\"magnet\":\"magnet:?...\"}"),
+                )
                 return@post
             }
             call.respondAdded(deps, deps.engine.addMagnet(request.magnet))
         }
         post("/api/torrents/file") {
             when (val upload = call.receiveTorrentUpload()) {
-                is TorrentUpload.Bytes -> call.respondAdded(deps, deps.engine.addTorrentFile(upload.bytes))
-                TorrentUpload.TooLarge ->
+                is TorrentUpload.Bytes -> {
+                    call.respondAdded(deps, deps.engine.addTorrentFile(upload.bytes))
+                }
+
+                TorrentUpload.TooLarge -> {
                     call.respondApiError(
                         HttpStatusCode.PayloadTooLarge,
                         ApiError("too_large", "A .torrent file may be at most 10 MiB"),
                     )
-                TorrentUpload.Missing ->
+                }
+
+                TorrentUpload.Missing -> {
                     call.respondApiError(
                         HttpStatusCode.BadRequest,
                         ApiError("bad_request", "Expected a multipart field \"$TORRENT_FILE_FIELD\""),
                     )
+                }
             }
         }
         post("/api/torrents/{id}/pause") {
@@ -82,10 +91,19 @@ internal fun Route.torrentWriteRoutes(deps: ServerDeps) {
             val id = call.torrentIdOrRespond() ?: return@delete
             val deleteFiles =
                 when (call.request.queryParameters["deleteFiles"]) {
-                    null, "false" -> false
-                    "true" -> true
+                    null, "false" -> {
+                        false
+                    }
+
+                    "true" -> {
+                        true
+                    }
+
                     else -> {
-                        call.respondApiError(HttpStatusCode.BadRequest, ApiError("bad_request", "deleteFiles must be true or false"))
+                        call.respondApiError(
+                            HttpStatusCode.BadRequest,
+                            ApiError("bad_request", "deleteFiles must be true or false"),
+                        )
                         return@delete
                     }
                 }
@@ -112,12 +130,18 @@ internal fun Route.torrentWriteRoutes(deps: ServerDeps) {
             val priorities = mutableMapOf<Int, FilePriority>()
             for (change in changes) {
                 if (change.index !in knownIndices) {
-                    call.respondApiError(HttpStatusCode.BadRequest, ApiError("invalid_index", "No file with index ${change.index}"))
+                    call.respondApiError(
+                        HttpStatusCode.BadRequest,
+                        ApiError("invalid_index", "No file with index ${change.index}"),
+                    )
                     return@put
                 }
                 val priority = change.priority.toFilePriority()
                 if (priority == null) {
-                    call.respondApiError(HttpStatusCode.BadRequest, ApiError("invalid_priority", "Priority must be skip, normal or high"))
+                    call.respondApiError(
+                        HttpStatusCode.BadRequest,
+                        ApiError("invalid_priority", "Priority must be skip, normal or high"),
+                    )
                     return@put
                 }
                 priorities[change.index] = priority
@@ -155,7 +179,10 @@ private suspend fun ApplicationCall.respondAdded(
             val state = deps.snapshotOf(result.value)?.toDto()?.state ?: FETCHING_METADATA
             respond(HttpStatusCode.Created, AddTorrentResponse(result.value.value, state))
         }
-        is EngineResult.Failure -> respondEngineError(result.error)
+
+        is EngineResult.Failure -> {
+            respondEngineError(result.error)
+        }
     }
 }
 
@@ -173,7 +200,9 @@ internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrNull(): T
     }
 
 private sealed interface TorrentUpload {
-    class Bytes(val bytes: ByteArray) : TorrentUpload
+    class Bytes(
+        val bytes: ByteArray,
+    ) : TorrentUpload
 
     data object TooLarge : TorrentUpload
 
