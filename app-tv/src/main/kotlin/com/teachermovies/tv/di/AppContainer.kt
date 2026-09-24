@@ -11,7 +11,13 @@ import com.teachermovies.storage.FileSpaceProvider
 import com.teachermovies.storage.SpaceProvider
 import com.teachermovies.storage.StorageVolumeProvider
 import com.teachermovies.torrent.api.TorrentEngine
+import com.teachermovies.torrent.jlib.JLibTorrentEngine
+import com.teachermovies.torrent.service.TorrentEngineHolder
 import com.teachermovies.tv.net.LanAddressResolver
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
 /**
  * The whole object graph, built by hand: constructor injection only, no framework and no service
@@ -19,9 +25,10 @@ import com.teachermovies.tv.net.LanAddressResolver
  * interfaces so a caller can never reach through to a concrete type.
  *
  * What is wired is what exists. `:http-server` and `:player` still hold nothing but a placeholder
- * -- no interface to bind yet. `:torrent` has its interface but no real engine yet (#55), so
- * [torrentEngine] is [NotWiredTorrentEngine], which reports "stopped" rather than pretending. No
- * fake is wired in production code (ADR-0003 rule 3).
+ * -- no interface to bind yet. [torrentEngine] is the jlibtorrent engine, registered in
+ * [TorrentEngineHolder] so `TorrentService` drives the same instance; this is the only place a
+ * `com.teachermovies.torrent.jlib` type is named. No fake is wired in production code (ADR-0003
+ * rule 3).
  */
 class AppContainer(application: Application) {
 
@@ -35,8 +42,34 @@ class AppContainer(application: Application) {
 
     val storageVolumeProvider: StorageVolumeProvider = AndroidStorageVolumeProvider(application)
 
-    // #55 replaces this with the jlibtorrent-backed engine; until then the app reports "stopped".
-    val torrentEngine: TorrentEngine = NotWiredTorrentEngine
+    /**
+     * Payload directories: `<selected volume>/Movies/<info-hash>`, the volume re-selected on each
+     * add. The engine calls this from its own (IO) dispatcher, never the main thread, so reading
+     * the persisted volume id synchronously is fine; DataStore serves it from memory after the
+     * first read.
+     */
+    private val savePathProvider =
+        SavePathProviderFactory.create(
+            volumes = storageVolumeProvider,
+            space = spaceProvider,
+            persistedVolumeId = { runBlocking { settingsRepository.settings.first().downloadVolumeId } },
+            fallbackRoot = application.filesDir,
+        )
+
+    /**
+     * Built here, started by `TorrentService` (which `MainActivity` starts): the holder is
+     * initialised before the service can ever run (#54).
+     */
+    val torrentEngine: TorrentEngine =
+        JLibTorrentEngine(
+            savePaths = savePathProvider,
+            stateDir = File(application.filesDir, TORRENT_STATE_DIR),
+            dispatcher = Dispatchers.IO,
+        ).also(TorrentEngineHolder::init)
 
     val lanAddressResolver: LanAddressResolver = LanAddressResolver()
+
+    private companion object {
+        const val TORRENT_STATE_DIR = "torrent-state"
+    }
 }
