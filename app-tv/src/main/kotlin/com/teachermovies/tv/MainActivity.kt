@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -26,7 +27,8 @@ import com.teachermovies.tv.ui.firstrun.FirstRunRoute
 import com.teachermovies.tv.ui.firstrun.FirstRunViewModel
 import com.teachermovies.tv.ui.library.LibraryRoute
 import com.teachermovies.tv.ui.library.LibraryViewModel
-import com.teachermovies.tv.ui.player.PlayerPlaceholderScreen
+import com.teachermovies.tv.player.PlayerViewModel
+import com.teachermovies.tv.ui.player.PlayerRoute
 import com.teachermovies.tv.ui.settings.SettingsRoute
 import com.teachermovies.tv.ui.settings.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
@@ -107,11 +109,16 @@ class MainActivity : ComponentActivity() {
                         val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
                         when (val route = uiState.route) {
                             is AppRoute.Player ->
-                                PlayerPlaceholderScreen(
-                                    id = route.id,
-                                    onBack = mainViewModel::closePlayer,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
+                                // Keyed by the route so each play gets its own ViewModel and session.
+                                key(route.route) {
+                                    PlayerRoute(
+                                        id = route.id,
+                                        factory = playerViewModelFactory(),
+                                        surfaceHost = (application as TeacherMoviesApp).container.videoSurfaceHost,
+                                        onExit = mainViewModel::closePlayer,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
                             AppRoute.Shell ->
                                 MainShell(
                                     uiState = uiState,
@@ -127,6 +134,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** The player route's ViewModel factory (#78): a fresh session over the container's player. */
+    private fun playerViewModelFactory(): PlayerViewModel.Factory {
+        val container = (application as TeacherMoviesApp).container
+        return PlayerViewModel.Factory(player = container.player, repo = container.torrentRepository)
     }
 
     /**

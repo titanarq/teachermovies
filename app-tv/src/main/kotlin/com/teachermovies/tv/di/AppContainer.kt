@@ -9,6 +9,9 @@ import com.teachermovies.core.repo.TorrentRepository
 import com.teachermovies.core.settings.DataStoreSettingsRepository
 import com.teachermovies.core.settings.SettingsRepository
 import com.teachermovies.core.settings.settingsDataStore
+import com.teachermovies.player.api.Player
+import com.teachermovies.player.api.VideoSurfaceHost
+import com.teachermovies.player.vlc.VlcPlayer
 import com.teachermovies.storage.AndroidStorageVolumeProvider
 import com.teachermovies.storage.FileSpaceProvider
 import com.teachermovies.storage.SpaceInfo
@@ -37,8 +40,8 @@ import kotlinx.coroutines.runBlocking
  * locator calls from outside this class (ADR-0003). Implementations are exposed typed as their
  * interfaces so a caller can never reach through to a concrete type.
  *
- * What is wired is what exists. `:http-server` and `:player` still hold nothing but a placeholder
- * -- no interface to bind yet. [torrentEngine] is the jlibtorrent engine, registered in
+ * What is wired is what exists. [player] and [videoSurfaceHost] are the same `VlcPlayer`, the only
+ * place an `org.videolan`-backed type is named. [torrentEngine] is the jlibtorrent engine, registered in
  * [TorrentEngineHolder] so `TorrentService` drives the same instance; this is the only place a
  * `com.teachermovies.torrent.jlib` type is named. No fake is wired in production code (ADR-0003
  * rule 3).
@@ -123,6 +126,14 @@ class AppContainer(application: Application) {
             }
         return volume?.let { spaceProvider.spaceOf(it.root) }
     }
+
+    // One libVLC player for the process, handed out as both halves of its contract (ADR-0003,
+    // `docs/modules/player.md`); the player screen (#78) opens and releases it per movie.
+    private val vlcPlayer = VlcPlayer(application)
+
+    val player: Player = vlcPlayer
+
+    val videoSurfaceHost: VideoSurfaceHost = vlcPlayer
 
     private companion object {
         const val TORRENT_STATE_DIR = "torrent-state"

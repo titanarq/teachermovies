@@ -21,9 +21,6 @@
     <string name="library_play_mark">▶</string>
     <string name="library_complete">100 %</string>
 
-    <!-- Placeholder for the player route until #78. -->
-    <string name="player_pending">Reproductor pendiente</string>
-
     <!-- First run (#46). -->
     <string name="first_run_title">Bienvenido a Teacher Movies</string>
     <string name="first_run_hint">Abre esta dirección en el navegador del móvil, conectado a la misma red, para enviar películas a la TV.</string>
