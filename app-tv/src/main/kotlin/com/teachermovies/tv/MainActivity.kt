@@ -9,6 +9,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import com.teachermovies.tv.ui.MainShell
 import com.teachermovies.tv.ui.MainViewModel
+import com.teachermovies.tv.ui.firstrun.FirstRunRoute
+import com.teachermovies.tv.ui.firstrun.FirstRunViewModel
 import com.teachermovies.tv.ui.settings.SettingsRoute
 import com.teachermovies.tv.ui.settings.SettingsViewModel
 
@@ -20,6 +22,9 @@ import com.teachermovies.tv.ui.settings.SettingsViewModel
  * ViewModel exposes plus the one callback that changes it. Section ViewModels that need
  * collaborators are built from the application's `AppContainer` through their factories
  * (ADR-0003 rule 1) and bound into the shell's slots here.
+ *
+ * Until first-run setup is completed the first-run screen is shown instead of the shell; nothing
+ * is shown for the instant before the persisted settings have been read.
  */
 class MainActivity : ComponentActivity() {
 
@@ -34,16 +39,34 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private val firstRunViewModel: FirstRunViewModel by viewModels {
+        val container = (application as TeacherMoviesApp).container
+        FirstRunViewModel.Factory(
+            settings = container.settingsRepository,
+            volumes = container.storageVolumeProvider,
+            space = container.spaceProvider,
+            engine = container.torrentEngine,
+            lan = container.lanAddressResolver,
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
-                val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
-                MainShell(
-                    uiState = uiState,
-                    onSelect = mainViewModel::select,
-                    settingsContent = { modifier -> SettingsRoute(viewModel = settingsViewModel, modifier = modifier) },
-                )
+                val firstRunCompleted by firstRunViewModel.firstRunCompleted.collectAsStateWithLifecycle()
+                when (firstRunCompleted) {
+                    null -> Unit
+                    false -> FirstRunRoute(viewModel = firstRunViewModel)
+                    true -> {
+                        val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
+                        MainShell(
+                            uiState = uiState,
+                            onSelect = mainViewModel::select,
+                            settingsContent = { modifier -> SettingsRoute(viewModel = settingsViewModel, modifier = modifier) },
+                        )
+                    }
+                }
             }
         }
     }
