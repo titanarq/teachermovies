@@ -1,24 +1,34 @@
-package com.teachermovies.http.auth
+package com.teachermovies.core.settings.fake
 
 import com.teachermovies.core.settings.AppSettings
 import com.teachermovies.core.settings.SettingsRepository
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
-import java.security.SecureRandom
 
-/** Mirrors `DataStoreSettingsRepository` in memory: same defaults, same port validation. */
+private const val MIN_HTTP_PORT = 1024
+private const val MAX_HTTP_PORT = 65535
+
+/**
+ * Deterministic [SettingsRepository] over a [MutableStateFlow], for other modules' JVM tests
+ * (ADR-0003): no DataStore, no Android runtime, no real time. It applies the same rules as
+ * `DataStoreSettingsRepository` -- the same defaults and the 1024..65535 check in [setHttpPort],
+ * where a rejected port leaves the stored one untouched.
+ */
 class InMemorySettingsRepository(
     initial: AppSettings = AppSettings(),
 ) : SettingsRepository {
     private val state = MutableStateFlow(initial)
 
+    override val settings: StateFlow<AppSettings> = state
+
+    /** The settings as they are right now, for assertions. */
     val current: AppSettings get() = state.value
 
-    override val settings: Flow<AppSettings> = state
-
     override suspend fun setHttpPort(port: Int) {
-        require(port in 1024..65535)
+        require(port in MIN_HTTP_PORT..MAX_HTTP_PORT) {
+            "HTTP port must be in $MIN_HTTP_PORT..$MAX_HTTP_PORT, was $port"
+        }
         state.update { it.copy(httpPort = port) }
     }
 
@@ -41,20 +51,4 @@ class InMemorySettingsRepository(
     override suspend fun setAutostartOnBoot(enabled: Boolean) {
         state.update { it.copy(autostartOnBoot = enabled) }
     }
-}
-
-/** A deterministic [SecureRandom]: every byte it produces comes from a counter. */
-class CountingSecureRandom : SecureRandom() {
-    private var next = 1
-
-    override fun nextBytes(bytes: ByteArray) {
-        for (i in bytes.indices) bytes[i] = (next++ * 37).toByte()
-    }
-}
-
-/** A clock tests move by hand. */
-class FakeClock(
-    var now: Long = 1_000_000L,
-) : () -> Long {
-    override fun invoke(): Long = now
 }

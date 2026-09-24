@@ -74,9 +74,9 @@
 - Actions: `Pausar`/`Reanudar` is enabled when `canPause || canResume` (an `Error` row offers
   `Pausar`, since `DownloadState` allows `Error -> Paused` after #145); a `Completed` row offers
   `Pausar`, which stops seeding. `Elegir archivos` is disabled while fetching
-  metadata; its dialog content is #71 (a placeholder until then). `Borrar` asks
+  metadata; its dialog is the file selection of #71 (below). `Borrar` asks
   `¿Borrar también los archivos?` (Sí = delete files, No = keep them, Cancelar), focus on Cancelar.
-- `DownloadsScreen(viewModel)`: `Espacio libre: X` header, `LazyColumn` of tv `ListItem`s (name,
+- `DownloadsScreen(viewModel, fileSelectionFactory: (TorrentId) -> ViewModelProvider.Factory)`: `Espacio libre: X` header, `LazyColumn` of tv `ListItem`s (name,
   percent + state label, size · speed · N peers · ETA · ratio, progress bar), or the empty state
   `No hay descargas. Envía un magnet desde el móvil a <serverUrl>`. Entry focus is the first row
   (`focusRestorer`), OK opens the action dialog; a focused row that disappears hands focus to the
@@ -84,6 +84,18 @@
 - The shell takes the section as the `downloadsContent` slot. `AppContainer.downloadVolumeSpace()`
   is the free space of the volume `VolumeSelector` picks (persisted id cached, never blocks);
   `MainActivity` derives `serverUrl` from the settings' port and `LanAddressResolver`.
+
+## File selection (#71)
+- `FileSelectionViewModel(engine, id)` loads `engine.files(id)` into `FileSelectionRow(index, path,
+  sizeText, checked = priority != Skip)`; `toggle(index)` flips a row locally; `apply()` sends
+  `setFilePriorities` for every file (checked -> `Normal`, unchecked -> `Skip`) and sets `done`.
+  `FileSelectionUiState(rows, loading, notReady, applying, error, done)`, `canApply`. `NotReady`
+  shows `Esperando metadata…` and the load retries once the torrent snapshot reports metadata.
+- `FileSelectionRoute(factory, onClose)` owns the ViewModel in its own `ViewModelStore` (fresh per
+  opening). `FileSelectionDialog`: one tv `ListItem` + checkbox per file (OK toggles), `Aplicar` /
+  `Cancelar`; entry focus on the first row (else `Cancelar`), DOWN from the last row lands on
+  `Aplicar`; BACK cancels. `MainActivity` builds `FileSelectionViewModel.Factory` from
+  `AppContainer.torrentEngine`.
 
 ## Biblioteca (#72)
 - `LibraryViewModel(repo: TorrentRepository)` exposes `StateFlow<LibraryUiState(items: List<LibraryCard>)>`
@@ -102,10 +114,10 @@
 - `com.teachermovies.tv.player.RemoteKeyMapper.map(keyCode): PlayerAction?` (pure):
   DPAD_CENTER/ENTER/MEDIA_PLAY_PAUSE/SPACE -> `TogglePlayPause`; MEDIA_PLAY -> `Play`; MEDIA_PAUSE ->
   `Pause`; DPAD_LEFT/RIGHT -> `SeekBy(∓10 000)`; MEDIA_REWIND/FAST_FORWARD -> `SeekBy(∓30 000)`;
-  DPAD_UP/MENU -> `ShowTracks` (panel is #79; for now only the overlay); BACK -> `Exit`; others null.
+  DPAD_UP/MENU -> `ShowTracks` (opens the track panel, #79); BACK -> `Exit`; others null.
 - `PlayerViewModel(session: PlaybackSession, player: Player, closeScope: CoroutineScope? = null)`
   exposes `StateFlow<PlayerUiState(title, positionText, durationText, progress, isPlaying,
-  overlayVisible, error, exited)>` (times via `Formatters.playbackTime`, `1:05` / `1:02:05`).
+  overlayVisible, error, exited, tracksPanel)>` (times via `Formatters.playbackTime`, `1:05` / `1:02:05`).
   `open(id)` (first call only), `onAction(PlayerAction?)` (any key, even unmapped, shows the overlay
   for 4 s; actions are forwarded to `Player`; ignored once exiting), `exit()` (closes the session --
   position saved, player released -- then `exited = true`). `error`: `FileMissing` ->
@@ -121,6 +133,21 @@
   position/duration; `onExit` -> `MainViewModel.closePlayer()` back to Biblioteca.
 - `AppContainer.player: Player` and `AppContainer.videoSurfaceHost: VideoSurfaceHost` are the same
   `VlcPlayer` (the only `com.teachermovies.player.vlc` import in the app).
+
+## Pistas de audio y subtítulos (#79)
+- `PlayerUiState.tracksPanel: TracksPanelState?` (null = closed, and while an error is shown).
+  `TracksPanelState(audio, subtitles: List<TrackOption(id, label, selected)>)` is rebuilt from
+  `Player.audioTracks`/`subtitleTracks`/`selectedAudioId`/`selectedSubtitleId` while open
+  (`TracksPanelState.of`, pure); `subtitles` always starts with `Desactivados` (`id = null`). Labels
+  are the track name, `name (lang)` when the name does not mention the language, else a fallback.
+- `PlayerViewModel`: `ShowTracks` opens it; `selectAudio(id)` / `selectSubtitle(id?)` call `Player`
+  and close it (the `PlaybackSession` persists the change); `back()` (BACK, and `Exit`) closes an
+  open panel without changes, otherwise exits; `closeTracks()`.
+- `ui.player.TracksPanel`: right-side panel with `Audio` and `Subtítulos` columns of tv `ListItem`s
+  (radio mark on the active one). Opening focuses the marked audio row (marked subtitle row when
+  there is no audio); LEFT/RIGHT switch columns (restoring onto the marked row); focus cannot leave
+  the panel; OK selects and closes. While it is open the player root maps no key, so BACK reaches
+  the back handler; focus returns to the root when it closes.
 
 ## HTTP server hosting and pairing PIN (#66)
 - `AppContainer.pairingManager: PairingManager` (`SecureRandom`, wall clock) and

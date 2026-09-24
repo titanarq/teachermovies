@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -36,6 +37,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Button
 import androidx.tv.material3.ListItem
@@ -47,9 +49,16 @@ import com.teachermovies.core.model.TorrentId
 import com.teachermovies.tv.R
 import com.teachermovies.tv.format.Formatters
 
-/** The Descargas section bound to its [DownloadsViewModel] (#70). */
+/**
+ * The Descargas section bound to its [DownloadsViewModel] (#70); `Elegir archivos` opens a
+ * [FileSelectionRoute] whose ViewModel [fileSelectionFactory] builds for the selected torrent (#71).
+ */
 @Composable
-fun DownloadsScreen(viewModel: DownloadsViewModel, modifier: Modifier = Modifier) {
+fun DownloadsScreen(
+    viewModel: DownloadsViewModel,
+    fileSelectionFactory: (TorrentId) -> ViewModelProvider.Factory,
+    modifier: Modifier = Modifier,
+) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     DownloadsContent(
         uiState = uiState,
@@ -57,6 +66,9 @@ fun DownloadsScreen(viewModel: DownloadsViewModel, modifier: Modifier = Modifier
         onAction = viewModel::onAction,
         onConfirmDelete = viewModel::confirmDelete,
         onDismissDialog = viewModel::dismissDialog,
+        chooseFilesContent = { id, onClose ->
+            key(id) { FileSelectionRoute(factory = remember { fileSelectionFactory(id) }, onClose = onClose) }
+        },
         modifier = modifier,
     )
 }
@@ -77,6 +89,7 @@ fun DownloadsContent(
     onAction: (DownloadAction) -> Unit,
     onConfirmDelete: (Boolean) -> Unit,
     onDismissDialog: () -> Unit,
+    chooseFilesContent: @Composable (id: TorrentId, onClose: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val rowRequesters = remember { mutableMapOf<TorrentId, FocusRequester>() }
@@ -148,7 +161,7 @@ fun DownloadsContent(
                 onConfirm = onConfirmDelete,
                 onDismiss = onDismissDialog,
             )
-        DownloadsDialog.ChooseFiles -> ChooseFilesPendingDialog(onDismiss = onDismissDialog)
+        DownloadsDialog.ChooseFiles -> uiState.selectedRowId?.let { chooseFilesContent(it, onDismissDialog) }
     }
 
     // Focus must never be left on nothing: a focused row that disappears (deleted here or from the
@@ -279,20 +292,6 @@ private fun ConfirmDeleteDialog(title: String, onConfirm: (Boolean) -> Unit, onD
         DialogButton(text = stringResource(R.string.downloads_action_cancel), onClick = onDismiss, focusRequester = cancelRequester)
     }
     LaunchedEffect(Unit) { cancelRequester.requestFocus() }
-}
-
-/** `Elegir archivos` has its own screen in #71; until then it only says so. */
-@Composable
-private fun ChooseFilesPendingDialog(onDismiss: () -> Unit) {
-    val closeRequester = remember { FocusRequester() }
-    DialogFrame(
-        title = stringResource(R.string.downloads_action_choose_files),
-        subtitle = stringResource(R.string.downloads_choose_files_pending),
-        onDismiss = onDismiss,
-    ) {
-        DialogButton(text = stringResource(R.string.downloads_close), onClick = onDismiss, focusRequester = closeRequester)
-    }
-    LaunchedEffect(Unit) { closeRequester.requestFocus() }
 }
 
 /** A modal window: BACK is [onDismiss]; UP/DOWN walk its buttons and cannot leave it. */

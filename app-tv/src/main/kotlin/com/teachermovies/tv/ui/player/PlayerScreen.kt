@@ -66,7 +66,9 @@ fun PlayerRoute(
         state = state,
         surfaceHost = surfaceHost,
         onKey = { keyCode -> RemoteKeyMapper.map(keyCode).also(viewModel::onAction) != null },
-        onBack = viewModel::exit,
+        onBack = viewModel::back,
+        onSelectAudio = viewModel::selectAudio,
+        onSelectSubtitle = viewModel::selectSubtitle,
         modifier = modifier,
     )
 }
@@ -76,6 +78,10 @@ fun PlayerRoute(
  * every remote key lands here: [onKey] gets each key-down code and returns whether it was a player
  * key (consumed, key-up included); other keys (volume, HOME) pass through. BACK is one of the
  * mapped keys; [BackHandler] is only the fallback should BACK arrive as a back gesture instead.
+ *
+ * While [PlayerUiState.tracksPanel] is open (#79) the root box maps no key, so the D-pad and OK
+ * reach the panel's lists and BACK reaches [BackHandler] ([onBack] then closes the panel); focus
+ * returns to the root box when the panel closes.
  */
 @Composable
 fun PlayerScreen(
@@ -83,8 +89,11 @@ fun PlayerScreen(
     surfaceHost: VideoSurfaceHost,
     onKey: (keyCode: Int) -> Boolean,
     onBack: () -> Unit,
+    onSelectAudio: (String) -> Unit,
+    onSelectSubtitle: (String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val panelOpen = state.tracksPanel != null
     val focus = remember { FocusRequester() }
     BackHandler(onBack = onBack)
     Box(
@@ -93,10 +102,11 @@ fun PlayerScreen(
                 .background(Color.Black)
                 .focusRequester(focus)
                 .onKeyEvent { event ->
-                    when (event.type) {
-                        KeyEventType.KeyDown -> onKey(event.key.nativeKeyCode)
+                    when {
+                        panelOpen -> false
+                        event.type == KeyEventType.KeyDown -> onKey(event.key.nativeKeyCode)
                         // Swallow the key-up of a player key so nothing else reacts to it.
-                        KeyEventType.KeyUp -> RemoteKeyMapper.map(event.key.nativeKeyCode) != null
+                        event.type == KeyEventType.KeyUp -> RemoteKeyMapper.map(event.key.nativeKeyCode) != null
                         else -> false
                     }
                 }.focusable(),
@@ -118,8 +128,18 @@ fun PlayerScreen(
         } else if (state.overlayVisible) {
             TransportOverlay(state = state, modifier = Modifier.align(Alignment.BottomCenter))
         }
+
+        val panel = state.tracksPanel
+        if (panel != null) {
+            TracksPanel(
+                state = panel,
+                onSelectAudio = onSelectAudio,
+                onSelectSubtitle = onSelectSubtitle,
+                modifier = Modifier.align(Alignment.CenterEnd),
+            )
+        }
     }
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    LaunchedEffect(panelOpen) { if (!panelOpen) focus.requestFocus() }
 }
 
 @Composable

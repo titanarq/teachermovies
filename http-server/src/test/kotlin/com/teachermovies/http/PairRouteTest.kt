@@ -1,5 +1,6 @@
 package com.teachermovies.http
 
+import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
 import com.teachermovies.http.auth.CountingSecureRandom
 import com.teachermovies.http.auth.FakeClock
 import com.teachermovies.http.auth.InMemorySettingsRepository
@@ -48,6 +49,7 @@ class PairRouteTest {
             clock = clock,
             pairing = pairing,
             subtitles = FakeSubtitleStore(),
+            library = InMemoryTorrentRepository(),
             allowTestRemoteHeader = true,
         )
 

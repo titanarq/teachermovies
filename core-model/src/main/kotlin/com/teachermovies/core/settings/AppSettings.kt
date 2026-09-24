@@ -9,11 +9,13 @@ internal const val DEFAULT_HTTP_PORT = 8787
  * [downloadVolumeId] is the id of the storage volume downloads go to, null while the app has not
  * chosen one. [authTokenHashes] holds a hash of every bearer token PIN pairing has issued, never a
  * token itself. [firstRunCompleted] is false until the first-run setup has finished, which is what
- * makes the app show it again after a fresh install.
+ * makes the app show it again after a fresh install. [autostartOnBoot] is whether the app opens by
+ * itself when the TV powers on, off until the user turns it on.
  */
 data class AppSettings(
     val httpPort: Int = DEFAULT_HTTP_PORT,
     val downloadVolumeId: String? = null,
     val authTokenHashes: Set<String> = emptySet(),
     val firstRunCompleted: Boolean = false,
+    val autostartOnBoot: Boolean = false,
 )
