@@ -1,5 +1,6 @@
 package com.teachermovies.torrent.jlib
 
+import android.util.Log
 import com.frostwire.jlibtorrent.AddTorrentParams
 import com.frostwire.jlibtorrent.AlertListener
 import com.frostwire.jlibtorrent.InfoHash
@@ -600,7 +601,8 @@ class JLibTorrentEngine(
     /**
      * Re-reads torrent [id]'s status into its snapshot; callers [publish]. A torrent without a live
      * handle (its add is still pending, or the session refused it) keeps its current snapshot; a
-     * native failure while reading marks it errored until a later read succeeds.
+     * native failure while reading marks it errored until a later read succeeds. A state move outside
+     * core-model's transition table is logged as a warning and published anyway.
      */
     private fun refresh(id: TorrentId) {
         val current = snapshots[id] ?: return
@@ -609,7 +611,15 @@ class JLibTorrentEngine(
             try {
                 val torrentStatus = handle.status()
                 val savePath = if (current.savePath == null && torrentStatus.hasMetadata()) handle.savePath() else current.savePath
-                StatusSampleMapper.apply(current, sampleOf(torrentStatus, savePath))
+                val next = StatusSampleMapper.apply(current, sampleOf(torrentStatus, savePath))
+                if (StatusSampleMapper.isUnexpectedTransition(current.state, next.state)) {
+                    Log.w(
+                        TAG,
+                        "Torrent ${id.value}: ${current.state} -> ${next.state} is outside the transition table; " +
+                            "publishing it anyway",
+                    )
+                }
+                next
             } catch (e: RuntimeException) {
                 JlibMappers.withAddError(current, e.message ?: e.javaClass.name)
             }
@@ -705,6 +715,8 @@ class JLibTorrentEngine(
     private fun failure(error: EngineError): EngineResult<Nothing> = EngineResult.Failure(error)
 
     private companion object {
+        const val TAG = "JLibTorrentEngine"
+
         /** How often the ticker republishes [torrents]. */
         const val TICK_MILLIS = 1_000L
 

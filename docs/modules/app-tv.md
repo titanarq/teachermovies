@@ -63,6 +63,28 @@
   EngineRepositorySync` (#68), started when the container is built, on its own
   application-lifetime `CoroutineScope`.
 
+## Descargas screen (#70)
+- `DownloadsViewModel(engine, sync, serverUrl: Flow<String?> = flowOf(null), space)`; `DownloadsUiState`
+  also carries `serverUrl` (empty-state hint), `selectedRowId` and `dialog: DownloadsDialog?`
+  (`Actions(items: List<DownloadActionItem>, pauseResumeLabel)` with `focused` = first enabled item,
+  `ConfirmDelete`, `ChooseFiles`). `DownloadRow.progress` (0..1) sizes the progress bar.
+  `openActions(id)`, `onAction(DownloadAction)` (`PauseResume` / `ChooseFiles` / `Delete` / `Cancel`;
+  disabled ones are ignored), `confirmDelete(deleteFiles)`, `dismissDialog()` (keeps `selectedRowId`).
+  The dialog is rebuilt from the current row on every update and closes when the row disappears.
+- Actions: `Pausar`/`Reanudar` is enabled when `canPause || canResume` (an `Error` row offers
+  `Pausar`, since `DownloadState` allows `Error -> Paused` after #145); a `Completed` row offers
+  `Pausar`, which stops seeding. `Elegir archivos` is disabled while fetching
+  metadata; its dialog content is #71 (a placeholder until then). `Borrar` asks
+  `¿Borrar también los archivos?` (Sí = delete files, No = keep them, Cancelar), focus on Cancelar.
+- `DownloadsScreen(viewModel)`: `Espacio libre: X` header, `LazyColumn` of tv `ListItem`s (name,
+  percent + state label, size · speed · N peers · ETA · ratio, progress bar), or the empty state
+  `No hay descargas. Envía un magnet desde el móvil a <serverUrl>`. Entry focus is the first row
+  (`focusRestorer`), OK opens the action dialog; a focused row that disappears hands focus to the
+  row now in its place. BACK closes a dialog.
+- The shell takes the section as the `downloadsContent` slot. `AppContainer.downloadVolumeSpace()`
+  is the free space of the volume `VolumeSelector` picks (persisted id cached, never blocks);
+  `MainActivity` derives `serverUrl` from the settings' port and `LanAddressResolver`.
+
 ## Biblioteca (#72)
 - `LibraryViewModel(repo: TorrentRepository)` exposes `StateFlow<LibraryUiState(items: List<LibraryCard>)>`
   mapped from `observeLibrary()` (newest completed first). `LibraryCard(id, title, sizeText,
@@ -73,9 +95,51 @@
   calls `onPlay(id)`. No movies -> `Tu biblioteca está vacía`, nothing focusable (focus stays on
   the tab row). The shell takes it as the `libraryContent` slot.
 - Navigation: `MainUiState.route: AppRoute` is `Shell` or `Player(id)` (`player/{id}`);
-  `MainViewModel.openPlayer(id)` / `closePlayer()`. `MainActivity` shows `PlayerPlaceholderScreen`
-  (`Reproductor pendiente`, BACK -> `closePlayer`) instead of the shell for `Player`; the real
-  player replaces it in #78.
+  `MainViewModel.openPlayer(id)` / `closePlayer()`. `MainActivity` shows the player route (#78)
+  instead of the shell for `Player`.
+
+## Reproductor (#78)
+- `com.teachermovies.tv.player.RemoteKeyMapper.map(keyCode): PlayerAction?` (pure):
+  DPAD_CENTER/ENTER/MEDIA_PLAY_PAUSE/SPACE -> `TogglePlayPause`; MEDIA_PLAY -> `Play`; MEDIA_PAUSE ->
+  `Pause`; DPAD_LEFT/RIGHT -> `SeekBy(∓10 000)`; MEDIA_REWIND/FAST_FORWARD -> `SeekBy(∓30 000)`;
+  DPAD_UP/MENU -> `ShowTracks` (panel is #79; for now only the overlay); BACK -> `Exit`; others null.
+- `PlayerViewModel(session: PlaybackSession, player: Player, closeScope: CoroutineScope? = null)`
+  exposes `StateFlow<PlayerUiState(title, positionText, durationText, progress, isPlaying,
+  overlayVisible, error, exited)>` (times via `Formatters.playbackTime`, `1:05` / `1:02:05`).
+  `open(id)` (first call only), `onAction(PlayerAction?)` (any key, even unmapped, shows the overlay
+  for 4 s; actions are forwarded to `Player`; ignored once exiting), `exit()` (closes the session --
+  position saved, player released -- then `exited = true`). `error`: `FileMissing` ->
+  `El archivo no está disponible (¿se ha desconectado el disco?)`, `NotFound` -> `Esta película ya
+  no está en la biblioteca`, `PlayerState.Error(m)` -> `No se puede reproducir: m`. Cleared without
+  `exit()`, it closes the session on `closeScope`. `PlayerViewModel.Factory(player, repo)` builds the
+  session on its own main-thread scope.
+- `PlayerRoute(id, factory, surfaceHost, onExit)`: the ViewModel lives in a route-local
+  `ViewModelStore` cleared when the route leaves composition (keyed by `route.route`, so each play is
+  a fresh session). `PlayerScreen`: black full-screen `AndroidView(FrameLayout)` attached through
+  `VideoSurfaceHost` (detached on dispose); the root box takes focus and consumes mapped keys
+  (key-down and key-up), unmapped keys pass through; bottom overlay with title, progress bar and
+  position/duration; `onExit` -> `MainViewModel.closePlayer()` back to Biblioteca.
+- `AppContainer.player: Player` and `AppContainer.videoSurfaceHost: VideoSurfaceHost` are the same
+  `VlcPlayer` (the only `com.teachermovies.player.vlc` import in the app).
+
+## HTTP server hosting and pairing PIN (#66)
+- `AppContainer.pairingManager: PairingManager` (`SecureRandom`, wall clock) and
+  `AppContainer.httpServerController: HttpServerController` over `LocalHttpServer`, on the
+  application scope. Each (re)start gets fresh `ServerDeps`: `torrentEngine`,
+  `space = downloadVolumeSpace` (the `FileSpaceProvider` of the selected volume), the package
+  `versionName` (or `"unknown"`), and a `LayoutSubtitleStore` whose layout comes from
+  `SubtitleLayoutResolver.layoutFor(id, engine.torrents.value)` (volume root read back from the
+  torrent's `savePath` = `<root>/Movies/<id>`; null when unknown or not yet known).
+- `TeacherMoviesApp.onCreate` calls `httpServerController.start()`; the foreground `TorrentService`
+  keeps the process alive. The manifest declares `INTERNET` (no cleartext config: server only).
+- `FirstRunViewModel(..., lan, pin: () -> String, serverState: StateFlow<ServerState>, pinTicks)` and
+  `SettingsViewModel(settings, volumes, space, pin, serverState, serverUrl: Flow<String?> = flowOf(null), pinTicks)`;
+  both UI states gain `pin` and `serverState` (Settings also `serverUrl`). The PIN is re-read on
+  creation, on `refresh()`/`refreshVolumes()`, on every `serverState` change and on every
+  `pinTicks` emission (default `pinRefreshTicker()`, every 15 s).
+- `ui.server.ServerPinAndStatus` shows `PIN 482916` and, when not running, `Servidor detenido`,
+  `Error: puerto en uso` (`ServerStatusLabel.of`: a failure reason containing "in use"/`EADDRINUSE`)
+  or `Error: <reason>`. Plain text only; focus order on both screens is unchanged.
 
 ## Boundaries
 - Depends on feature modules' public interfaces only; contains no torrent, HTTP or VLC logic itself.

@@ -42,6 +42,7 @@ import androidx.tv.material3.RadioButton
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.teachermovies.tv.R
+import com.teachermovies.tv.ui.server.ServerPinAndStatus
 
 /**
  * The Configuración section bound to its [SettingsViewModel]. Every time the section is shown the
@@ -60,7 +61,8 @@ fun SettingsRoute(viewModel: SettingsViewModel, modifier: Modifier = Modifier) {
 }
 
 /**
- * HTTP port on the left, download volume list on the right.
+ * HTTP port on the left, with the server address, pairing PIN and (when not running) server state
+ * under it as plain, unfocusable text; download volume list on the right.
  *
  * Focus: DOWN from the tab row enters on the port field (then on whatever last had focus in the
  * section). On the port field UP/DOWN change the port by one -- so they do not move focus -- OK
@@ -99,6 +101,12 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+            Text(text = stringResource(R.string.settings_server_title), style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = uiState.serverUrl ?: stringResource(R.string.first_run_no_network),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            ServerPinAndStatus(pin = uiState.pin, serverState = uiState.serverState, style = MaterialTheme.typography.bodyLarge)
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -9,20 +9,37 @@ import com.teachermovies.core.repo.TorrentRepository
 import com.teachermovies.core.settings.DataStoreSettingsRepository
 import com.teachermovies.core.settings.SettingsRepository
 import com.teachermovies.core.settings.settingsDataStore
+import com.teachermovies.http.HttpServerController
+import com.teachermovies.http.LayoutSubtitleStore
+import com.teachermovies.http.LocalHttpServer
+import com.teachermovies.http.RunningServer
+import com.teachermovies.http.ServerDeps
+import com.teachermovies.http.auth.PairingManager
+import com.teachermovies.player.api.Player
+import com.teachermovies.player.api.VideoSurfaceHost
+import com.teachermovies.player.vlc.VlcPlayer
 import com.teachermovies.storage.AndroidStorageVolumeProvider
 import com.teachermovies.storage.FileSpaceProvider
+import com.teachermovies.storage.SpaceInfo
 import com.teachermovies.storage.SpaceProvider
 import com.teachermovies.storage.StorageVolumeProvider
+import com.teachermovies.storage.VolumeSelection
+import com.teachermovies.storage.VolumeSelector
 import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.jlib.JLibTorrentEngine
 import com.teachermovies.torrent.service.TorrentEngineHolder
 import com.teachermovies.torrent.sync.EngineRepositorySync
 import com.teachermovies.tv.net.LanAddressResolver
 import java.io.File
+import java.security.SecureRandom
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -30,8 +47,9 @@ import kotlinx.coroutines.runBlocking
  * locator calls from outside this class (ADR-0003). Implementations are exposed typed as their
  * interfaces so a caller can never reach through to a concrete type.
  *
- * What is wired is what exists. `:http-server` and `:player` still hold nothing but a placeholder
- * -- no interface to bind yet. [torrentEngine] is the jlibtorrent engine, registered in
+ * What is wired is what exists. [httpServerController] runs the embedded HTTP API (#66), started
+ * by `TeacherMoviesApp`. [player] and [videoSurfaceHost] are the same `VlcPlayer`, the only
+ * place an `org.videolan`-backed type is named. [torrentEngine] is the jlibtorrent engine, registered in
  * [TorrentEngineHolder] so `TorrentService` drives the same instance; this is the only place a
  * `com.teachermovies.torrent.jlib` type is named. No fake is wired in production code (ADR-0003
  * rule 3).
@@ -96,7 +114,75 @@ class AppContainer(application: Application) {
             clock = { System.currentTimeMillis() },
         ).also { it.start() }
 
+    // The persisted volume id as last read, so [downloadVolumeSpace] never blocks on DataStore.
+    // Null until the first read, which only means the selector's fallback for that instant.
+    private val persistedVolumeId: StateFlow<String?> =
+        settingsRepository.settings
+            .map { it.downloadVolumeId }
+            .stateIn(applicationScope, SharingStarted.Eagerly, null)
+
+    /**
+     * Free space of the volume downloads go to right now -- the one [VolumeSelector] picks, as in
+     * [savePathProvider] -- or null when there is no volume at all (Descargas header, #70).
+     */
+    fun downloadVolumeSpace(): SpaceInfo? {
+        val volume =
+            when (val selection = VolumeSelector.select(storageVolumeProvider.volumes(), persistedVolumeId.value, spaceProvider)) {
+                is VolumeSelection.Selected -> selection.volume
+                is VolumeSelection.PersistedMissing -> selection.fallback
+                VolumeSelection.NoneAvailable -> null
+            }
+        return volume?.let { spaceProvider.spaceOf(it.root) }
+    }
+
+    // One libVLC player for the process, handed out as both halves of its contract (ADR-0003,
+    // `docs/modules/player.md`); the player screen (#78) opens and releases it per movie.
+    private val vlcPlayer = VlcPlayer(application)
+
+    val player: Player = vlcPlayer
+
+    val videoSurfaceHost: VideoSurfaceHost = vlcPlayer
+
+    /**
+     * PIN pairing and token validation (ADR-0002). One instance for the process, shared by every
+     * server restart and by the screens that show [PairingManager.currentPin].
+     */
+    val pairingManager: PairingManager =
+        PairingManager(settings = settingsRepository, random = SecureRandom(), clock = System::currentTimeMillis)
+
+    private val appVersion: String =
+        runCatching { application.packageManager.getPackageInfo(application.packageName, 0).versionName }
+            .getOrNull() ?: UNKNOWN_VERSION
+
+    private fun serverDeps(): ServerDeps =
+        ServerDeps(
+            engine = torrentEngine,
+            space = ::downloadVolumeSpace,
+            appVersion = appVersion,
+            clock = System::currentTimeMillis,
+            pairing = pairingManager,
+            subtitles = LayoutSubtitleStore { id -> SubtitleLayoutResolver.layoutFor(id, torrentEngine.torrents.value) },
+        )
+
+    /**
+     * The embedded HTTP server on the configured port, restarted when the port setting changes
+     * (#65). Built here, started by `TeacherMoviesApp.onCreate`; the foreground `TorrentService`
+     * keeps the process -- and so the server -- alive. A bind failure is reported in its `state`.
+     */
+    val httpServerController: HttpServerController =
+        HttpServerController(
+            settings = settingsRepository,
+            depsFactory = ::serverDeps,
+            scope = applicationScope,
+            serverFactory = { deps, port ->
+                val server = LocalHttpServer(deps, port)
+                server.start()
+                RunningServer(server::stop)
+            },
+        )
+
     private companion object {
         const val TORRENT_STATE_DIR = "torrent-state"
+        const val UNKNOWN_VERSION = "unknown"
     }
 }
