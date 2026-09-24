@@ -39,4 +39,19 @@ class SpeechRequestsTest {
             assertTrue("'$it' should be speakable", SpeechRequests.isSpeakable(it))
         }
     }
+
+    @Test
+    fun `allows follows the per-language availability rule`() {
+        SpeechLanguage.entries.forEach { language ->
+            assertTrue(SpeechRequests.allows(SpeakerAvailability.Ready, language))
+            assertFalse(SpeechRequests.allows(SpeakerAvailability.EngineUnavailable, language))
+            assertFalse(SpeechRequests.allows(null, language))
+        }
+        val noEs = SpeakerAvailability.MissingVoice(setOf(SpeechLanguage.ES))
+        assertTrue(SpeechRequests.allows(noEs, SpeechLanguage.EN))
+        assertFalse(SpeechRequests.allows(noEs, SpeechLanguage.ES))
+        val none = SpeakerAvailability.MissingVoice(setOf(SpeechLanguage.EN, SpeechLanguage.ES))
+        assertFalse(SpeechRequests.allows(none, SpeechLanguage.EN))
+        assertFalse(SpeechRequests.allows(none, SpeechLanguage.ES))
+    }
 }
