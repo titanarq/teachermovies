@@ -23,6 +23,10 @@ kotlin {
 
 dependencies {
     implementation(project(":core-model"))
+    // `api`, not `implementation`: `SubtitleEngine.currentSubtitle` is a `StateFlow` and `load`'s
+    // caller drives it off a `CoroutineScope` (same reasoning as `:torrent` and `:player`).
+    api(libs.kotlinx.coroutines.core)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
