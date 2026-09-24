@@ -11,6 +11,9 @@ import com.teachermovies.core.model.TorrentId
  * [hasMetadata] is false until the torrent's file list and total size are known, which is what a
  * caller waits on before calling [TorrentEngine.files]. [savePath] stays null until metadata is
  * known; [errorMessage] carries the engine's own text while [state] is [DownloadState.Error].
+ * [mainFileIndex] is the [TorrentFileInfo.index] of the movie file the engine chose automatically
+ * when metadata arrived (`FileSelectionPolicy`), or null before metadata or when the torrent has no
+ * video file.
  */
 data class TorrentSnapshot(
     val id: TorrentId,
@@ -27,4 +30,5 @@ data class TorrentSnapshot(
     val hasMetadata: Boolean,
     val savePath: String?,
     val errorMessage: String?,
+    val mainFileIndex: Int? = null,
 )

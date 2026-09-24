@@ -88,6 +88,39 @@ class FakeTorrentEngineTest : TorrentEngineContractTest() {
         }
 
     @Test
+    fun emitMetadataAppliesTheAutomaticFileSelection() =
+        runTest {
+            val engine = FakeTorrentEngine()
+            val id = (engine.addMagnet(validMagnet) as EngineResult.Ok).value
+
+            engine.emitMetadata(
+                id,
+                "Movie",
+                listOf("Movie/Sample/sample.mkv" to 50L, "Movie/Movie.mkv" to 1_000L, "Movie/Movie.srt" to 10L, "Movie/cover.jpg" to 5L),
+            )
+
+            val snapshot = engine.torrents.value.first { it.id == id }
+            assertEquals(1, snapshot.mainFileIndex)
+            assertEquals(1_010L, snapshot.totalBytes)
+            val priorities = (engine.files(id) as EngineResult.Ok).value.map { it.priority }
+            assertEquals(listOf(FilePriority.Skip, FilePriority.Normal, FilePriority.Normal, FilePriority.Skip), priorities)
+        }
+
+    @Test
+    fun mainFileIndexIsNullBeforeMetadataAndWithoutAVideo() =
+        runTest {
+            val engine = FakeTorrentEngine()
+            val id = (engine.addMagnet(validMagnet) as EngineResult.Ok).value
+            assertNull(engine.torrents.value.first { it.id == id }.mainFileIndex)
+
+            engine.emitMetadata(id, "Docs", listOf("a.txt" to 1L, "b.pdf" to 2L))
+
+            val snapshot = engine.torrents.value.first { it.id == id }
+            assertNull(snapshot.mainFileIndex)
+            assertEquals(3L, snapshot.totalBytes)
+        }
+
+    @Test
     fun setFilePrioritiesRecomputesTotalBytesExcludingSkipped() =
         runTest {
             val engine = FakeTorrentEngine()
