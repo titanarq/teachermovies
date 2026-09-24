@@ -41,8 +41,9 @@ fun Application.module(deps: ServerDeps) {
         statusRoutes(deps)
         pairRoutes(deps.pairing)
         torrentReadRoutes(deps)
-        // Every protected route goes inside `requireBearer(deps.pairing) { ... }` (ADR-0002).
         torrentWriteRoutes(deps)
+        eventsRoutes(deps)
+        // Every protected route goes inside `requireBearer(deps.pairing) { ... }` (ADR-0002).
     }
 }
 
