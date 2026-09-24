@@ -69,6 +69,15 @@ them too -- those repos target `runs-on: [self-hosted, titanarq]`. Each runner h
 Unit files live in `~/.config/systemd/user/` (`run.sh`, `Restart=always`; needs
 `loginctl show-user $USER -p Linger` = yes to run without a login session).
 
+Under load (both runners plus host worktree builds compiling at once, load average in the low
+20s on 8 cores) a shared, persistent Gradle daemon in `~/.gradle/daemon` is not safe the way the
+cache directories are: `android` jobs on PRs #119-#121 failed with "Gradle build daemon
+disappeared unexpectedly" mid-`assembleDebug`. `ci.yml` runs Gradle with
+`-Dorg.gradle.daemon=false` (`--no-daemon` on the build step) and `-Dorg.gradle.workers.max=2`,
+so CI never registers or reuses a daemon that a concurrent host build could take down, and one
+job leaves cores free for the other runner / worktree builds. `~/.gradle` caches, wrapper dists
+and JDK toolchains stay shared as before.
+
 ```sh
 systemctl --user status gh-runner-teachermovies-1 gh-runner-teachermovies-2
 journalctl --user -u gh-runner-teachermovies-1 -n 50 -o cat

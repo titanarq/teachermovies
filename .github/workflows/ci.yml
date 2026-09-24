@@ -20,6 +20,15 @@ jobs:
       # system JDK runs Gradle; the JDK 17 toolchain is provisioned by foojay into ~/.gradle/jdks.
       ANDROID_HOME: /home/titan/Android/Sdk
       ANDROID_SDK_ROOT: /home/titan/Android/Sdk
+      # ~/.gradle (caches, wrapper dists, JDK toolchains) is still shared read/write across both
+      # runners and the host's own worktree builds -- that part is safe (Gradle file-locks its
+      # caches). What is NOT safe under this host's load is a persistent, shared Gradle *daemon*:
+      # concurrent unrelated builds against the same daemon registry produced "Gradle build daemon
+      # disappeared unexpectedly" on PRs #119-#121 (docs/runbooks/operations.md "Self-hosted
+      # runner"). `--no-daemon` gives every job its own throwaway JVM instead of racing for one
+      # registered in ~/.gradle/daemon; `workers.max=2` keeps one job from claiming most of the
+      # host's 8 cores while the other runner or a host worktree build is also compiling.
+      GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2
     steps:
       - uses: actions/checkout@v4
 
@@ -38,7 +47,7 @@ jobs:
         if: steps.gradle-present.outputs.present == 'true'
         run: |
           chmod +x gradlew
-          ./gradlew --console=plain assembleDebug
+          ./gradlew --console=plain --no-daemon --max-workers=2 assembleDebug
 
       - name: unit tests (scripts/test.sh)
         if: steps.gradle-present.outputs.present == 'true'
