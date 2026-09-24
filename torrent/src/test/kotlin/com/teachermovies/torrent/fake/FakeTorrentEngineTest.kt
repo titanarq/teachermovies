@@ -6,6 +6,7 @@ import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.EngineStatus
 import com.teachermovies.torrent.api.FilePriority
+import com.teachermovies.torrent.api.RangeReadiness
 import com.teachermovies.torrent.api.TorrentEngineContractTest
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -246,6 +247,92 @@ class FakeTorrentEngineTest : TorrentEngineContractTest() {
                 ),
                 engine.recordedCalls,
             )
+        }
+
+    @Test
+    fun lastWindowRemembersThePrioritizedWindowUntilCleared() =
+        runTest {
+            val engine = FakeTorrentEngine()
+            val id = (engine.addMagnet(validMagnet) as EngineResult.Ok).value
+            assertNull(engine.lastWindow(id))
+
+            engine.prioritizeWindow(id, fileIndex = 0, byteOffset = 100L, windowBytes = 200L)
+            engine.prioritizeWindow(id, fileIndex = 1, byteOffset = 300L, windowBytes = 400L)
+            assertEquals(Triple(1, 300L, 400L), engine.lastWindow(id))
+
+            engine.clearWindow(id)
+            assertNull(engine.lastWindow(id))
+            assertEquals(
+                listOf(
+                    "prioritizeWindow(${id.value},0,100,200)",
+                    "prioritizeWindow(${id.value},1,300,400)",
+                    "clearWindow(${id.value})",
+                ),
+                engine.recordedCalls,
+            )
+        }
+
+    @Test
+    fun rangeReadinessWithEveryPiecePresentIsReadyForTheWholeLength() =
+        runTest {
+            val engine = FakeTorrentEngine()
+            val id = (engine.addMagnet(validMagnet) as EngineResult.Ok).value
+            engine.emitMetadata(id, "Movie", listOf("Movie.mkv" to 1_000L))
+            engine.setPieces(id, pieceLengthBytes = 100, have = (0..9).toSet())
+
+            val result = engine.rangeReadiness(id, fileIndex = 0, byteOffset = 150L, lengthBytes = 400L)
+
+            assertEquals(EngineResult.Ok(RangeReadiness(ready = true, readyBytes = 400L, missingPieces = emptyList())), result)
+        }
+
+    @Test
+    fun rangeReadinessWithAHoleIsReadyOnlyUpToTheHole() =
+        runTest {
+            val engine = FakeTorrentEngine()
+            val id = (engine.addMagnet(validMagnet) as EngineResult.Ok).value
+            engine.emitMetadata(id, "Movie", listOf("Movie.mkv" to 1_000L))
+            engine.setPieces(id, pieceLengthBytes = 100, have = (0..9).toSet() - 3)
+
+            val result = engine.rangeReadiness(id, fileIndex = 0, byteOffset = 150L, lengthBytes = 400L)
+
+            assertEquals(EngineResult.Ok(RangeReadiness(ready = false, readyBytes = 150L, missingPieces = listOf(3))), result)
+        }
+
+    @Test
+    fun rangeReadinessMapsALaterFileToItsAbsolutePieces() =
+        runTest {
+            val engine = FakeTorrentEngine()
+            val id = (engine.addMagnet(validMagnet) as EngineResult.Ok).value
+            engine.emitMetadata(id, "Movie", listOf("Movie.en.srt" to 250L, "Movie.mkv" to 1_000L))
+            engine.setPieces(id, pieceLengthBytes = 100, have = setOf(0, 1, 2, 5))
+
+            val result = engine.rangeReadiness(id, fileIndex = 1, byteOffset = 0L, lengthBytes = 300L)
+
+            assertEquals(EngineResult.Ok(RangeReadiness(ready = false, readyBytes = 50L, missingPieces = listOf(3, 4))), result)
+        }
+
+    @Test
+    fun rangeReadinessWithoutAPieceModelHasNothingOnDisk() =
+        runTest {
+            val engine = FakeTorrentEngine()
+            val id = (engine.addMagnet(validMagnet) as EngineResult.Ok).value
+            engine.emitMetadata(id, "Movie", listOf("Movie.mkv" to 1_000L))
+
+            val result = engine.rangeReadiness(id, fileIndex = 0, byteOffset = 0L, lengthBytes = 100L)
+
+            assertEquals(EngineResult.Ok(RangeReadiness(ready = false, readyBytes = 0L, missingPieces = listOf(0))), result)
+        }
+
+    @Test
+    fun rangeReadinessOfAFileTheMetadataDoesNotListIsNotReady() =
+        runTest {
+            val engine = FakeTorrentEngine()
+            val id = (engine.addMagnet(validMagnet) as EngineResult.Ok).value
+            engine.emitMetadata(id, "Movie", listOf("Movie.mkv" to 1_000L))
+
+            val result = engine.rangeReadiness(id, fileIndex = 5, byteOffset = 0L, lengthBytes = 100L)
+
+            assertEquals(EngineResult.Failure(EngineError.NotReady), result)
         }
 
     private fun sha1Hex(bytes: ByteArray): String {
