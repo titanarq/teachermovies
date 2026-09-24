@@ -29,6 +29,7 @@ import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.EngineStatus
 import com.teachermovies.torrent.api.FilePriority
 import com.teachermovies.torrent.api.MagnetUri
+import com.teachermovies.torrent.api.RangeReadiness
 import com.teachermovies.torrent.api.SavePathProvider
 import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.api.TorrentFileInfo
@@ -365,6 +366,14 @@ class JLibTorrentEngine(
 
     /** Window prioritisation is epic E7 (#8): [EngineError.Unsupported] for a known torrent. */
     override suspend fun clearWindow(id: TorrentId): EngineResult<Unit> = unsupported(id)
+
+    /** The readiness query is implemented in #94: [EngineError.Unsupported] for a known torrent. */
+    override suspend fun rangeReadiness(
+        id: TorrentId,
+        fileIndex: Int,
+        byteOffset: Long,
+        lengthBytes: Long,
+    ): EngineResult<RangeReadiness> = unsupported(id)
 
     // -- alert thread: copy plain values out, touch nothing else --------------------------------
 

@@ -19,10 +19,13 @@ import kotlinx.coroutines.launch
  * long as [scope] stays alive. [StateFlow]'s own conflation means [currentSubtitle] only emits
  * when the cue actually changes: repeated positions inside the same cue, or positions in two
  * different gaps, produce no new emission.
+ *
+ * @param maxGapMs how long after a cue has ended [cueForCapture] still resolves to it.
  */
 class SubtitleEngine(
     private val positionMs: Flow<Long>,
     private val scope: CoroutineScope,
+    private val maxGapMs: Long = 3_000,
 ) {
     private val mutableCurrentSubtitle = MutableStateFlow<SubtitleCue?>(null)
     val currentSubtitle: StateFlow<SubtitleCue?> = mutableCurrentSubtitle.asStateFlow()
@@ -46,5 +49,15 @@ class SubtitleEngine(
     fun load(track: SubtitleTrack?) {
         index = track?.let { SubtitleIndex(it) }
         mutableCurrentSubtitle.value = index?.cueAt(lastPositionMs)
+    }
+
+    /**
+     * The line a "what did they say?" capture at [positionMs] refers to: the cue covering
+     * [positionMs], or the previous cue when it ended no more than [maxGapMs] before it (the
+     * viewer reacts after the line is over); `null` otherwise, and while no track is loaded.
+     */
+    fun cueForCapture(positionMs: Long): SubtitleCue? {
+        val cue = index?.cueAtOrBefore(positionMs) ?: return null
+        return if (positionMs - cue.endMs <= maxGapMs) cue else null
     }
 }

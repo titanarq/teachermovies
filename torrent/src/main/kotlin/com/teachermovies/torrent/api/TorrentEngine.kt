@@ -80,4 +80,24 @@ interface TorrentEngine {
 
     /** Clears any window set by [prioritizeWindow] for torrent [id], returning to normal ordering. */
     suspend fun clearWindow(id: TorrentId): EngineResult<Unit>
+
+    /**
+     * The readiness query playback uses before opening or resuming an incomplete file (epic #8,
+     * ADR-0001 §4): reports whether `[byteOffset, byteOffset + lengthBytes)` of file [fileIndex] in
+     * torrent [id] is on disk, how many bytes are available contiguously from [byteOffset], and
+     * which covering pieces are still missing (see [RangeReadiness]). Pieces arrive out of order, so
+     * the torrent's overall progress cannot answer this.
+     *
+     * The covering pieces are those [PieceWindowCalculator.piecesFor] computes; a [lengthBytes] of
+     * zero or less asks about the single piece containing [byteOffset].
+     *
+     * Returns `Failure(EngineError.UnknownTorrent)` for an unknown [id] and
+     * `Failure(EngineError.NotReady)` before the torrent's metadata is known.
+     */
+    suspend fun rangeReadiness(
+        id: TorrentId,
+        fileIndex: Int,
+        byteOffset: Long,
+        lengthBytes: Long,
+    ): EngineResult<RangeReadiness>
 }

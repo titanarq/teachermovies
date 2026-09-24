@@ -41,4 +41,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.server.test.host)
+    // `EventsRouteTest` (#62) needs a real client against a real loopback port; see libs.versions.toml.
+    testImplementation(libs.ktor.client.core)
+    testImplementation(libs.ktor.client.cio)
 }
