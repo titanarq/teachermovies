@@ -1,6 +1,7 @@
 package com.teachermovies.tv.di
 
 import android.app.Application
+import android.os.Build
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import com.teachermovies.assistant.AssistantSpeechController
@@ -18,6 +19,9 @@ import com.teachermovies.core.repo.TorrentRepository
 import com.teachermovies.core.settings.DataStoreSettingsRepository
 import com.teachermovies.core.settings.SettingsRepository
 import com.teachermovies.core.settings.settingsDataStore
+import com.teachermovies.discovery.AndroidNsdRegistrar
+import com.teachermovies.discovery.NsdServiceAnnouncer
+import com.teachermovies.discovery.ServiceAnnouncer
 import com.teachermovies.http.HttpServerController
 import com.teachermovies.http.LayoutSubtitleStore
 import com.teachermovies.http.LocalHttpServer
@@ -38,6 +42,7 @@ import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.jlib.JLibTorrentEngine
 import com.teachermovies.torrent.service.TorrentEngineHolder
 import com.teachermovies.torrent.sync.EngineRepositorySync
+import com.teachermovies.tv.discovery.ServerAnnouncementCoordinator
 import com.teachermovies.tv.net.LanAddressResolver
 import java.io.File
 import java.security.SecureRandom
@@ -210,6 +215,22 @@ class AppContainer(application: Application) {
                 server.start()
                 RunningServer(server::stop)
             },
+        )
+
+    /** Announces the TV's HTTP service over NSD (#103); failures only show on its own `state`. */
+    val serviceAnnouncer: ServiceAnnouncer = NsdServiceAnnouncer(AndroidNsdRegistrar(application))
+
+    /**
+     * Keeps [serviceAnnouncer] in step with [httpServerController]: announced with the server's
+     * port while it runs, withdrawn when it stops or fails. Started by `TeacherMoviesApp.onCreate`
+     * right after the server. `Build.MODEL` is the device name; this is the only place it is read.
+     */
+    val serverAnnouncementCoordinator: ServerAnnouncementCoordinator =
+        ServerAnnouncementCoordinator(
+            announcer = serviceAnnouncer,
+            serverState = httpServerController.state,
+            deviceName = { Build.MODEL },
+            scope = applicationScope,
         )
 
     private companion object {

@@ -19,5 +19,7 @@ class TeacherMoviesApp : Application() {
         super.onCreate()
         container = AppContainer(this)
         container.httpServerController.start()
+        // Announces the server on the LAN while it runs (#103); never on the server's path.
+        container.serverAnnouncementCoordinator.start()
     }
 }
