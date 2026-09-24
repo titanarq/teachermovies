@@ -30,6 +30,12 @@ English-learning assistant from a hidden subtitle track.
    piece prioritisation / deadlines around a playback position plus a read-ahead buffer), even
    though that feature is implemented after complete downloads work. A `FakeTorrentEngine` backs
    all tests above the torrent module.
+
+   Decided 2026-09-24 (issue #32): the interface carries a byte-range readiness query, not just a
+   download percentage, since pieces arrive out of order and the player must know precisely
+   whether the next seconds are on disk. Signature, added in #93 and implemented in #94:
+   `suspend fun rangeReadiness(id: TorrentId, fileIndex: Int, byteOffset: Long, lengthBytes: Long): EngineResult<RangeReadiness>`,
+   with `data class RangeReadiness(val ready: Boolean, val readyBytes: Long, val missingPieces: List<Int>)`.
 5. **Local HTTP server** embedded in the app on `0.0.0.0:8787` (configurable port, LAN only),
    with SSE or WebSocket for progress and PIN-pairing + bearer-token auth; **NSD/mDNS** for
    discovery. The concrete server library is chosen by its first task.
