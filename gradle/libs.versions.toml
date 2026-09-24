@@ -8,6 +8,9 @@
 agp = "8.6.1"
 kotlin = "2.1.21"
 ksp = "2.1.21-2.0.2"
+# Built with Kotlin 2.1, so it matches the toolchain above. ADR-0004's table has no row for it
+# yet and needs one.
+coroutines = "1.10.2"
 foojayResolver = "0.8.0" # applied from settings.gradle.kts, which cannot read this catalog
 coreKtx = "1.16.0"
 lifecycle = "2.9.4"
@@ -28,6 +31,11 @@ androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecyc
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 androidx-tv-material = { group = "androidx.tv", name = "tv-material", version.ref = "tvMaterial" }
+
+# Every module: coroutines + Flow/StateFlow is the concurrency model (AGENTS.md); the test artifact
+# is what gives the JVM tests `runTest`.
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
 # :core-model (Room metadata -- #40, DataStore settings -- #41)
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
