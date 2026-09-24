@@ -30,6 +30,8 @@ import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.EngineStatus
 import com.teachermovies.torrent.api.FilePriority
 import com.teachermovies.torrent.api.MagnetUri
+import com.teachermovies.torrent.api.PieceRange
+import com.teachermovies.torrent.api.PieceWindowCalculator
 import com.teachermovies.torrent.api.RangeReadiness
 import com.teachermovies.torrent.api.SavePathProvider
 import com.teachermovies.torrent.api.TorrentEngine
@@ -72,8 +74,14 @@ import java.io.IOException
  * metadata is known (a magnet's `metadata_received_alert`, or a `.torrent` file's successful add) the
  * engine applies `FileSelectionPolicy` through `prioritize_files` and records the chosen
  * [TorrentSnapshot.mainFileIndex]. Control operations act on the session's handle for the id and
- * republish at once; unknown ids answer [EngineError.UnknownTorrent]. Window prioritisation (E7)
- * answers [EngineError.Unsupported] until it lands.
+ * republish at once; unknown ids answer [EngineError.UnknownTorrent].
+ *
+ * Read-ahead window (#94): [prioritizeWindow] maps the byte window to pieces
+ * ([PieceWindowCalculator]) and applies only the delta against the window it last set for that
+ * torrent ([WindowDeadlinePlanner]): pieces that entered get piece priority 7 and a piece deadline
+ * ([deadlineStepMs] for the first, one step more for each following one), pieces that left get
+ * their deadline reset and priority 4. [clearWindow] drops every deadline; [rangeReadiness] answers
+ * from `have_piece`.
  *
  * Resume data (#53): the engine asks libtorrent for a torrent's resume data (with its info dict, so
  * a magnet never re-fetches metadata) every [RESUME_SAVE_MILLIS] for the torrents that need it,
@@ -89,12 +97,15 @@ import java.io.IOException
  *   unless [resumeData] says otherwise.
  * @param dispatcher where the engine's bookkeeping runs; it is confined to one task at a time.
  * @param resumeData where resume data is persisted.
+ * @param deadlineStepMs the deadline step, in milliseconds, between consecutive pieces entering the
+ *   read-ahead window; smaller is more aggressive.
  */
 class JLibTorrentEngine(
     private val savePaths: SavePathProvider,
     private val stateDir: File,
     dispatcher: CoroutineDispatcher,
     private val resumeData: ResumeDataStore = FileResumeDataStore(File(stateDir, RESUME_DIR)),
+    private val deadlineStepMs: Int = DEFAULT_DEADLINE_STEP_MS,
 ) : TorrentEngine {
     @OptIn(ExperimentalCoroutinesApi::class)
     private val serial: CoroutineDispatcher = dispatcher.limitedParallelism(1)
@@ -111,6 +122,9 @@ class JLibTorrentEngine(
     private val snapshots = LinkedHashMap<TorrentId, TorrentSnapshot>()
     private var ticker: Job? = null
     private var resumeTicker: Job? = null
+
+    /** The read-ahead window last applied per torrent by [prioritizeWindow]. */
+    private val windows = HashMap<TorrentId, PieceRange>()
 
     /** Torrents re-added from resume data whose `add_torrent_alert` has not arrived yet. */
     private val restored = HashSet<TorrentId>()
@@ -206,6 +220,8 @@ class JLibTorrentEngine(
             }
             pendingResumeSaves.value = 0
             restored.clear()
+            // Deadlines live in the session; a restarted session starts without any.
+            windows.clear()
             status.value = EngineStatus.Stopped
         }
     }
@@ -324,6 +340,7 @@ class JLibTorrentEngine(
             }
             snapshots.remove(id)
             restored.remove(id)
+            windows.remove(id)
             publish()
             try {
                 resumeData.delete(id)
@@ -357,16 +374,50 @@ class JLibTorrentEngine(
             }
         }
 
-    /** Window prioritisation is epic E7 (#8): [EngineError.Unsupported] for a known torrent. */
+    /**
+     * Slides torrent [id]'s read-ahead window to the pieces covering `[byteOffset, byteOffset +
+     * windowBytes)` of file [fileIndex], applying only [WindowDeadlinePlanner.plan]'s delta against
+     * the window set last: entering pieces get priority 7 and a deadline, leaving pieces get their
+     * deadline reset and priority 4, and every other piece is left alone (the same window applies
+     * nothing). [EngineError.NotReady] before metadata or for a file index the torrent does not have.
+     */
     override suspend fun prioritizeWindow(
         id: TorrentId,
         fileIndex: Int,
         byteOffset: Long,
         windowBytes: Long,
-    ): EngineResult<Unit> = unsupported(id)
+    ): EngineResult<Unit> =
+        onHandle(id, needsMetadata = true) { handle ->
+            val layout = layoutOf(handle, fileIndex) ?: return@onHandle failure(EngineError.NotReady)
+            val current = layout.piecesFor(byteOffset, windowBytes)
+            val plan = WindowDeadlinePlanner.plan(windows[id], current, deadlineStepMs)
+            for (piece in plan.reset) {
+                handle.resetPieceDeadline(piece)
+                handle.piecePriority(piece, Priority.fromSwig(DEFAULT_PIECE_PRIORITY))
+            }
+            for ((piece, deadlineMs) in plan.deadlines) {
+                handle.piecePriority(piece, Priority.fromSwig(WINDOW_PIECE_PRIORITY))
+                handle.setPieceDeadline(piece, deadlineMs)
+            }
+            windows[id] = current
+            EngineResult.Ok(Unit)
+        }
 
-    /** Window prioritisation is epic E7 (#8): [EngineError.Unsupported] for a known torrent. */
-    override suspend fun clearWindow(id: TorrentId): EngineResult<Unit> = unsupported(id)
+    /**
+     * Drops every piece deadline of torrent [id], returns the pieces of the remembered window to
+     * priority 4 and forgets it; Ok when no window was set. [EngineError.NotReady] before metadata.
+     */
+    override suspend fun clearWindow(id: TorrentId): EngineResult<Unit> =
+        onHandle(id, needsMetadata = true) { handle ->
+            handle.clearPieceDeadlines()
+            windows[id]?.let { window ->
+                for (piece in window.firstPiece..window.lastPiece) {
+                    handle.piecePriority(piece, Priority.fromSwig(DEFAULT_PIECE_PRIORITY))
+                }
+            }
+            windows.remove(id)
+            EngineResult.Ok(Unit)
+        }
 
     /** The readiness query is implemented in #94: [EngineError.Unsupported] for a known torrent. */
     override suspend fun rangeReadiness(
@@ -700,6 +751,25 @@ class JLibTorrentEngine(
             }
         }
 
+    /**
+     * The piece geometry of [handle]'s torrent as plain values, for file [fileIndex]; null when the
+     * metadata is not there or the torrent has no such file.
+     */
+    private fun layoutOf(
+        handle: TorrentHandle,
+        fileIndex: Int,
+    ): PieceLayout? {
+        val info = handle.torrentFile() ?: return null
+        val storage = info.files()
+        if (fileIndex !in 0 until storage.numFiles()) return null
+        return PieceLayout(
+            pieceLengthBytes = info.pieceLength(),
+            totalPieces = info.numPieces(),
+            fileOffsetInTorrent = storage.fileOffset(fileIndex),
+            fileSizeBytes = storage.fileSize(fileIndex),
+        )
+    }
+
     private fun refreshAndPublish(id: TorrentId) {
         refresh(id)
         publish()
@@ -730,7 +800,30 @@ class JLibTorrentEngine(
         const val RESUME_DIR = "resume"
 
         const val SHA1_HEX_LENGTH = 40
+
+        /** [deadlineStepMs]'s default: the first piece of a new window is wanted within 100 ms. */
+        const val DEFAULT_DEADLINE_STEP_MS = 100
+
+        /** libtorrent's default piece priority, to which pieces leaving the window return. */
+        const val DEFAULT_PIECE_PRIORITY = 4
+
+        /** libtorrent's top piece priority, given to pieces inside the window. */
+        const val WINDOW_PIECE_PRIORITY = 7
     }
+}
+
+/** One file's place in its torrent's pieces, read from `TorrentInfo`: plain values only. */
+internal data class PieceLayout(
+    val pieceLengthBytes: Int,
+    val totalPieces: Int,
+    val fileOffsetInTorrent: Long,
+    val fileSizeBytes: Long,
+) {
+    /** The pieces covering `[byteOffset, byteOffset + lengthBytes)` of the file. */
+    fun piecesFor(
+        byteOffset: Long,
+        lengthBytes: Long,
+    ): PieceRange = PieceWindowCalculator.piecesFor(fileOffsetInTorrent, pieceLengthBytes, totalPieces, byteOffset, lengthBytes)
 }
 
 /** What the alert thread hands to [JLibTorrentEngine]'s serial side: plain values only. */
