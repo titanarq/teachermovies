@@ -94,9 +94,27 @@
   state: StateFlow<ServerState>` reports `Stopped` | `Running(port)` | `Failed(port, reason)`; a
   bind failure is `Failed`, never a crash. `start()`/`stop()` are idempotent. Hosting this in the
   app/service and showing the pairing PIN is #66.
+- `GET /api/events` (#62): live torrent progress over Server-Sent Events, plain
+  `call.respondTextWriter(ContentType.Text.EventStream)` (no `sse` plugin), wrapped in
+  `requireBearer(pairing, allowQueryToken = true)`. `Cache-Control: no-cache`; sends
+  `event: torrents` with `[TorrentDto]` immediately and again whenever `engine.torrents` changes,
+  conflated and throttled to at most one event per second, plus a `: ping` comment every 15 s. Ends
+  quietly (no exception reaches the client) when the connection drops. `com.teachermovies.http.sse.
+  SseFormat.event(name, data)` renders one frame (a multi-line `data` becomes one `data:` line per
+  input line); the web client consuming this is #63.
 
 ## Boundaries
 - Talks to `TorrentEngine` and repositories through interfaces only. No UPnP, nothing exposed to the Internet. Never log tokens/PINs.
 
 ## Tests
-Route tests with an in-process test client and `FakeTorrentEngine`; auth tests (401 without token) for every protected endpoint, and a test that `?token=` is accepted only on `/api/events`. `LanAddressPolicyTest` is table-driven over both address families; route tests other than the LAN-guard's own use `ServerDeps.allowTestRemoteHeader = true` with a test client that sends `X-Test-Remote`, since the in-process test client's real remote address is never an IP literal.
+Route tests with an in-process test client and `FakeTorrentEngine`; auth tests (401 without token)
+for every protected endpoint, and a test that `?token=` is accepted only on `/api/events`.
+`LanAddressPolicyTest` is table-driven over both address families; route tests other than the
+LAN-guard's own use `ServerDeps.allowTestRemoteHeader = true` with a test client that sends
+`X-Test-Remote` (`lanClient()`), since the in-process test client's real remote address is never an
+IP literal. `EventsRouteTest`'s happy path drives a real `embeddedServer` on a loopback port with a
+real client engine (`ktor-client-cio`, test-only) instead of `testApplication`: the in-process test
+host runs a request's whole pipeline -- including the response body -- to completion before handing
+anything back to its client, which an SSE stream that outlives the request never does on its own;
+a real loopback connection has no such limitation and needs no `X-Test-Remote` override, since
+`127.0.0.1` already satisfies `LanAddressPolicy`.
