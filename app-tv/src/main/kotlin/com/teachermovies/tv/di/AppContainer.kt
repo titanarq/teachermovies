@@ -42,6 +42,8 @@ import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.jlib.JLibTorrentEngine
 import com.teachermovies.torrent.service.TorrentEngineHolder
 import com.teachermovies.torrent.sync.EngineRepositorySync
+import com.teachermovies.tv.autostart.BootAutostartCoordinator
+import com.teachermovies.tv.autostart.ServiceAutostart
 import com.teachermovies.tv.discovery.ServerAnnouncementCoordinator
 import com.teachermovies.tv.net.LanAddressResolver
 import java.io.File
@@ -231,6 +233,17 @@ class AppContainer(application: Application) {
             serverState = httpServerController.state,
             deviceName = { Build.MODEL },
             scope = applicationScope,
+        )
+
+    /**
+     * The boot decision (#126): on `BOOT_COMPLETED`, when `autostartOnBoot` is on, starts the HTTP
+     * server and the foreground `TorrentService` through their existing entry points.
+     * `BootCompletedReceiver` only delegates to it.
+     */
+    val bootAutostartCoordinator: BootAutostartCoordinator =
+        BootAutostartCoordinator(
+            settings = settingsRepository,
+            autostart = ServiceAutostart(application, httpServerController),
         )
 
     private companion object {
