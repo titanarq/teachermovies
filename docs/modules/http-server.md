@@ -118,6 +118,12 @@
   quietly (no exception reaches the client) when the connection drops. `com.teachermovies.http.sse.
   SseFormat.event(name, data)` renders one frame (a multi-line `data` becomes one `data:` line per
   input line); the web client consuming this is #63.
+- Phone web UI (#63, `WebUiRoutes.kt`), public: `GET /` -> 200 `text/html` (`web/index.html`),
+  `GET /static/<file>` -> any file under `src/main/resources/web/` (`app.js`, `app.css`) via
+  `staticResources`; vanilla JS, no build step, no external resources. The page pairs with
+  `POST /api/pair` when `localStorage` holds no token, sends `Authorization: Bearer` on every
+  protected call (a 401 clears the token and shows the PIN form), follows `/api/events?token=` and
+  falls back to polling `GET /api/torrents` every 3 s when the stream fails.
 
 ## Boundaries
 - Talks to `TorrentEngine` and repositories through interfaces only. No UPnP, nothing exposed to the Internet. Never log tokens/PINs.
