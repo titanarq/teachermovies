@@ -2,10 +2,9 @@
 # first infra task creates them. Instrumented tests are never run here (no emulator on purpose).
 name: CI
 
+# PRs only: the merge commit on main is the PR head already tested (nothing reads main-branch runs).
 on:
   pull_request:
-  push:
-    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -13,7 +12,14 @@ concurrency:
 
 jobs:
   android:
-    runs-on: ubuntu-latest
+    # Self-hosted runners on the owner's machine (org is on the Free plan; hosted minutes are
+    # exhausted). See docs/runbooks/operations.md "Self-hosted runner". Private repo only.
+    runs-on: [self-hosted, teachermovies]
+    env:
+      # The machine's own SDK (platforms;android-35, build-tools;35.0.0 installed). JDK: the
+      # system JDK runs Gradle; the JDK 17 toolchain is provisioned by foojay into ~/.gradle/jdks.
+      ANDROID_HOME: /home/titan/Android/Sdk
+      ANDROID_SDK_ROOT: /home/titan/Android/Sdk
     steps:
       - uses: actions/checkout@v4
 
@@ -22,19 +28,11 @@ jobs:
           if [ -f gradlew ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; echo "No Gradle project yet -- skipping build and tests."; fi
 
       - if: steps.gradle-present.outputs.present == 'true'
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - if: steps.gradle-present.outputs.present == 'true'
-        uses: android-actions/setup-android@v4
-        with:
-          # v3 defaulted to the removed `tools` package and failed; install only what the build needs.
-          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
-
-      - if: steps.gradle-present.outputs.present == 'true'
         uses: gradle/actions/setup-gradle@v4
+        with:
+          # ~/.gradle persists on the self-hosted machine; the Actions cache would only add
+          # upload/download time (and two concurrent jobs share that Gradle user home safely).
+          cache-disabled: true
 
       - name: build (debug)
         if: steps.gradle-present.outputs.present == 'true'
