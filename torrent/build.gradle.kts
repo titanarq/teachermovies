@@ -22,7 +22,11 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":core-model"))
+    // `api`, not `implementation`: `TorrentId`/`DownloadState` (from `:core-model`) and `StateFlow`
+    // appear in `TorrentEngine`'s own public contract, so a consumer compiles against them too.
+    api(project(":core-model"))
+    api(libs.kotlinx.coroutines.core)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
