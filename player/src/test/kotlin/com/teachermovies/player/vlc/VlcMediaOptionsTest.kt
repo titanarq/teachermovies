@@ -41,4 +41,35 @@ class VlcMediaOptionsTest {
     fun asksForNoOptionForAPositionBeforeTheBeginning() {
         assertNull(VlcMediaOptions.startTime(-1_000))
     }
+
+    // -- Media options ---------------------------------------------------------------------------
+
+    @Test
+    fun aFinishedFileFromTheBeginningGetsNoMediaOption() {
+        assertEquals(emptyList<String>(), VlcMediaOptions.forMedia(0, growing = false, fileCachingMs = 3000))
+    }
+
+    @Test
+    fun aFinishedFileResumedGetsOnlyTheStartTime() {
+        assertEquals(
+            listOf(":start-time=90.0"),
+            VlcMediaOptions.forMedia(90_000, growing = false, fileCachingMs = 3000),
+        )
+    }
+
+    @Test
+    fun aGrowingFileFromTheBeginningGetsTheCacheAndExactSeekOptions() {
+        assertEquals(
+            listOf(":file-caching=3000", ":no-input-fast-seek"),
+            VlcMediaOptions.forMedia(0, growing = true, fileCachingMs = 3000),
+        )
+    }
+
+    @Test
+    fun aGrowingFileResumedGetsTheStartTimeFirstThenTheGrowingOptions() {
+        assertEquals(
+            listOf(":start-time=1.234", ":file-caching=5000", ":no-input-fast-seek"),
+            VlcMediaOptions.forMedia(1_234, growing = true, fileCachingMs = 5000),
+        )
+    }
 }
