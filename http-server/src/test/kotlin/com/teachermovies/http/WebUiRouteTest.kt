@@ -58,6 +58,17 @@ class WebUiRouteTest {
         }
 
     @Test
+    fun `app js sends the bearer header and opens SSE with the token query`() =
+        testApplication {
+            application { module(deps()) }
+            val body = lanClient().get("/static/app.js").bodyAsText()
+
+            assertTrue(body.contains("'Bearer '"))
+            assertTrue(body.contains("new EventSource('/api/events?token=' + encodeURIComponent("))
+            assertTrue(body.contains("POLL_EVERY_MS = 3000"))
+        }
+
+    @Test
     fun `app css is served as css`() =
         testApplication {
             application { module(deps()) }
