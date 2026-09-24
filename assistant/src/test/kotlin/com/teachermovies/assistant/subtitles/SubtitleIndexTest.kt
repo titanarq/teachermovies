@@ -101,4 +101,43 @@ class SubtitleIndexTest {
         assertEquals(early, index.cueAt(1_500L))
         assertEquals(late, index.cueAt(5_500L))
     }
+
+    @Test
+    fun `cueAtOrBefore returns null for an empty track`() {
+        val index = SubtitleIndex(SubtitleTrack(cues = emptyList()))
+
+        assertNull(index.cueAtOrBefore(0L))
+        assertNull(index.cueAtOrBefore(1_000L))
+    }
+
+    @Test
+    fun `cueAtOrBefore returns null before the first cue`() {
+        val index = SubtitleIndex(SubtitleTrack(cues = listOf(cue(0, 1_000L, 2_000L))))
+
+        assertNull(index.cueAtOrBefore(999L))
+    }
+
+    @Test
+    fun `cueAtOrBefore returns the cue containing the position`() {
+        val first = cue(0, 1_000L, 2_000L)
+        val second = cue(1, 3_000L, 4_000L)
+        val index = SubtitleIndex(SubtitleTrack(cues = listOf(first, second)))
+
+        assertEquals(first, index.cueAtOrBefore(1_000L))
+        assertEquals(first, index.cueAtOrBefore(1_999L))
+        assertEquals(second, index.cueAtOrBefore(3_500L))
+    }
+
+    @Test
+    fun `cueAtOrBefore returns the previous cue in a short or long gap and after the last cue`() {
+        val first = cue(0, 1_000L, 2_000L)
+        val second = cue(1, 30_000L, 31_000L)
+        val index = SubtitleIndex(SubtitleTrack(cues = listOf(first, second)))
+
+        assertEquals(first, index.cueAtOrBefore(2_000L))
+        assertEquals(first, index.cueAtOrBefore(2_500L))
+        assertEquals(first, index.cueAtOrBefore(29_999L))
+        assertEquals(second, index.cueAtOrBefore(31_000L))
+        assertEquals(second, index.cueAtOrBefore(900_000L))
+    }
 }
