@@ -46,6 +46,17 @@
       <p id="empty" class="hint">No hay descargas.</p>
     </section>
   </section>
+  <dialog id="del-dialog" class="card dialog" aria-labelledby="del-title">
+    <form method="dialog">
+      <h2 id="del-title">¿Borrar esta descarga?</h2>
+      <p id="del-name" class="name"></p>
+      <label class="check"><input id="del-files" type="checkbox"> Borrar también los archivos</label>
+      <div class="actions">
+        <button type="submit" value="cancel" class="btn">CANCELAR</button>
+        <button type="submit" value="ok" class="btn btn-danger-solid">BORRAR</button>
+      </div>
+    </form>
+  </dialog>
 </main>
 
 <script src="/static/app.js" defer></script>

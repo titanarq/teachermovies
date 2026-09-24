@@ -148,6 +148,37 @@ textarea { resize: vertical; word-break: break-all; }
 .item .stats { color: var(--muted); font-size: 0.9rem; }
 .item .stats span + span::before { content: " · "; }
 
+.item .row-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.item .row-actions .btn { flex: 1 1 140px; }
+.item .msg { grid-column: 1 / -1; margin: 0; }
+
+.btn-danger { border-color: var(--bad); color: var(--bad); }
+.btn-danger-solid { border-color: var(--bad); background: var(--bad); color: #fff; }
+
+.dialog {
+  width: min(92vw, 420px);
+  border: 0;
+  color: var(--fg);
+}
+
+.dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+.dialog .name { font-weight: 600; overflow-wrap: anywhere; margin: 0 0 12px; }
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+}
+
+.check input { width: 22px; height: 22px; }
+
 .visually-hidden {
   position: absolute;
   width: 1px;
