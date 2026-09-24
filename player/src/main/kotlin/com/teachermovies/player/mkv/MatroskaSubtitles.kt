@@ -41,7 +41,8 @@ internal object MatroskaSubtitles {
         }
 
     /**
-     * Writes the subtitle track [trackNumber] of [file] to [destination]: SRT for `S_TEXT/UTF8`, ASS
+     * Writes the subtitle track [trackNumber] of [file] to [destination]: SRT for `S_TEXT/UTF8` and
+     * `S_TEXT/WEBVTT` (cue text only, through [WebVttText]), ASS
      * for `S_TEXT/ASS`/`S_TEXT/SSA`. [destination] only appears once every cue is collected.
      */
     fun extract(
@@ -60,14 +61,20 @@ internal object MatroskaSubtitles {
                         is Walk.Stop -> return walk.result
                     }
                 }
-            val cues = SubtitleWriter.timedCues(collected.blocks.map { decodeBlock(it, collected.track) }, collected.scale)
+            val timed = SubtitleWriter.timedCues(collected.blocks.map { decodeBlock(it, collected.track) }, collected.scale)
+            val cues =
+                if (collected.track.codecId == CODEC_WEBVTT) {
+                    timed.map { SubtitleWriter.TimedCue(it.startMs, it.endMs, WebVttText.toSrt(it.text)) }
+                } else {
+                    timed
+                }
             val format = formatOf(collected.track.codecId)
             val text =
                 when (format) {
                     SubtitleFormat.SRT -> SubtitleWriter.srt(cues)
                     SubtitleFormat.ASS -> SubtitleWriter.ass(assHeader(collected.track), cues)
                 } ?: return SubtitleExtraction.Failed("no cues")
-            writeAtomically(destination, text)
+            SubtitleWriter.writeAtomically(destination, text)
             SubtitleExtraction.Extracted(destination, format)
         } catch (e: ExtractionFailure) {
             SubtitleExtraction.Failed(e.reason)
@@ -388,7 +395,7 @@ internal object MatroskaSubtitles {
     private fun classify(track: TrackInfo): SubtitleExtraction? {
         val codec = track.codecId
         return when {
-            codec == CODEC_UTF8 || codec == CODEC_ASS || codec == CODEC_SSA ->
+            codec == CODEC_UTF8 || codec == CODEC_WEBVTT || codec == CODEC_ASS || codec == CODEC_SSA ->
                 when {
                     track.encodings.any { it.encrypted } -> SubtitleExtraction.Failed("encrypted subtitle track")
                     track.encodings.any { it.algorithm != COMP_ALGO_ZLIB && it.algorithm != COMP_ALGO_HEADER_STRIPPING } ->
@@ -401,7 +408,8 @@ internal object MatroskaSubtitles {
         }
     }
 
-    private fun formatOf(codecId: String): SubtitleFormat = if (codecId == CODEC_UTF8) SubtitleFormat.SRT else SubtitleFormat.ASS
+    private fun formatOf(codecId: String): SubtitleFormat =
+        if (codecId == CODEC_UTF8 || codecId == CODEC_WEBVTT) SubtitleFormat.SRT else SubtitleFormat.ASS
 
     private fun decodeBlock(
         block: RawBlock,
@@ -453,26 +461,6 @@ internal object MatroskaSubtitles {
     }
 
     // endregion
-
-    /** Writes [text] next to [destination] and renames it into place, so a failure leaves no partial file. */
-    private fun writeAtomically(
-        destination: File,
-        text: String,
-    ) {
-        val target = destination.absoluteFile
-        val directory = target.parentFile ?: throw IOException("destination has no directory")
-        val temp = File.createTempFile(".${target.name}.", ".part", directory)
-        try {
-            temp.writeText(text, Charsets.UTF_8)
-            if (!temp.renameTo(target)) {
-                // `renameTo` does not replace an existing file on every platform.
-                target.delete()
-                if (!temp.renameTo(target)) throw IOException("could not write destination")
-            }
-        } finally {
-            temp.delete()
-        }
-    }
 
     private fun File.openChannel(): FileChannel = FileChannel.open(toPath(), StandardOpenOption.READ)
 
@@ -537,6 +525,7 @@ internal object MatroskaSubtitles {
     private const val COMP_ALGO_HEADER_STRIPPING = 3L
 
     private const val CODEC_UTF8 = "S_TEXT/UTF8"
+    private const val CODEC_WEBVTT = "S_TEXT/WEBVTT"
     private const val CODEC_ASS = "S_TEXT/ASS"
     private const val CODEC_SSA = "S_TEXT/SSA"
     private val IMAGE_CODECS = setOf("S_HDMV/PGS", "S_VOBSUB", "S_DVBSUB")
