@@ -51,53 +51,30 @@ Backlog, closed -> Done, `blocked-on-human` -> left as is). Idempotent and quiet
 `scripts/board_sync.py --dry-run`. Remove the timer and script once agent-os#14 is fixed and the
 subtree is pulled.
 
-## Self-hosted runner (GitHub Actions)
+## CI runners
 
-The org is on the Free plan with hosted minutes exhausted, so both workflows run
-`runs-on: [self-hosted, teachermovies]` on this machine. Two runners (`Titan-tm-1`, `Titan-tm-2`)
-are registered at **organization** level (`titanarq`, runner group Default, labels
-`titanarq,teachermovies`) so a PR's jobs run in parallel and other (private) org repos can use
-them too -- those repos target `runs-on: [self-hosted, titanarq]`. Each runner has its own
-`_work/`; they share `~/.gradle` (JDK 17 toolchain via foojay in `~/.gradle/jdks`) and
-`~/Android/Sdk`. No other session registers additional runners without coordinating here first.
+CI runs on **GitHub-hosted runners** (`runs-on: ubuntu-latest`) since the repo went public
+(2026-09-24). The self-hosted runners that used to run it on this machine (`Titan-tm-1..4`) were
+deregistered and deleted the same day.
 
-| unit | runner dir |
-|---|---|
-| `gh-runner-teachermovies-1.service` | `~/actions-runner-teachermovies-1` |
-| `gh-runner-teachermovies-2.service` | `~/actions-runner-teachermovies-2` |
-
-Unit files live in `~/.config/systemd/user/` (`run.sh`, `Restart=always`; needs
-`loginctl show-user $USER -p Linger` = yes to run without a login session).
-
-Under load (both runners plus host worktree builds compiling at once, load average in the low
-20s on 8 cores) a shared, persistent Gradle daemon in `~/.gradle/daemon` is not safe the way the
-cache directories are: `android` jobs on PRs #119-#121 failed with "Gradle build daemon
-disappeared unexpectedly" mid-`assembleDebug`. `ci.yml` runs Gradle with
-`-Dorg.gradle.daemon=false` (`--no-daemon` on the build step) and `-Dorg.gradle.workers.max=2`,
-so CI never registers or reuses a daemon that a concurrent host build could take down, and one
-job leaves cores free for the other runner / worktree builds. `~/.gradle` caches, wrapper dists
-and JDK toolchains stay shared as before.
+**Rule: self-hosted runners must never be registered for this public repo** -- any fork PR could
+run arbitrary code on the machine. The org's Default runner group keeps "Allow public
+repositories" **OFF**:
 
 ```sh
-systemctl --user status gh-runner-teachermovies-1 gh-runner-teachermovies-2
-journalctl --user -u gh-runner-teachermovies-1 -n 50 -o cat
-systemctl --user restart gh-runner-teachermovies-1 gh-runner-teachermovies-2
-gh api orgs/titanarq/actions/runners -q '.runners[] | "\(.name) \(.status) \(.busy)"'
 gh api orgs/titanarq/actions/runner-groups -q '.runner_groups[] | "\(.name) public=\(.allows_public_repositories)"'
 ```
 
-Re-register (runner removed/offline for >14 days, or moved machine): stop the unit, then in the
-runner dir `./config.sh remove --token "$(gh api -X POST orgs/titanarq/actions/runners/remove-token -q .token)"`
-and `./config.sh --unattended --url https://github.com/titanarq --token "$(gh api -X POST orgs/titanarq/actions/runners/registration-token -q .token)" --labels titanarq,teachermovies --name <host>-tm-N`,
-then start the unit. Never echo the tokens. Upgrade: the runner self-updates while online.
+## Interaction limit
 
-**Rule: never let these runners serve a public repo.** The Default runner group must keep
-`allows_public_repositories=false`, and no org repo using them may be made public while they are
-registered -- any fork PR could run arbitrary code on this machine. Deregister first.
+Since going public, the repo has an interaction limit of `collaborators_only` (only collaborators
+can open issues/PRs or comment), so outsiders cannot feed text to the agents. It expires after
+six months; check and renew it:
 
-- Runners Titan-tm-3/4 (`~/actions-runner-teachermovies-{3,4}`, systemd --user units
-  `gh-runner-teachermovies-{3,4}.service`) are org-level but reserved for teachermovies via the
-  `teachermovies`-only label (no `titanarq`), so other repos' CI (agent-os, roedor) can't claim them.
+```sh
+gh api repos/titanarq/teachermovies/interaction-limits
+gh api -X PUT repos/titanarq/teachermovies/interaction-limits -f limit=collaborators_only -f expiry=six_months
+```
 
 ## Known mechanism issues filed upstream
 
