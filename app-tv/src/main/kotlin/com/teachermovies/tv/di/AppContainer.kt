@@ -3,6 +3,9 @@ package com.teachermovies.tv.di
 import android.app.Application
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import com.teachermovies.core.db.TeacherMoviesDatabase
+import com.teachermovies.core.repo.RoomTorrentRepository
+import com.teachermovies.core.repo.TorrentRepository
 import com.teachermovies.core.settings.DataStoreSettingsRepository
 import com.teachermovies.core.settings.SettingsRepository
 import com.teachermovies.core.settings.settingsDataStore
@@ -13,9 +16,12 @@ import com.teachermovies.storage.StorageVolumeProvider
 import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.jlib.JLibTorrentEngine
 import com.teachermovies.torrent.service.TorrentEngineHolder
+import com.teachermovies.torrent.sync.EngineRepositorySync
 import com.teachermovies.tv.net.LanAddressResolver
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -68,6 +74,27 @@ class AppContainer(application: Application) {
         ).also(TorrentEngineHolder::init)
 
     val lanAddressResolver: LanAddressResolver = LanAddressResolver()
+
+    private val torrentDatabase: TeacherMoviesDatabase = TeacherMoviesDatabase.build(application)
+
+    val torrentRepository: TorrentRepository = RoomTorrentRepository(torrentDatabase.torrentDao())
+
+    // Lives for the process (no owner to cancel it): `engineRepositorySync` collects the engine for
+    // as long as the process runs, same as `TorrentEngineHolder`'s own scope.
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Keeps [torrentRepository] in sync with [torrentEngine] (#68), so the Downloads and Library
+     * screens -- and a process restart -- see what the engine reports. Started here, before any
+     * screen can collect it.
+     */
+    val engineRepositorySync: EngineRepositorySync =
+        EngineRepositorySync(
+            engine = torrentEngine,
+            repo = torrentRepository,
+            scope = applicationScope,
+            clock = { System.currentTimeMillis() },
+        ).also { it.start() }
 
     private companion object {
         const val TORRENT_STATE_DIR = "torrent-state"
