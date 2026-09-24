@@ -19,6 +19,7 @@ class HttpServerControllerTest {
             appVersion = "1.2.3",
             clock = { 0L },
             pairing = PairingManager(settings, SecureRandom(), { 0L }),
+            subtitles = FakeSubtitleStore(),
         )
 
     /** Records every start/stop the controller asks for, in order, as e.g. "start:8787". */
