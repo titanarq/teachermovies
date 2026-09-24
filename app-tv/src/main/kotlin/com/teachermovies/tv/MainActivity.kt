@@ -13,9 +13,16 @@ import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
+import com.teachermovies.tv.di.AppContainer
 import com.teachermovies.torrent.service.TorrentService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import com.teachermovies.tv.ui.MainShell
 import com.teachermovies.tv.ui.MainViewModel
+import com.teachermovies.tv.ui.downloads.DownloadsScreen
+import com.teachermovies.tv.ui.downloads.DownloadsViewModel
 import com.teachermovies.tv.ui.firstrun.FirstRunRoute
 import com.teachermovies.tv.ui.firstrun.FirstRunViewModel
 import com.teachermovies.tv.ui.settings.SettingsRoute
@@ -51,6 +58,16 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private val downloadsViewModel: DownloadsViewModel by viewModels {
+        val container = (application as TeacherMoviesApp).container
+        DownloadsViewModel.Factory(
+            engine = container.torrentEngine,
+            sync = container.engineRepositorySync,
+            serverUrl = serverUrl(container),
+            space = container::downloadVolumeSpace,
+        )
+    }
+
     private val firstRunViewModel: FirstRunViewModel by viewModels {
         val container = (application as TeacherMoviesApp).container
         FirstRunViewModel.Factory(
@@ -81,6 +98,7 @@ class MainActivity : ComponentActivity() {
                         MainShell(
                             uiState = uiState,
                             onSelect = mainViewModel::select,
+                            downloadsContent = { modifier -> DownloadsScreen(viewModel = downloadsViewModel, modifier = modifier) },
                             settingsContent = { modifier -> SettingsRoute(viewModel = settingsViewModel, modifier = modifier) },
                         )
                     }
@@ -88,6 +106,15 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /**
+     * `http://<lan-ip>:<port>` for the Descargas empty state; the port follows the settings, the
+     * address is read (off the main thread) whenever they change.
+     */
+    private fun serverUrl(container: AppContainer): Flow<String?> =
+        container.settingsRepository.settings
+            .map { settings -> container.lanAddressResolver.current()?.let { "http://$it:${settings.httpPort}" } }
+            .flowOn(Dispatchers.IO)
 
     private fun requestNotificationPermissionOnce() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return

@@ -63,6 +63,27 @@
   EngineRepositorySync` (#68), started when the container is built, on its own
   application-lifetime `CoroutineScope`.
 
+## Descargas screen (#70)
+- `DownloadsViewModel(engine, sync, serverUrl: Flow<String?> = flowOf(null), space)`; `DownloadsUiState`
+  also carries `serverUrl` (empty-state hint), `selectedRowId` and `dialog: DownloadsDialog?`
+  (`Actions(items: List<DownloadActionItem>, pauseResumeLabel)` with `focused` = first enabled item,
+  `ConfirmDelete`, `ChooseFiles`). `DownloadRow.progress` (0..1) sizes the progress bar.
+  `openActions(id)`, `onAction(DownloadAction)` (`PauseResume` / `ChooseFiles` / `Delete` / `Cancel`;
+  disabled ones are ignored), `confirmDelete(deleteFiles)`, `dismissDialog()` (keeps `selectedRowId`).
+  The dialog is rebuilt from the current row on every update and closes when the row disappears.
+- Actions: `Pausar`/`Reanudar` is enabled when `canPause || canResume` (disabled for `Error`); a
+  `Completed` row offers `Pausar`, which stops seeding. `Elegir archivos` is disabled while fetching
+  metadata; its dialog content is #71 (a placeholder until then). `Borrar` asks
+  `¿Borrar también los archivos?` (Sí = delete files, No = keep them, Cancelar), focus on Cancelar.
+- `DownloadsScreen(viewModel)`: `Espacio libre: X` header, `LazyColumn` of tv `ListItem`s (name,
+  percent + state label, size · speed · N peers · ETA · ratio, progress bar), or the empty state
+  `No hay descargas. Envía un magnet desde el móvil a <serverUrl>`. Entry focus is the first row
+  (`focusRestorer`), OK opens the action dialog; a focused row that disappears hands focus to the
+  row now in its place. BACK closes a dialog.
+- The shell takes the section as the `downloadsContent` slot. `AppContainer.downloadVolumeSpace()`
+  is the free space of the volume `VolumeSelector` picks (persisted id cached, never blocks);
+  `MainActivity` derives `serverUrl` from the settings' port and `LanAddressResolver`.
+
 ## Boundaries
 - Depends on feature modules' public interfaces only; contains no torrent, HTTP or VLC logic itself.
 - All screens fully usable with the D-pad; focus order and initial focus are acceptance criteria.
