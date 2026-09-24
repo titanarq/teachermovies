@@ -19,6 +19,20 @@
   between them; entry focus is the port field; BACK returns to the tab row.
 - The shell takes the section as a slot; `MainActivity` builds the ViewModel from `AppContainer`.
 
+## First run (#46)
+- `com.teachermovies.tv.net.LanAddressResolver`: pure `pick(List<NetIf>)` returns the first
+  site-local IPv4 of an up, non-loopback interface, `eth*` before `wlan*` before the rest;
+  `current()` applies it to `NetworkInterface.getNetworkInterfaces()` (null = no network).
+- `FirstRunViewModel(settings, volumes, space, engine: TorrentEngine, lan)` exposes
+  `StateFlow<FirstRunUiState(serverUrl /* http://ip:port */, freeBytes, downloadFolder, engineStatus)>`,
+  `firstRunCompleted: StateFlow<Boolean?>` (null until settings are read), `refresh()` (LAN address
+  and volumes, called each time the screen is shown) and `complete()` (`setFirstRunCompleted(true)`).
+  The volume is the one `VolumeSelector` picks; the folder is its `DownloadLayout.moviesDir()`.
+- `MainActivity` shows `FirstRunScreen` instead of the shell while `firstRunCompleted == false`.
+  `Continuar` is its only focusable element and has initial focus; BACK leaves the app.
+- Until #55, `AppContainer.torrentEngine` is `NotWiredTorrentEngine` (always `Stopped`, every call
+  `NotReady`), not a fake.
+
 ## Boundaries
 - Depends on feature modules' public interfaces only; contains no torrent, HTTP or VLC logic itself.
 - All screens fully usable with the D-pad; focus order and initial focus are acceptance criteria.

@@ -1,0 +1,211 @@
+package com.teachermovies.tv.ui.firstrun
+
+import com.teachermovies.core.settings.AppSettings
+import com.teachermovies.core.settings.SettingsRepository
+import com.teachermovies.storage.SpaceInfo
+import com.teachermovies.storage.SpaceProvider
+import com.teachermovies.storage.StorageVolumeProvider
+import com.teachermovies.storage.VolumeInfo
+import com.teachermovies.torrent.api.EngineStatus
+import com.teachermovies.torrent.fake.FakeTorrentEngine
+import com.teachermovies.tv.net.LanAddressResolver
+import com.teachermovies.tv.net.NetIf
+import java.io.File
+import java.net.InetAddress
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class FirstRunViewModelTest {
+
+    private val internal = volume(id = "primary", primary = true)
+    private val usb = volume(id = "USB-1", removable = true)
+
+    private val space =
+        FakeSpaceProvider(
+            mapOf(
+                internal.root to SpaceInfo(freeBytes = 5_000_000_000, totalBytes = 16_000_000_000),
+                usb.root to SpaceInfo(freeBytes = 100_000_000_000, totalBytes = 128_000_000_000),
+            ),
+        )
+
+    private val engine = FakeTorrentEngine()
+    private var interfaces = listOf(wlan("192.168.1.50"))
+    private val lan = LanAddressResolver(interfaces = { interfaces })
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun initialStateShowsServerUrlSpaceFolderAndEngineStatus() {
+        val settings = InMemorySettingsRepository(AppSettings(httpPort = 8787, downloadVolumeId = "primary"))
+        val viewModel = FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal, usb)), space, engine, lan)
+
+        assertEquals(
+            FirstRunUiState(
+                serverUrl = "http://192.168.1.50:8787",
+                freeBytes = 5_000_000_000,
+                downloadFolder = File(internal.root, "Movies").path,
+                engineStatus = EngineStatus.Stopped,
+            ),
+            viewModel.uiState.value,
+        )
+    }
+
+    @Test
+    fun serverUrlFollowsThePersistedPort() {
+        val settings = InMemorySettingsRepository(AppSettings(httpPort = 9000))
+        val viewModel = FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal)), space, engine, lan)
+
+        assertEquals("http://192.168.1.50:9000", viewModel.uiState.value.serverUrl)
+    }
+
+    @Test
+    fun noLanAddressMeansNoServerUrl() {
+        interfaces = emptyList()
+        val viewModel = FirstRunViewModel(InMemorySettingsRepository(AppSettings()), FakeVolumeProvider(listOf(internal)), space, engine, lan)
+
+        assertNull(viewModel.uiState.value.serverUrl)
+    }
+
+    @Test
+    fun refreshPicksUpANewLanAddressAndVolume() {
+        interfaces = emptyList()
+        val volumes = FakeVolumeProvider(listOf(internal))
+        val viewModel = FirstRunViewModel(InMemorySettingsRepository(AppSettings()), volumes, space, engine, lan)
+
+        interfaces = listOf(wlan("192.168.1.50"))
+        volumes.current = listOf(internal, usb)
+        viewModel.refresh()
+
+        assertEquals("http://192.168.1.50:8787", viewModel.uiState.value.serverUrl)
+        // With no persisted choice the largest-free removable volume is the fallback.
+        assertEquals(100_000_000_000, viewModel.uiState.value.freeBytes)
+        assertEquals(File(usb.root, "Movies").path, viewModel.uiState.value.downloadFolder)
+    }
+
+    @Test
+    fun missingPersistedVolumeShowsTheFallback() {
+        val settings = InMemorySettingsRepository(AppSettings(downloadVolumeId = "USB-1"))
+        val viewModel = FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal)), space, engine, lan)
+
+        assertEquals(5_000_000_000, viewModel.uiState.value.freeBytes)
+        assertEquals(File(internal.root, "Movies").path, viewModel.uiState.value.downloadFolder)
+    }
+
+    @Test
+    fun noVolumeMeansNoSpaceAndNoFolder() {
+        val viewModel = FirstRunViewModel(InMemorySettingsRepository(AppSettings()), FakeVolumeProvider(emptyList()), space, engine, lan)
+
+        assertNull(viewModel.uiState.value.freeBytes)
+        assertNull(viewModel.uiState.value.downloadFolder)
+    }
+
+    @Test
+    fun engineStatusFollowsTheEngine() {
+        val viewModel = FirstRunViewModel(InMemorySettingsRepository(AppSettings()), FakeVolumeProvider(listOf(internal)), space, engine, lan)
+
+        engine.setEngineStatus(EngineStatus.Starting)
+        assertEquals(EngineStatus.Starting, viewModel.uiState.value.engineStatus)
+
+        engine.setEngineStatus(EngineStatus.Running)
+        assertEquals(EngineStatus.Running, viewModel.uiState.value.engineStatus)
+
+        engine.setEngineStatus(EngineStatus.Error)
+        assertEquals(EngineStatus.Error, viewModel.uiState.value.engineStatus)
+    }
+
+    @Test
+    fun firstRunCompletedMirrorsTheSetting() {
+        val settings = InMemorySettingsRepository(AppSettings(firstRunCompleted = false))
+        val viewModel = FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal)), space, engine, lan)
+
+        assertEquals(false, viewModel.firstRunCompleted.value)
+    }
+
+    @Test
+    fun completePersistsFirstRunCompleted() {
+        val settings = InMemorySettingsRepository(AppSettings(firstRunCompleted = false))
+        val viewModel = FirstRunViewModel(settings, FakeVolumeProvider(listOf(internal)), space, engine, lan)
+        assertFalse(settings.current.firstRunCompleted)
+
+        viewModel.complete()
+
+        assertTrue(settings.current.firstRunCompleted)
+        assertEquals(true, viewModel.firstRunCompleted.value)
+    }
+
+    private fun volume(
+        id: String,
+        removable: Boolean = false,
+        primary: Boolean = false,
+    ) = VolumeInfo(
+        id = id,
+        label = id,
+        root = File("/volumes/$id"),
+        removable = removable,
+        primary = primary,
+        mounted = true,
+    )
+
+    private fun wlan(ip: String) =
+        NetIf(name = "wlan0", isUp = true, isLoopback = false, addresses = listOf(InetAddress.getByName(ip)))
+
+    /** Mirrors `DataStoreSettingsRepository`: same defaults, same port validation. */
+    private class InMemorySettingsRepository(initial: AppSettings) : SettingsRepository {
+        private val state = MutableStateFlow(initial)
+
+        val current: AppSettings get() = state.value
+
+        override val settings: Flow<AppSettings> = state
+
+        override suspend fun setHttpPort(port: Int) {
+            require(port in 1024..65535)
+            state.update { it.copy(httpPort = port) }
+        }
+
+        override suspend fun setDownloadVolumeId(id: String?) {
+            state.update { it.copy(downloadVolumeId = id) }
+        }
+
+        override suspend fun addAuthTokenHash(hash: String) {
+            state.update { it.copy(authTokenHashes = it.authTokenHashes + hash) }
+        }
+
+        override suspend fun clearAuthTokenHashes() {
+            state.update { it.copy(authTokenHashes = emptySet()) }
+        }
+
+        override suspend fun setFirstRunCompleted(done: Boolean) {
+            state.update { it.copy(firstRunCompleted = done) }
+        }
+    }
+
+    private class FakeVolumeProvider(var current: List<VolumeInfo>) : StorageVolumeProvider {
+        override fun volumes(): List<VolumeInfo> = current
+    }
+
+    private class FakeSpaceProvider(private val byRoot: Map<File, SpaceInfo>) : SpaceProvider {
+        override fun spaceOf(root: File): SpaceInfo = byRoot[root] ?: SpaceInfo(freeBytes = 0, totalBytes = 0)
+    }
+}
