@@ -233,6 +233,34 @@
   is never on the server's path (`ServiceAnnouncer` does not throw) and no screen reads
   `AnnouncementState`: the TV keeps showing `http://IP:port` and the PIN as #66 defines them.
 
+## Autostart on TV boot (#126)
+- `com.teachermovies.tv.autostart.Autostart` (`start(): AutostartResult` = `Started` |
+  `TorrentServiceRefused(reason)`) is the seam; `BootAutostartCoordinator(settings, autostart)`
+  (no Android types) `onBroadcast(action)`: not `BOOT_COMPLETED` -> `IgnoredAction` (nothing read);
+  otherwise reads the settings once, `autostartOnBoot == false` (the default) -> `Disabled`, true ->
+  `Started(autostart.start())`, invoked exactly once.
+- `ServiceAutostart(context, httpServerController)` is the production seam: `httpServerController
+  .start()` (#66, idempotent -- `TeacherMoviesApp.onCreate` normally already ran it, and with it
+  the LAN announcement of #103) and then `TorrentService.start(context)` (#55,
+  `startForegroundService`). A refused service start (`ForegroundServiceStartNotAllowedException`)
+  is returned as `TorrentServiceRefused`, never thrown. `AppContainer.bootAutostartCoordinator`
+  wires both.
+- `BootCompletedReceiver` (manifest: `exported="true"`, `enabled="true"`, `BOOT_COMPLETED` filter,
+  `RECEIVE_BOOT_COMPLETED` permission) ignores any other action, holds the broadcast with
+  `goAsync()`, runs the coordinator in a coroutine and calls `finish()` in every path; the outcome
+  and any failure are logged.
+- Configuración: `SettingsUiState.autostartOnBoot` and `SettingsViewModel.setAutostartOnBoot`; the
+  switch row `Arrancar al encender la TV` sits under the volume list (title `Arranque`). DOWN from
+  the last volume reaches it (RIGHT from the port field when there is no volume), OK toggles it,
+  UP returns to the list, LEFT to the port field. Entry focus is still the port field.
+- Platform limits: after a boot only the process, the HTTP server (+ NSD announcement) and, where
+  allowed, the torrent service run; the app is **not** brought to the foreground (Android 10+
+  forbids starting an activity from a background receiver). `TorrentService` is a `dataSync`
+  foreground service, which Android 15 does not allow to start from `BOOT_COMPLETED`: there the
+  receiver logs `TorrentServiceRefused`, the server still runs until the system reclaims the
+  process, and downloads resume when the app is opened. The receiver firing on a real boot is a
+  manual check on a device (`adb` / instrumented tests are not run by agents).
+
 ## Boundaries
 - Depends on feature modules' public interfaces only; contains no torrent, HTTP or VLC logic itself.
 - All screens fully usable with the D-pad; focus order and initial focus are acceptance criteria.

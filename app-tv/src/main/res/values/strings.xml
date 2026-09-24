@@ -42,6 +42,10 @@
     <string name="server_error_port_in_use">Error: puerto en uso</string>
     <string name="server_error">Error: %1$s</string>
     <string name="settings_server_title">Servidor</string>
+    <!-- Arranque automático (#126). -->
+    <string name="settings_autostart_title">Arranque</string>
+    <string name="settings_autostart_label">Arrancar al encender la TV</string>
+    <string name="settings_autostart_hint">Inicia el servidor y las descargas al encender; la app no se abre sola.</string>
     <!-- Descargas (#70). -->
     <string name="downloads_free_space">Espacio libre: %1$s</string>
     <string name="downloads_free_space_unknown">Espacio libre: sin volumen</string>

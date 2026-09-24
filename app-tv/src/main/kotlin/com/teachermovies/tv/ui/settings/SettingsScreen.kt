@@ -40,6 +40,7 @@ import androidx.tv.material3.ListItem
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.RadioButton
 import androidx.tv.material3.Surface
+import androidx.tv.material3.Switch
 import androidx.tv.material3.Text
 import com.teachermovies.tv.R
 import com.teachermovies.tv.ui.server.ServerPinAndStatus
@@ -56,19 +57,23 @@ fun SettingsRoute(viewModel: SettingsViewModel, modifier: Modifier = Modifier) {
         uiState = uiState,
         onPortChange = viewModel::changePort,
         onSelectVolume = viewModel::selectVolume,
+        onAutostartChange = viewModel::setAutostartOnBoot,
         modifier = modifier,
     )
 }
 
 /**
  * HTTP port on the left, with the server address, pairing PIN and (when not running) server state
- * under it as plain, unfocusable text; download volume list on the right.
+ * under it as plain, unfocusable text; download volume list on the right, with the "Arrancar al
+ * encender la TV" switch (#126) under it.
  *
  * Focus: DOWN from the tab row enters on the port field (then on whatever last had focus in the
  * section). On the port field UP/DOWN change the port by one -- so they do not move focus -- OK
  * opens a numeric text field, and RIGHT moves to the volume list. In the list UP/DOWN walk the
  * volumes, OK selects one, LEFT returns to the port field and UP from the first volume reaches the
- * tab row. BACK anywhere in the section returns to the tab row (the shell's handler); while the
+ * tab row. DOWN from the last volume reaches the autostart switch (RIGHT from the port field lands
+ * on it directly when there is no volume); OK toggles it, UP goes back to the list and LEFT to the
+ * port field. BACK anywhere in the section returns to the tab row (the shell's handler); while the
  * text field is open BACK only closes it, without saving.
  */
 @Composable
@@ -76,6 +81,7 @@ fun SettingsScreen(
     uiState: SettingsUiState,
     onPortChange: (Int) -> Unit,
     onSelectVolume: (String) -> Unit,
+    onAutostartChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val portRequester = remember { FocusRequester() }
@@ -124,6 +130,12 @@ fun SettingsScreen(
             uiState.volumes.forEach { row ->
                 VolumeItem(row = row, selected = row.id == uiState.selectedVolumeId, onSelect = onSelectVolume)
             }
+            Text(
+                text = stringResource(R.string.settings_autostart_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+            AutostartItem(checked = uiState.autostartOnBoot, onChange = onAutostartChange)
         }
     }
 }
@@ -245,6 +257,19 @@ private fun VolumeItem(row: VolumeRow, selected: Boolean, onSelect: (String) -> 
             )
         },
         leadingContent = { RadioButton(selected = selected, onClick = null) },
+        modifier = Modifier.width(560.dp),
+    )
+}
+
+/** The whole row is the focus target; OK flips the switch, which only mirrors the setting. */
+@Composable
+private fun AutostartItem(checked: Boolean, onChange: (Boolean) -> Unit) {
+    ListItem(
+        selected = false,
+        onClick = { onChange(!checked) },
+        headlineContent = { Text(text = stringResource(R.string.settings_autostart_label)) },
+        supportingContent = { Text(text = stringResource(R.string.settings_autostart_hint)) },
+        trailingContent = { Switch(checked = checked, onCheckedChange = null) },
         modifier = Modifier.width(560.dp),
     )
 }
