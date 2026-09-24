@@ -313,4 +313,183 @@ class StreamingPlaybackControllerTest {
             assertEquals(listOf("prioritizeWindow(${id.value},0,51200,${8 * piece})"), windowCalls().drop(before))
             assertEquals(Triple(0, 51_200L, 8L * piece), fakeEngine.lastWindow(id))
         }
+
+    // -- The underrun rule --
+
+    /**
+     * Opens at 0 with only [openAtZero] on disk, then moves to 2 500 ms (byte 2 560): 1 536 bytes
+     * are ready before the hole at piece 4, under the 2-piece underrun threshold.
+     */
+    private suspend fun TestScope.openAndRunDry(): StreamingPlaybackController {
+        addTorrent()
+        have(openAtZero)
+        val controller = controller(backgroundScope)
+        val result = startAsync(controller)
+        runCurrent()
+        assertEquals(StreamResult.Opened, result.await())
+        player.emitDuration(duration)
+        player.emitPosition(2_500L)
+        tick()
+        return controller
+    }
+
+    private fun TestScope.tick() {
+        advanceTimeBy(poll)
+        runCurrent()
+    }
+
+    @Test
+    fun enoughBytesAheadKeepsStreaming() =
+        runTest {
+            addTorrent()
+            have(openAtZero)
+            val controller = controller(backgroundScope)
+            startAsync(controller)
+            runCurrent()
+            // At byte 0 4 096 bytes are ready: between the thresholds, but the decision is Play.
+            tick()
+            tick()
+            assertEquals(StreamState.Streaming, controller.state.value)
+            assertEquals(PlayerState.Playing, player.state.value)
+        }
+
+    @Test
+    fun aHoleUnderTheUnderrunThresholdPausesAndPublishesBuffering() =
+        runTest {
+            val controller = openAndRunDry()
+            assertEquals(PlayerState.Paused, player.state.value)
+            assertEquals(StreamState.Buffering(readyBytes = 1_536L, resumeAtBytes = 6L * piece), controller.state.value)
+        }
+
+    @Test
+    fun refillingPastTheResumeThresholdPlaysAgain() =
+        runTest {
+            val controller = openAndRunDry()
+            have((0..8).toSet() + 99)
+            tick()
+            assertEquals(PlayerState.Playing, player.state.value)
+            assertEquals(StreamState.Streaming, controller.state.value)
+        }
+
+    @Test
+    fun readinessBetweenTheThresholdsChangesNothingWhileBuffering() =
+        runTest {
+            val controller = openAndRunDry()
+            // Pieces up to 5: 3 584 bytes ready from byte 2 560, above underrun, below resume.
+            have((0..5).toSet() + 99)
+            tick()
+            tick()
+            assertEquals(PlayerState.Paused, player.state.value)
+            assertEquals(StreamState.Buffering(readyBytes = 3_584L, resumeAtBytes = 6L * piece), controller.state.value)
+        }
+
+    @Test
+    fun aViewerPauseIsNotUndoneByTheController() =
+        runTest {
+            addTorrent()
+            have(openAtZero)
+            val controller = controller(backgroundScope)
+            startAsync(controller)
+            runCurrent()
+            player.pause()
+            runCurrent()
+            tick()
+            tick()
+            assertEquals(PlayerState.Paused, player.state.value)
+
+            // An underrun and a refill while the viewer holds the pause: still paused.
+            player.emitDuration(duration)
+            player.emitPosition(2_500L)
+            tick()
+            assertTrue(controller.state.value is StreamState.Buffering)
+            have((0..8).toSet() + 99)
+            tick()
+            assertEquals(StreamState.Streaming, controller.state.value)
+            assertEquals(PlayerState.Paused, player.state.value)
+        }
+
+    @Test
+    fun aPauseTheViewerTakesOverWhileBufferingIsNotUndone() =
+        runTest {
+            val controller = openAndRunDry()
+            // The viewer plays into the hole and pauses again: that pause is now the viewer's.
+            player.play()
+            runCurrent()
+            player.pause()
+            runCurrent()
+            have((0..8).toSet() + 99)
+            tick()
+            assertEquals(StreamState.Streaming, controller.state.value)
+            assertEquals(PlayerState.Paused, player.state.value)
+        }
+
+    @Test
+    fun theEndOfTheFilePlaysOnInsteadOfBuffering() =
+        runTest {
+            addTorrent()
+            have(openAtZero)
+            val controller = controller(backgroundScope)
+            startAsync(controller)
+            runCurrent()
+            player.emitDuration(duration)
+            // 97 000 ms is byte 99 328 (piece 97, missing); plus the resume bytes it passes the end.
+            player.emitPosition(97_000L)
+            tick()
+            tick()
+            assertEquals(StreamState.Streaming, controller.state.value)
+            assertEquals(PlayerState.Playing, player.state.value)
+        }
+
+    // -- Stopping --
+
+    @Test
+    fun stopClearsTheWindowAndPublishesIdle() =
+        runTest {
+            val controller = openFully()
+            controller.stop()
+            runCurrent()
+            assertEquals(null, fakeEngine.lastWindow(id))
+            assertEquals("clearWindow(${id.value})", fakeEngine.recordedCalls.last())
+            assertEquals(StreamState.Idle, controller.state.value)
+
+            // Both loops are gone: a move sends nothing and a hole pauses nothing.
+            val before = fakeEngine.recordedCalls.size
+            player.emitDuration(duration)
+            player.emitPosition(50_000L)
+            have(emptySet())
+            tick()
+            assertEquals(before, fakeEngine.recordedCalls.size)
+            assertEquals(PlayerState.Playing, player.state.value)
+        }
+
+    @Test
+    fun stopOnAnIdleControllerIsANoOp() =
+        runTest {
+            val controller = controller(backgroundScope)
+            controller.stop()
+            assertEquals(StreamState.Idle, controller.state.value)
+            assertTrue(fakeEngine.recordedCalls.isEmpty())
+        }
+
+    @Test
+    fun reachingTheEndClearsTheWindowAndPublishesIdle() =
+        runTest {
+            val controller = openFully()
+            player.emitDuration(duration)
+            runCurrent()
+            player.end()
+            runCurrent()
+            assertEquals(null, fakeEngine.lastWindow(id))
+            assertEquals(StreamState.Idle, controller.state.value)
+        }
+
+    @Test
+    fun aPlayerErrorClearsTheWindowAndPublishesFailed() =
+        runTest {
+            val controller = openFully()
+            player.fail("codec missing")
+            runCurrent()
+            assertEquals(null, fakeEngine.lastWindow(id))
+            assertEquals(StreamState.Failed("codec missing"), controller.state.value)
+        }
 }
