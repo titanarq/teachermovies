@@ -193,7 +193,7 @@ class PlayerViewModel(
             AssistantAction.CaptureLine -> captureLine()
             AssistantAction.ReplayFragment -> capture.replay()
             AssistantAction.DismissOverlay -> capture.dismiss()
-            AssistantAction.Consumed -> Unit
+            AssistantAction.SpeakOriginal, AssistantAction.TranslateLine, AssistantAction.Consumed -> Unit
         }
     }
 

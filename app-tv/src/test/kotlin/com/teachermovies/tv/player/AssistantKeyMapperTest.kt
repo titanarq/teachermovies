@@ -10,8 +10,6 @@ class AssistantKeyMapperTest {
     private val otherKeys =
         listOf(
             KeyEvent.KEYCODE_DPAD_UP,
-            KeyEvent.KEYCODE_DPAD_LEFT,
-            KeyEvent.KEYCODE_DPAD_RIGHT,
             KeyEvent.KEYCODE_MEDIA_PLAY,
             KeyEvent.KEYCODE_MEDIA_PAUSE,
             KeyEvent.KEYCODE_MEDIA_REWIND,
@@ -37,6 +35,8 @@ class AssistantKeyMapperTest {
                     KeyEvent.KEYCODE_ENTER,
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                     KeyEvent.KEYCODE_BACK,
+                    KeyEvent.KEYCODE_DPAD_LEFT,
+                    KeyEvent.KEYCODE_DPAD_RIGHT,
                 )
         fallThrough.forEach { keyCode ->
             assertNull("keyCode $keyCode", AssistantKeyMapper.map(keyCode, overlayOpen = false))
@@ -62,5 +62,17 @@ class AssistantKeyMapperTest {
         otherKeys.forEach { keyCode ->
             assertEquals("keyCode $keyCode", AssistantAction.Consumed, AssistantKeyMapper.map(keyCode, overlayOpen = true))
         }
+    }
+
+    @Test
+    fun withTheOverlayOpenRightSpeaksTheLineAndLeftTranslatesIt() {
+        assertEquals(AssistantAction.SpeakOriginal, AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = true))
+        assertEquals(AssistantAction.TranslateLine, AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT, overlayOpen = true))
+    }
+
+    @Test
+    fun withTheOverlayClosedLeftAndRightStayWithTheTransportMapping() {
+        assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = false))
+        assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT, overlayOpen = false))
     }
 }
