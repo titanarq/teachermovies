@@ -9,9 +9,6 @@ import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.SubtitleExtraction
 import com.teachermovies.player.api.Track
 import com.teachermovies.player.api.VideoSurfaceHost
-import com.teachermovies.player.mkv.MatroskaSubtitles
-import com.teachermovies.player.mkv.MkvTrackMapping
-import com.teachermovies.player.mkv.MkvTracksResult
 import java.io.File
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -199,9 +196,10 @@ class VlcPlayer(
     }
 
     /**
-     * Reads the embedded track straight out of the file with [MatroskaSubtitles] -- libVLC 3 has no
-     * SRT/ASS muxer (#115) -- on [Dispatchers.IO] under [extractionTimeout]. It only reads the
-     * file passed to [open]; the playback `MediaPlayer` and its flows are never touched.
+     * Reads the embedded track straight out of the file -- libVLC 3 has no SRT/ASS muxer (#115) --
+     * with [EmbeddedSubtitles], which picks the Matroska or MP4 reader by the container, on
+     * [Dispatchers.IO] under [extractionTimeout]. It only reads the file passed to [open]; the
+     * playback `MediaPlayer` and its flows are never touched.
      */
     override suspend fun extractTextSubtitle(
         trackId: String,
@@ -212,15 +210,7 @@ class VlcPlayer(
         if (vlcTracks.none { it.id == trackId }) return SubtitleExtraction.TrackNotFound
         return withTimeoutOrNull(extractionTimeout) {
             runInterruptible(Dispatchers.IO) {
-                when (val tracks = MatroskaSubtitles.textTracks(file)) {
-                    MkvTracksResult.NotMatroska -> SubtitleExtraction.Failed("not a Matroska file")
-                    is MkvTracksResult.Failed -> SubtitleExtraction.Failed(tracks.reason)
-                    is MkvTracksResult.Tracks ->
-                        when (val number = MkvTrackMapping.resolve(trackId, vlcTracks, tracks.tracks)) {
-                            null -> SubtitleExtraction.TrackNotFound
-                            else -> MatroskaSubtitles.extract(file, number, destination)
-                        }
-                }
+                EmbeddedSubtitles.extract(file, trackId, vlcTracks, destination)
             }
         } ?: SubtitleExtraction.Failed("timed out")
     }

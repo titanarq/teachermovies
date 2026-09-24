@@ -91,7 +91,8 @@ class JlibMappersTest {
 
     @Test
     fun metadataFollowsTheCoreModelTransitionTable() {
-        // #145: Completed -> Downloading is legal (a skipped file un-skipped), so the gate lets it through.
+        // #145: Completed -> Downloading is legal (a skipped file un-skipped), and #159 dropped the
+        // now-inert transition gate, so withMetadata sets Downloading directly.
         val completed = JlibMappers.addedSnapshot(id, "m", true, 1, "/p").copy(state = DownloadState.Completed)
 
         assertEquals(DownloadState.Downloading, JlibMappers.withMetadata(completed, "m", 1, "/p").state)

@@ -1,5 +1,7 @@
 package com.teachermovies.player.mkv
 
+import java.io.File
+import java.io.IOException
 import java.util.Locale
 
 /**
@@ -134,6 +136,26 @@ internal object SubtitleWriter {
         val minutes = ms / 60_000 % 60
         val seconds = ms / 1_000 % 60
         return String.format(Locale.ROOT, "%d:%02d:%02d.%02d", hours, minutes, seconds, ms % 1_000 / 10)
+    }
+
+    /** Writes [text] next to [destination] and renames it into place, so a failure leaves no partial file. */
+    fun writeAtomically(
+        destination: File,
+        text: String,
+    ) {
+        val target = destination.absoluteFile
+        val directory = target.parentFile ?: throw IOException("destination has no directory")
+        val temp = File.createTempFile(".${target.name}.", ".part", directory)
+        try {
+            temp.writeText(text, Charsets.UTF_8)
+            if (!temp.renameTo(target)) {
+                // `renameTo` does not replace an existing file on every platform.
+                target.delete()
+                if (!temp.renameTo(target)) throw IOException("could not write destination")
+            }
+        } finally {
+            temp.delete()
+        }
     }
 
     const val DEFAULT_LAST_DURATION_MS = 5_000L

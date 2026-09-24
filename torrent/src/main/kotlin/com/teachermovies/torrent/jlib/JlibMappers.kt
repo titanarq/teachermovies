@@ -69,7 +69,7 @@ internal object JlibMappers {
     ): TorrentSnapshot =
         snapshot.copy(
             name = name?.takeIf { it.isNotBlank() } ?: snapshot.name,
-            state = nextState(snapshot.state, DownloadState.Downloading),
+            state = DownloadState.Downloading,
             totalBytes = totalBytes,
             hasMetadata = true,
             savePath = savePath ?: snapshot.savePath,
@@ -80,12 +80,6 @@ internal object JlibMappers {
         snapshot: TorrentSnapshot,
         message: String,
     ): TorrentSnapshot = snapshot.copy(state = DownloadState.Error, errorMessage = message)
-
-    /** [next] when [current] may move to it, otherwise [current]: an alert never forces an illegal hop. */
-    private fun nextState(
-        current: DownloadState,
-        next: DownloadState,
-    ): DownloadState = if (current.canTransitionTo(next)) next else current
 
     private fun usableHash(
         hex: String?,

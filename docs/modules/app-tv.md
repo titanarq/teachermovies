@@ -149,6 +149,32 @@
   the panel; OK selects and closes. While it is open the player root maps no key, so BACK reaches
   the back handler; focus returns to the root when it closes.
 
+## Asistente: capturar la frase (#86)
+- `com.teachermovies.tv.player.AssistantKeyMapper.map(keyCode, overlayOpen): AssistantAction?`
+  (pure), `sealed interface AssistantAction { CaptureLine, ReplayFragment, DismissOverlay, Consumed }`.
+  Overlay closed: DPAD_DOWN/CAPTIONS -> `CaptureLine`, others null (fall through to
+  `RemoteKeyMapper`). Overlay open: DPAD_CENTER/ENTER/MEDIA_PLAY_PAUSE -> `ReplayFragment`;
+  BACK/DPAD_DOWN/CAPTIONS -> `DismissOverlay`; everything else `Consumed` (swallowed, no effect).
+  Only this mapper and the hint line change if the key assignment of #30 changes.
+- `PlayerUiState` gains `assistant: AssistantOverlayState(text, replaying)?` (from
+  `LineCaptureController.captured` cue text and `.replaying`; null when nothing is captured or an
+  error is shown), `assistantAvailable` and `message` (shown in the transport overlay for 3 s).
+- `PlayerViewModel(session, player, hidden: HiddenSubtitleController, capture:
+  LineCaptureController, closeScope)`; `Factory(player, repo, hidden, capture)`. `open` calls
+  `hidden.start(mainFile)`: `Started` -> `assistantAvailable = true`, otherwise false (never blocks
+  playback). `onAssistantAction`: `CaptureLine` -> `capture()` (not available -> `Esta película no
+  tiene subtítulos en inglés`, movie keeps playing; `NoLine` -> `No hay ninguna frase que capturar`
+  and playback resumes), `ReplayFragment` -> `replay()`, `DismissOverlay` -> `dismiss()` (resumes).
+  Transport actions are ignored while a line is captured; `back()` dismisses it; exit/clear stops
+  hidden mode and drops the capture without resuming.
+- `AppContainer` builds one `SubtitleEngine` (over `player.positionMs`), `hiddenSubtitleController`
+  and `lineCaptureController` on a main-thread scope.
+- `ui.player.AssistantOverlay`: dimmed bottom band over the video with the English line in a large
+  size, `Repitiendo…` while replaying and the hint `OK Repetir · ATRÁS Cerrar`. It takes focus when
+  it appears and handles every key (key-down through the mapper, key-ups swallowed); the transport
+  overlay is hidden while it is visible and the player root takes focus back when it closes. The
+  player root consults `AssistantKeyMapper` before `RemoteKeyMapper`.
+
 ## HTTP server hosting and pairing PIN (#66)
 - `AppContainer.pairingManager: PairingManager` (`SecureRandom`, wall clock) and
   `AppContainer.httpServerController: HttpServerController` over `LocalHttpServer`, on the
