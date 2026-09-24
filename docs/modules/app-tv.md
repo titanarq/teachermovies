@@ -74,9 +74,9 @@
 - Actions: `Pausar`/`Reanudar` is enabled when `canPause || canResume` (an `Error` row offers
   `Pausar`, since `DownloadState` allows `Error -> Paused` after #145); a `Completed` row offers
   `Pausar`, which stops seeding. `Elegir archivos` is disabled while fetching
-  metadata; its dialog content is #71 (a placeholder until then). `Borrar` asks
+  metadata; its dialog is the file selection of #71 (below). `Borrar` asks
   `¿Borrar también los archivos?` (Sí = delete files, No = keep them, Cancelar), focus on Cancelar.
-- `DownloadsScreen(viewModel)`: `Espacio libre: X` header, `LazyColumn` of tv `ListItem`s (name,
+- `DownloadsScreen(viewModel, fileSelectionFactory: (TorrentId) -> ViewModelProvider.Factory)`: `Espacio libre: X` header, `LazyColumn` of tv `ListItem`s (name,
   percent + state label, size · speed · N peers · ETA · ratio, progress bar), or the empty state
   `No hay descargas. Envía un magnet desde el móvil a <serverUrl>`. Entry focus is the first row
   (`focusRestorer`), OK opens the action dialog; a focused row that disappears hands focus to the
@@ -84,6 +84,18 @@
 - The shell takes the section as the `downloadsContent` slot. `AppContainer.downloadVolumeSpace()`
   is the free space of the volume `VolumeSelector` picks (persisted id cached, never blocks);
   `MainActivity` derives `serverUrl` from the settings' port and `LanAddressResolver`.
+
+## File selection (#71)
+- `FileSelectionViewModel(engine, id)` loads `engine.files(id)` into `FileSelectionRow(index, path,
+  sizeText, checked = priority != Skip)`; `toggle(index)` flips a row locally; `apply()` sends
+  `setFilePriorities` for every file (checked -> `Normal`, unchecked -> `Skip`) and sets `done`.
+  `FileSelectionUiState(rows, loading, notReady, applying, error, done)`, `canApply`. `NotReady`
+  shows `Esperando metadata…` and the load retries once the torrent snapshot reports metadata.
+- `FileSelectionRoute(factory, onClose)` owns the ViewModel in its own `ViewModelStore` (fresh per
+  opening). `FileSelectionDialog`: one tv `ListItem` + checkbox per file (OK toggles), `Aplicar` /
+  `Cancelar`; entry focus on the first row (else `Cancelar`), DOWN from the last row lands on
+  `Aplicar`; BACK cancels. `MainActivity` builds `FileSelectionViewModel.Factory` from
+  `AppContainer.torrentEngine`.
 
 ## Biblioteca (#72)
 - `LibraryViewModel(repo: TorrentRepository)` exposes `StateFlow<LibraryUiState(items: List<LibraryCard>)>`

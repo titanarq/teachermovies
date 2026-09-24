@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
+import com.teachermovies.core.model.TorrentId
 import com.teachermovies.torrent.service.TorrentService
 import com.teachermovies.tv.di.AppContainer
 import com.teachermovies.tv.ui.AppRoute
@@ -23,6 +24,7 @@ import com.teachermovies.tv.ui.MainShell
 import com.teachermovies.tv.ui.MainViewModel
 import com.teachermovies.tv.ui.downloads.DownloadsScreen
 import com.teachermovies.tv.ui.downloads.DownloadsViewModel
+import com.teachermovies.tv.ui.downloads.FileSelectionViewModel
 import com.teachermovies.tv.ui.firstrun.FirstRunRoute
 import com.teachermovies.tv.ui.firstrun.FirstRunViewModel
 import com.teachermovies.tv.ui.library.LibraryRoute
@@ -131,7 +133,13 @@ class MainActivity : ComponentActivity() {
                                     libraryContent = { modifier ->
                                         LibraryRoute(viewModel = libraryViewModel, onPlay = mainViewModel::openPlayer, modifier = modifier)
                                     },
-                                    downloadsContent = { modifier -> DownloadsScreen(viewModel = downloadsViewModel, modifier = modifier) },
+                                    downloadsContent = { modifier ->
+                                        DownloadsScreen(
+                                            viewModel = downloadsViewModel,
+                                            fileSelectionFactory = ::fileSelectionFactory,
+                                            modifier = modifier,
+                                        )
+                                    },
                                     settingsContent = { modifier -> SettingsRoute(viewModel = settingsViewModel, modifier = modifier) },
                                 )
                         }
@@ -140,6 +148,10 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /** The `Elegir archivos` dialog's ViewModel factory (#71) for torrent [id]. */
+    private fun fileSelectionFactory(id: TorrentId): FileSelectionViewModel.Factory =
+        FileSelectionViewModel.Factory(engine = (application as TeacherMoviesApp).container.torrentEngine, id = id)
 
     /** The player route's ViewModel factory (#78): a fresh session over the container's player. */
     private fun playerViewModelFactory(): PlayerViewModel.Factory {
