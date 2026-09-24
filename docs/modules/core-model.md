@@ -5,6 +5,14 @@
 ## Responsibility
 - Domain types: `Torrent`, `TorrentFile`, `DownloadState` (`FetchingMetadata, Queued, Downloading, Paused, Verifying, Completed, Error`), `LibraryItem`, `PlaybackState`, `SubtitleCue`.
 - `DownloadState.canTransitionTo(next)` is the single place that decides whether a lifecycle move is legal; staying in the current state is always allowed. Callers (torrent engine mapping, HTTP pause/resume endpoints) check it instead of keeping their own table.
+  The rule: a move is legal unless it would undo something the engine cannot undo. Metadata is
+  never lost once known, so the only rejected moves are `Downloading -> FetchingMetadata`,
+  `Verifying -> FetchingMetadata` and `Completed -> FetchingMetadata`; every other move is allowed,
+  because `DownloadStateMapper` really produces them (e.g. `Queued -> Verifying`,
+  `FetchingMetadata -> Completed` for a re-added finished torrent, `Completed -> Downloading` when a
+  skipped file is un-skipped, and `Error`/`Paused`/`Queued` from any state). The jlibtorrent ticker
+  publishes the engine's own state as the mapper derives it rather than gating it through this
+  table.
 - Room database, entities and DAOs: info-hash, name, path, progress, main file, chosen audio track, chosen subtitle, last playback position.
   Package `com.teachermovies.core.db`: `TeacherMoviesDatabase` (file `teachermovies.db`,
   `TeacherMoviesDatabase.build(context)`), table `torrents` = `TorrentEntity` keyed by `infoHash`
