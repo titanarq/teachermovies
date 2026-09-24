@@ -15,6 +15,7 @@ import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.RangeReadiness
 import com.teachermovies.torrent.api.TorrentEngine
+import com.teachermovies.torrent.api.TorrentFileInfo
 import com.teachermovies.torrent.fake.FakeTorrentEngine
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -482,6 +483,78 @@ class PlaybackSessionTest {
             assertEquals(
                 SessionResult.StreamingFailed(StreamResult.Failed("disk gone")),
                 session().openStreaming(id, controller(scripted)),
+            )
+            assertNull(player.lastOpen)
+        }
+
+    /** Records every range the controller asks about, delegating to [delegate]. */
+    private class RecordingEngine(
+        private val delegate: FakeTorrentEngine,
+    ) : TorrentEngine by delegate {
+        val ranges = mutableListOf<Pair<Long, Long>>()
+
+        override suspend fun rangeReadiness(
+            id: TorrentId,
+            fileIndex: Int,
+            byteOffset: Long,
+            lengthBytes: Long,
+        ): EngineResult<RangeReadiness> {
+            ranges += byteOffset to lengthBytes
+            return delegate.rangeReadiness(id, fileIndex, byteOffset, lengthBytes)
+        }
+    }
+
+    @Test
+    fun openStreamingPassesTheMainFilesSizeNotTheTorrentsTotalBytes() =
+        runTest {
+            val movie = movieFile()
+            val extras = 30L * piece
+            seedInProgress(movie)
+            // The repository's totalBytes counts the sample and the subtitles too.
+            repo.upsert(checkNotNull(repo.get(id)).copy(totalBytes = fileSize + extras), movie.path, now = 2L)
+            engine.addMagnet("magnet:?xt=urn:btih:${id.value}&dn=movie")
+            engine.emitMetadata(
+                id,
+                "Movie",
+                listOf("Movie.mkv" to fileSize, "Sample/sample.mkv" to extras - piece, "Movie.en.srt" to piece.toLong()),
+            )
+            engine.setPieces(id, piece, (0 until 130).toSet())
+            val recording = RecordingEngine(engine)
+
+            val result = session().openStreaming(id, controller(recording))
+
+            assertTrue(result is SessionResult.Opened)
+            // The tail range ends at the main file's last byte, not at the torrent's totalBytes.
+            assertEquals(fileSize, recording.ranges.maxOf { (offset, length) -> offset + length })
+            assertTrue(recording.ranges.contains(fileSize - piece to piece.toLong()))
+        }
+
+    @Test
+    fun openStreamingReportsFileMissingWhileTheMainFilesSizeIsUnknown() =
+        runTest {
+            val movie = movieFile()
+            seedInProgress(movie)
+            // The engine knows the torrent, but its metadata (and so its file list) has not arrived.
+            engine.addMagnet("magnet:?xt=urn:btih:${id.value}&dn=movie")
+
+            assertEquals(SessionResult.FileMissing(movie.path), session().openStreaming(id, controller()))
+            assertNull(player.lastOpen)
+        }
+
+    @Test
+    fun openStreamingReportsAnIoFailureFromTheSizeLookup() =
+        runTest {
+            seedInProgress(movieFile())
+            engineHas(openRangePieces)
+            val failing =
+                object : TorrentEngine by engine {
+                    override suspend fun files(id: TorrentId): EngineResult<List<TorrentFileInfo>> =
+                        EngineResult.Failure(EngineError.Io("disk gone"))
+                }
+
+            assertEquals(
+                SessionResult.StreamingFailed(StreamResult.Failed("disk gone")),
+                session().openStreaming(id, controller(failing)),
             )
             assertNull(player.lastOpen)
         }
