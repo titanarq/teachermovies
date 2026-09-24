@@ -1,5 +1,6 @@
 package com.teachermovies.http
 
+import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
 import com.teachermovies.http.auth.InMemorySettingsRepository
 import com.teachermovies.http.auth.PairingManager
 import com.teachermovies.torrent.fake.FakeTorrentEngine
@@ -20,6 +21,7 @@ class HttpServerControllerTest {
             clock = { 0L },
             pairing = PairingManager(settings, SecureRandom(), { 0L }),
             subtitles = FakeSubtitleStore(),
+            library = InMemoryTorrentRepository(),
         )
 
     /** Records every start/stop the controller asks for, in order, as e.g. "start:8787". */
