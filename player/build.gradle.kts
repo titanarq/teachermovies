@@ -22,6 +22,10 @@ kotlin {
 }
 
 dependencies {
+    // `api`, not `implementation`: `StateFlow` appears in `Player`'s own public contract, so a
+    // consumer compiles against coroutines too (same reason as in `:torrent`).
+    api(libs.kotlinx.coroutines.core)
+
     implementation(project(":core-model"))
 
     testImplementation(libs.junit)
