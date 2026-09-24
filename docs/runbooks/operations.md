@@ -51,53 +51,30 @@ Backlog, closed -> Done, `blocked-on-human` -> left as is). Idempotent and quiet
 `scripts/board_sync.py --dry-run`. Remove the timer and script once agent-os#14 is fixed and the
 subtree is pulled.
 
-## Self-hosted runner (GitHub Actions)
+## CI runners
 
-The org is on the Free plan with hosted minutes exhausted, so both workflows run
-`runs-on: [self-hosted, teachermovies]` on this machine. Two runners (`Titan-tm-1`, `Titan-tm-2`)
-are registered at **organization** level (`titanarq`, runner group Default, labels
-`titanarq,teachermovies`) so a PR's jobs run in parallel and other (private) org repos can use
-them too -- those repos target `runs-on: [self-hosted, titanarq]`. Each runner has its own
-`_work/`; they share `~/.gradle` (JDK 17 toolchain via foojay in `~/.gradle/jdks`) and
-`~/Android/Sdk`. No other session registers additional runners without coordinating here first.
+CI runs on **GitHub-hosted runners** (`runs-on: ubuntu-latest`) since the repo went public
+(2026-09-24). The self-hosted runners that used to run it on this machine (`Titan-tm-1..4`) were
+deregistered and deleted the same day.
 
-| unit | runner dir |
-|---|---|
-| `gh-runner-teachermovies-1.service` | `~/actions-runner-teachermovies-1` |
-| `gh-runner-teachermovies-2.service` | `~/actions-runner-teachermovies-2` |
-
-Unit files live in `~/.config/systemd/user/` (`run.sh`, `Restart=always`; needs
-`loginctl show-user $USER -p Linger` = yes to run without a login session).
-
-Under load (both runners plus host worktree builds compiling at once, load average in the low
-20s on 8 cores) a shared, persistent Gradle daemon in `~/.gradle/daemon` is not safe the way the
-cache directories are: `android` jobs on PRs #119-#121 failed with "Gradle build daemon
-disappeared unexpectedly" mid-`assembleDebug`. `ci.yml` runs Gradle with
-`-Dorg.gradle.daemon=false` (`--no-daemon` on the build step) and `-Dorg.gradle.workers.max=2`,
-so CI never registers or reuses a daemon that a concurrent host build could take down, and one
-job leaves cores free for the other runner / worktree builds. `~/.gradle` caches, wrapper dists
-and JDK toolchains stay shared as before.
+**Rule: self-hosted runners must never be registered for this public repo** -- any fork PR could
+run arbitrary code on the machine. The org's Default runner group keeps "Allow public
+repositories" **OFF**:
 
 ```sh
-systemctl --user status gh-runner-teachermovies-1 gh-runner-teachermovies-2
-journalctl --user -u gh-runner-teachermovies-1 -n 50 -o cat
-systemctl --user restart gh-runner-teachermovies-1 gh-runner-teachermovies-2
-gh api orgs/titanarq/actions/runners -q '.runners[] | "\(.name) \(.status) \(.busy)"'
 gh api orgs/titanarq/actions/runner-groups -q '.runner_groups[] | "\(.name) public=\(.allows_public_repositories)"'
 ```
 
-Re-register (runner removed/offline for >14 days, or moved machine): stop the unit, then in the
-runner dir `./config.sh remove --token "$(gh api -X POST orgs/titanarq/actions/runners/remove-token -q .token)"`
-and `./config.sh --unattended --url https://github.com/titanarq --token "$(gh api -X POST orgs/titanarq/actions/runners/registration-token -q .token)" --labels titanarq,teachermovies --name <host>-tm-N`,
-then start the unit. Never echo the tokens. Upgrade: the runner self-updates while online.
+## Interaction limit
 
-**Rule: never let these runners serve a public repo.** The Default runner group must keep
-`allows_public_repositories=false`, and no org repo using them may be made public while they are
-registered -- any fork PR could run arbitrary code on this machine. Deregister first.
+Since going public, the repo has an interaction limit of `collaborators_only` (only collaborators
+can open issues/PRs or comment), so outsiders cannot feed text to the agents. It expires after
+six months; check and renew it:
 
-- Runners Titan-tm-3/4 (`~/actions-runner-teachermovies-{3,4}`, systemd --user units
-  `gh-runner-teachermovies-{3,4}.service`) are org-level but reserved for teachermovies via the
-  `teachermovies`-only label (no `titanarq`), so other repos' CI (agent-os, roedor) can't claim them.
+```sh
+gh api repos/titanarq/teachermovies/interaction-limits
+gh api -X PUT repos/titanarq/teachermovies/interaction-limits -f limit=collaborators_only -f expiry=six_months
+```
 
 ## Known mechanism issues filed upstream
 
@@ -153,6 +130,29 @@ registered -- any fork PR could run arbitrary code on this machine. Deregister f
   to be skipped this round. Looks like a shared-token contention/race under many parallel agents
   rather than a real quota exhaustion; needs reproduction with request timing before filing
   upstream.
+
+- to report (not yet filed upstream, seen 2026-09-24 control-plane check): `scripts/clean_stale_worker.sh`
+  refuses on a squash-merged issue. Its `ahead=$(git log --oneline origin/main..HEAD)` guard assumes
+  the worker's stage commits reach `origin/main` unchanged, but the merge convention actually used
+  (`gh pr merge N --merge`) still produces a squash on at least one path -- confirmed on #83/PR #141
+  (squash commit `42eb7bb` on `main`; the worktree's 3 stage commits are content-identical but
+  different SHAs, so the script reports "HEAD has commits not on origin/main, refusing" even though
+  the issue is closed and nothing is actually unmerged). Ran read-only (exits before touching the
+  worktree), so no state was changed by checking this. Same failure mode will hit
+  `clean_stale_workers_if_closed.sh` on its own timer once `origin/main` is fetched there too.
+  Workaround for now: compare diff content (`git diff origin/main...HEAD` -- should be empty) rather
+  than commit ancestry before trusting the refusal; do not force the script past it by hand.
+
+- to report (not yet filed upstream, seen 2026-09-24 control-plane check): a refiner/control-plane
+  round-trip lost a human answer. On #84, a prior control-plane pass (2026-09-24T10:36) answered the
+  refiner's parked/rewrite/keep question citing the dated decision on #29 and returned #84 to
+  `status:refine`; by 13:09 `roedor-planner` reported the issue back in the refine queue asking the
+  *same already-answered question* again, because (its own account) the refiner's self-cleared
+  "pending refine" marker did not stick, so the guard's wake tick kept re-proposing #84, and a
+  later control-plane pass re-added the refine marker without noticing the question was already
+  settled. Net effect: an answered `blocked-on-human` doubt can resurface as if never answered.
+  Re-applied the same decision by hand this round; needs reproduction of the marker-clearing path
+  before filing upstream.
 
 ## Refiner
 
