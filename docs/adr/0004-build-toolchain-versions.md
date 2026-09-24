@@ -31,9 +31,12 @@ jlibtorrent and libVLC).
 | Room | 2.7.2 (KSP) | Verified with KSP 2.1.21-2.0.2. |
 | DataStore Preferences | 1.1.7 | Verified with SDK 35. |
 | Ktor server (CIO, test-host, SSE) | 3.1.3 | ADR-0002; 3.1 is built with Kotlin 2.1. |
+| Ktor client (core, CIO; test-only) | 3.1.3 (`version.ref = ktor`) | `EventsRouteTest` drives a real loopback server, since the in-process test host never streams SSE; introduced by #62 (PR #143). |
 | jlibtorrent | 2.0.12.9 | Latest release whose jars actually resolve on `https://dl.frostwire.com/maven` (`com.frostwire:jlibtorrent` + `jlibtorrent-android-{arm,arm64,x86,x86_64}`). Metadata lists 2.0.12.15/README mentions 2.0.13.6, but their jars 404. |
 | libVLC (`org.videolan.android:libvlc-all`) | 3.7.2 | Latest 3.x usable with compileSdk 35: 3.7.3 declares `minCompileSdk=37`, 3.7.4-3.7.6 `minCompileSdk=36`. |
 | kotlinx-coroutines | 1.10.2 | Required by Room, DataStore and Ktor; version compatible with Kotlin 2.1.21. |
+| Robolectric (test-only) | 4.14.1 | JVM unit tests that need Android framework classes; introduced by #40 (PR #107). Supports SDK 35. |
+| `androidx.test:core` (test-only) | 1.6.1 | `ApplicationProvider` for Robolectric tests; introduced by #40 (PR #107). |
 
 Other notes for the skeleton:
 - `gradle.properties` must set `org.gradle.jvmargs=-Xmx4g`: with the native libVLC/jlibtorrent
