@@ -16,9 +16,12 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import com.teachermovies.torrent.service.TorrentService
+import com.teachermovies.tv.di.AppContainer
 import com.teachermovies.tv.ui.AppRoute
 import com.teachermovies.tv.ui.MainShell
 import com.teachermovies.tv.ui.MainViewModel
+import com.teachermovies.tv.ui.downloads.DownloadsScreen
+import com.teachermovies.tv.ui.downloads.DownloadsViewModel
 import com.teachermovies.tv.ui.firstrun.FirstRunRoute
 import com.teachermovies.tv.ui.firstrun.FirstRunViewModel
 import com.teachermovies.tv.ui.library.LibraryRoute
@@ -26,6 +29,10 @@ import com.teachermovies.tv.ui.library.LibraryViewModel
 import com.teachermovies.tv.ui.player.PlayerPlaceholderScreen
 import com.teachermovies.tv.ui.settings.SettingsRoute
 import com.teachermovies.tv.ui.settings.SettingsViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 
 /**
  * The single entry point, reached from the TV home screen through the `LEANBACK_LAUNCHER` filter in
@@ -54,6 +61,16 @@ class MainActivity : ComponentActivity() {
             settings = container.settingsRepository,
             volumes = container.storageVolumeProvider,
             space = container.spaceProvider,
+        )
+    }
+
+    private val downloadsViewModel: DownloadsViewModel by viewModels {
+        val container = (application as TeacherMoviesApp).container
+        DownloadsViewModel.Factory(
+            engine = container.torrentEngine,
+            sync = container.engineRepositorySync,
+            serverUrl = serverUrl(container),
+            space = container::downloadVolumeSpace,
         )
     }
 
@@ -102,6 +119,7 @@ class MainActivity : ComponentActivity() {
                                     libraryContent = { modifier ->
                                         LibraryRoute(viewModel = libraryViewModel, onPlay = mainViewModel::openPlayer, modifier = modifier)
                                     },
+                                    downloadsContent = { modifier -> DownloadsScreen(viewModel = downloadsViewModel, modifier = modifier) },
                                     settingsContent = { modifier -> SettingsRoute(viewModel = settingsViewModel, modifier = modifier) },
                                 )
                         }
@@ -110,6 +128,15 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /**
+     * `http://<lan-ip>:<port>` for the Descargas empty state; the port follows the settings, the
+     * address is read (off the main thread) whenever they change.
+     */
+    private fun serverUrl(container: AppContainer): Flow<String?> =
+        container.settingsRepository.settings
+            .map { settings -> container.lanAddressResolver.current()?.let { "http://$it:${settings.httpPort}" } }
+            .flowOn(Dispatchers.IO)
 
     private fun requestNotificationPermissionOnce() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return

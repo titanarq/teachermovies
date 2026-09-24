@@ -11,8 +11,11 @@ import com.teachermovies.core.settings.SettingsRepository
 import com.teachermovies.core.settings.settingsDataStore
 import com.teachermovies.storage.AndroidStorageVolumeProvider
 import com.teachermovies.storage.FileSpaceProvider
+import com.teachermovies.storage.SpaceInfo
 import com.teachermovies.storage.SpaceProvider
 import com.teachermovies.storage.StorageVolumeProvider
+import com.teachermovies.storage.VolumeSelection
+import com.teachermovies.storage.VolumeSelector
 import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.jlib.JLibTorrentEngine
 import com.teachermovies.torrent.service.TorrentEngineHolder
@@ -22,7 +25,11 @@ import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -95,6 +102,27 @@ class AppContainer(application: Application) {
             scope = applicationScope,
             clock = { System.currentTimeMillis() },
         ).also { it.start() }
+
+    // The persisted volume id as last read, so [downloadVolumeSpace] never blocks on DataStore.
+    // Null until the first read, which only means the selector's fallback for that instant.
+    private val persistedVolumeId: StateFlow<String?> =
+        settingsRepository.settings
+            .map { it.downloadVolumeId }
+            .stateIn(applicationScope, SharingStarted.Eagerly, null)
+
+    /**
+     * Free space of the volume downloads go to right now -- the one [VolumeSelector] picks, as in
+     * [savePathProvider] -- or null when there is no volume at all (Descargas header, #70).
+     */
+    fun downloadVolumeSpace(): SpaceInfo? {
+        val volume =
+            when (val selection = VolumeSelector.select(storageVolumeProvider.volumes(), persistedVolumeId.value, spaceProvider)) {
+                is VolumeSelection.Selected -> selection.volume
+                is VolumeSelection.PersistedMissing -> selection.fallback
+                VolumeSelection.NoneAvailable -> null
+            }
+        return volume?.let { spaceProvider.spaceOf(it.root) }
+    }
 
     private companion object {
         const val TORRENT_STATE_DIR = "torrent-state"
