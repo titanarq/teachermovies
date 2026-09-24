@@ -94,7 +94,7 @@ _STATUS_KEYS = ("refine", "ready", "doing", "blocked_on_human", "ai_completed", 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="print changes, write nothing")
     args = parser.parse_args()
 
