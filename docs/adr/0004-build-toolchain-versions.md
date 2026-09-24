@@ -33,6 +33,7 @@ jlibtorrent and libVLC).
 | Ktor server (CIO, test-host, SSE) | 3.1.3 | ADR-0002; 3.1 is built with Kotlin 2.1. |
 | jlibtorrent | 2.0.12.9 | Latest release whose jars actually resolve on `https://dl.frostwire.com/maven` (`com.frostwire:jlibtorrent` + `jlibtorrent-android-{arm,arm64,x86,x86_64}`). Metadata lists 2.0.12.15/README mentions 2.0.13.6, but their jars 404. |
 | libVLC (`org.videolan.android:libvlc-all`) | 3.7.2 | Latest 3.x usable with compileSdk 35: 3.7.3 declares `minCompileSdk=37`, 3.7.4-3.7.6 `minCompileSdk=36`. |
+| kotlinx-coroutines | 1.10.2 | Required by Room, DataStore and Ktor; version compatible with Kotlin 2.1.21. |
 
 Other notes for the skeleton:
 - `gradle.properties` must set `org.gradle.jvmargs=-Xmx4g`: with the native libVLC/jlibtorrent

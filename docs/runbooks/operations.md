@@ -81,6 +81,18 @@ subtree is pulled.
   local branches. Remove the script and this note once agent-os#18 is fixed and the subtree is
   pulled.
 
+  Automated (2026-09-24) so nobody has to remember it after every merge:
+  `scripts/clean_stale_workers_if_closed.sh` is the second `ExecStart=` of
+  `scripts/systemd/teachermovies-board-sync.service`, so it runs on the same 5-minute timer as
+  the board sync. For every backend `project.backends` declares, it runs
+  `scripts/clean_stale_worker.sh <backend>` ONLY when `.cache/worker_<backend>.issue` names an
+  issue that is CLOSED on GitHub -- an open issue is a run still in flight and is never touched,
+  regardless of what the worktree looks like. `clean_stale_worker.sh`'s own guards (uncommitted
+  work, unpushed commits, merged-only branch deletion) still apply underneath; the wrapper only
+  adds the closed-issue gate and a cheap "already idle" skip so a normal tick with nothing to do
+  is silent. Both the wrapper and `clean_stale_worker.sh` are host-owned, outside `agent_os/`.
+  Same removal note as above once agent-os#18 is fixed upstream.
+
 ## Refiner
 
 `planner.refiner_unattended` is `false`: the refiner runs only by hand, attended:
