@@ -25,7 +25,8 @@ kotlin {
 dependencies {
     // The API adds a torrent to a chosen volume and reports both, so it needs the public types of
     // :torrent and :storage as well as :core-model (AGENTS.md dependency direction).
-    implementation(project(":core-model"))
+    // `api`: `PairingManager` (in `ServerDeps`) takes a `SettingsRepository` in its constructor.
+    api(project(":core-model"))
     // `api`: `ServerDeps` exposes `TorrentEngine` and `SpaceInfo` in its public constructor.
     api(project(":torrent"))
     api(project(":storage"))
@@ -38,5 +39,6 @@ dependencies {
     implementation(libs.ktor.server.status.pages)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.server.test.host)
 }
