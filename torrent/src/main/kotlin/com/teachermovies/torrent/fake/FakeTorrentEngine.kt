@@ -7,6 +7,7 @@ import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.EngineStatus
 import com.teachermovies.torrent.api.FilePriority
 import com.teachermovies.torrent.api.MagnetUri
+import com.teachermovies.torrent.api.RangeReadiness
 import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.api.TorrentFileInfo
 import com.teachermovies.torrent.api.TorrentSnapshot
@@ -131,6 +132,17 @@ class FakeTorrentEngine : TorrentEngine {
     override suspend fun clearWindow(id: TorrentId): EngineResult<Unit> {
         _recordedCalls += "clearWindow(${id.value})"
         return EngineResult.Ok(Unit)
+    }
+
+    override suspend fun rangeReadiness(
+        id: TorrentId,
+        fileIndex: Int,
+        byteOffset: Long,
+        lengthBytes: Long,
+    ): EngineResult<RangeReadiness> {
+        val snapshot = snapshotOf(id) ?: return EngineResult.Failure(EngineError.UnknownTorrent)
+        if (!snapshot.hasMetadata) return EngineResult.Failure(EngineError.NotReady)
+        return EngineResult.Failure(EngineError.Unsupported)
     }
 
     // -- Test controls: not part of TorrentEngine, drive the fake deterministically from a test. --
