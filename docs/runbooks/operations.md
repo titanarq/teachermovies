@@ -95,6 +95,10 @@ then start the unit. Never echo the tokens. Upgrade: the runner self-updates whi
 `allows_public_repositories=false`, and no org repo using them may be made public while they are
 registered -- any fork PR could run arbitrary code on this machine. Deregister first.
 
+- Runners Titan-tm-3/4 (`~/actions-runner-teachermovies-{3,4}`, systemd --user units
+  `gh-runner-teachermovies-{3,4}.service`) are org-level but reserved for teachermovies via the
+  `teachermovies`-only label (no `titanarq`), so other repos' CI (agent-os, roedor) can't claim them.
+
 ## Known mechanism issues filed upstream
 
 - agent-os#14 board item resolution (workaround above).
