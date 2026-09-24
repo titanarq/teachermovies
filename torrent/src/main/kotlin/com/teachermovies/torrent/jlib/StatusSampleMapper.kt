@@ -1,5 +1,6 @@
 package com.teachermovies.torrent.jlib
 
+import com.teachermovies.core.model.DownloadState
 import com.teachermovies.torrent.api.FilePriority
 import com.teachermovies.torrent.api.TorrentFileInfo
 import com.teachermovies.torrent.api.TorrentSnapshot
@@ -41,7 +42,11 @@ internal object StatusSampleMapper {
     const val LIB_NORMAL = 4
     const val LIB_HIGH = 7
 
-    /** The snapshot [current] becomes after [sample]: state, progress, rates, peers, ETA, ratio. */
+    /**
+     * The snapshot [current] becomes after [sample]: state, progress, rates, peers, ETA, ratio.
+     * The state is exactly what [DownloadStateMapper] derives, never dropped or rewritten, so a move
+     * the core-model table did not foresee cannot freeze a torrent (see [isUnexpectedTransition]).
+     */
     fun apply(
         current: TorrentSnapshot,
         sample: StatusSample,
@@ -73,6 +78,16 @@ internal object StatusSampleMapper {
             errorMessage = sample.errorMessage,
         )
     }
+
+    /**
+     * Whether the ticker's move from [current] to [next] falls outside core-model's
+     * `DownloadState.canTransitionTo` table. A self-move is never unexpected, so an unchanged state
+     * never answers true. The caller only warns; it still publishes [next].
+     */
+    fun isUnexpectedTransition(
+        current: DownloadState,
+        next: DownloadState,
+    ): Boolean = current != next && !current.canTransitionTo(next)
 
     /** Uploaded over downloaded bytes; a torrent that has downloaded nothing divides by 1. */
     fun ratio(
