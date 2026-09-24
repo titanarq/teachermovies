@@ -87,11 +87,11 @@ fun AssistantOverlay(
                 .padding(horizontal = 64.dp, vertical = 32.dp)
                 .focusRequester(focus)
                 .onKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown) {
-                        AssistantKeyMapper.map(event.key.nativeKeyCode, overlayOpen = true)?.let(onAction)
-                    }
-                    // Open overlay: every key is its own (mapper never returns null here).
-                    true
+                    // Open overlay: every key is its own except the volume keys (mapper null, #178),
+                    // which are not consumed (key-down and key-up) so the system changes the volume.
+                    val action = AssistantKeyMapper.map(event.key.nativeKeyCode, overlayOpen = true)
+                    if (action != null && event.type == KeyEventType.KeyDown) onAction(action)
+                    action != null
                 }.focusable(),
     ) {
         Text(

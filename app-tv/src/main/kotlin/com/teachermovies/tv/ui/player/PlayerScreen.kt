@@ -108,6 +108,7 @@ private fun isPlayerKey(keyCode: Int): Boolean =
  * returns to the root box when the panel closes.
  *
  * While [PlayerUiState.assistant] is set (#86) [AssistantOverlay] holds focus and handles every key
+ * but the volume keys (#178: neither it nor the root consumes them, so they reach the system)
  * through [onAssistantAction]; the transport overlay is hidden; focus returns to the root box when
  * it closes. [PlayerUiState.message] is shown in the transport overlay.
  */
