@@ -51,6 +51,41 @@ Backlog, closed -> Done, `blocked-on-human` -> left as is). Idempotent and quiet
 `scripts/board_sync.py --dry-run`. Remove the timer and script once agent-os#14 is fixed and the
 subtree is pulled.
 
+## Self-hosted runner (GitHub Actions)
+
+The org is on the Free plan with hosted minutes exhausted, so both workflows run
+`runs-on: [self-hosted, teachermovies]` on this machine. Two runners (`Titan-tm-1`, `Titan-tm-2`)
+are registered at **organization** level (`titanarq`, runner group Default, labels
+`titanarq,teachermovies`) so a PR's jobs run in parallel and other (private) org repos can use
+them too -- those repos target `runs-on: [self-hosted, titanarq]`. Each runner has its own
+`_work/`; they share `~/.gradle` (JDK 17 toolchain via foojay in `~/.gradle/jdks`) and
+`~/Android/Sdk`. No other session registers additional runners without coordinating here first.
+
+| unit | runner dir |
+|---|---|
+| `gh-runner-teachermovies-1.service` | `~/actions-runner-teachermovies-1` |
+| `gh-runner-teachermovies-2.service` | `~/actions-runner-teachermovies-2` |
+
+Unit files live in `~/.config/systemd/user/` (`run.sh`, `Restart=always`; needs
+`loginctl show-user $USER -p Linger` = yes to run without a login session).
+
+```sh
+systemctl --user status gh-runner-teachermovies-1 gh-runner-teachermovies-2
+journalctl --user -u gh-runner-teachermovies-1 -n 50 -o cat
+systemctl --user restart gh-runner-teachermovies-1 gh-runner-teachermovies-2
+gh api orgs/titanarq/actions/runners -q '.runners[] | "\(.name) \(.status) \(.busy)"'
+gh api orgs/titanarq/actions/runner-groups -q '.runner_groups[] | "\(.name) public=\(.allows_public_repositories)"'
+```
+
+Re-register (runner removed/offline for >14 days, or moved machine): stop the unit, then in the
+runner dir `./config.sh remove --token "$(gh api -X POST orgs/titanarq/actions/runners/remove-token -q .token)"`
+and `./config.sh --unattended --url https://github.com/titanarq --token "$(gh api -X POST orgs/titanarq/actions/runners/registration-token -q .token)" --labels titanarq,teachermovies --name <host>-tm-N`,
+then start the unit. Never echo the tokens. Upgrade: the runner self-updates while online.
+
+**Rule: never let these runners serve a public repo.** The Default runner group must keep
+`allows_public_repositories=false`, and no org repo using them may be made public while they are
+registered -- any fork PR could run arbitrary code on this machine. Deregister first.
+
 ## Known mechanism issues filed upstream
 
 - agent-os#14 board item resolution (workaround above).
