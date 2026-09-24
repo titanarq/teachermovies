@@ -156,7 +156,12 @@ class MainActivity : ComponentActivity() {
     /** The player route's ViewModel factory (#78): a fresh session over the container's player. */
     private fun playerViewModelFactory(): PlayerViewModel.Factory {
         val container = (application as TeacherMoviesApp).container
-        return PlayerViewModel.Factory(player = container.player, repo = container.torrentRepository)
+        return PlayerViewModel.Factory(
+            player = container.player,
+            repo = container.torrentRepository,
+            hidden = container.hiddenSubtitleController,
+            capture = container.lineCaptureController,
+        )
     }
 
     /**
