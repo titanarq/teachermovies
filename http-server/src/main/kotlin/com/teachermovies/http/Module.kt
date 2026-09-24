@@ -35,7 +35,7 @@ fun Application.module(deps: ServerDeps) {
         }
     }
     routing {
-        // Routes are added by the following stage.
+        statusRoutes(deps)
     }
 }
 
