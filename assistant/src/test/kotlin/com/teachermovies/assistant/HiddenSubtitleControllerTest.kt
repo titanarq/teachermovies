@@ -5,6 +5,10 @@ import com.teachermovies.player.api.SubtitleFormat
 import com.teachermovies.player.api.Track
 import com.teachermovies.player.fake.FakePlayer
 import java.io.File
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -317,6 +321,110 @@ class HiddenSubtitleControllerTest {
             assertEquals(HiddenModeResult.NoSubtitleFile, result)
             assertFalse(controller.active.value)
             assertEquals("sub-1", player.selectedSubtitleId.value)
+            assertTrue(player.extractionCalls.isEmpty())
+        }
+
+    @Test
+    fun `embedded tracks published after start began are waited for and used`() =
+        runTest {
+            val player = FakePlayer()
+            player.emitExtractionText(SRT, SubtitleFormat.SRT)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            val publishAfterMs = HiddenSubtitleController.TRACKS_TIMEOUT_MS / 2
+            // What libVLC does: the tracks show up only once the media has been parsed.
+            backgroundScope.launch {
+                delay(publishAfterMs)
+                player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-en", "English", "en")))
+            }
+            val startedAt = currentTime
+
+            val result = controller.start(mediaFile)
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.EMBEDDED), result)
+            assertEquals(publishAfterMs, currentTime - startedAt)
+            assertEquals(listOf("sub-en"), player.extractionCalls)
+            assertTrue(controller.active.value)
+        }
+
+    @Test
+    fun `no tracks published within the timeout gives NoSubtitleFile`() =
+        runTest {
+            val player = FakePlayer()
+            player.emitExtractionText(SRT, SubtitleFormat.SRT)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            // Too late: published after the wait is over.
+            backgroundScope.launch {
+                delay(HiddenSubtitleController.TRACKS_TIMEOUT_MS + 1_000L)
+                player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-en", "English", "en")))
+            }
+            val startedAt = currentTime
+
+            val result = controller.start(mediaFile)
+
+            assertEquals(HiddenModeResult.NoSubtitleFile, result)
+            assertEquals(HiddenSubtitleController.TRACKS_TIMEOUT_MS, currentTime - startedAt)
+            assertFalse(controller.active.value)
+            assertTrue(player.extractionCalls.isEmpty())
+        }
+
+    @Test
+    fun `published tracks without English give NoSubtitleFile without waiting`() =
+        runTest {
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-fr", "Francais", "fr")))
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            val startedAt = currentTime
+
+            val result = controller.start(mediaFile)
+
+            assertEquals(HiddenModeResult.NoSubtitleFile, result)
+            assertEquals(0L, currentTime - startedAt)
+            assertTrue(player.extractionCalls.isEmpty())
+        }
+
+    @Test
+    fun `tracks already known when start runs are used without waiting`() =
+        runTest {
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-en", "English", "en")))
+            player.emitExtractionText(SRT, SubtitleFormat.SRT)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            val startedAt = currentTime
+
+            val result = controller.start(mediaFile)
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.EMBEDDED), result)
+            assertEquals(0L, currentTime - startedAt)
+            assertEquals(listOf("sub-en"), player.extractionCalls)
+        }
+
+    @Test
+    fun `stop while start waits for tracks ends the wait with NoSubtitleFile`() =
+        runTest {
+            val player = FakePlayer()
+            player.emitExtractionText(SRT, SubtitleFormat.SRT)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+
+            val pending = async { controller.start(mediaFile) }
+            runCurrent()
+            assertFalse(pending.isCompleted)
+            val stoppedAt = currentTime
+
+            controller.stop()
+            runCurrent()
+
+            assertTrue(pending.isCompleted)
+            assertEquals(HiddenModeResult.NoSubtitleFile, pending.await())
+            assertEquals(stoppedAt, currentTime)
+            // Tracks arriving afterwards do not revive the abandoned start.
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-en", "English", "en")))
+            runCurrent()
+            assertFalse(controller.active.value)
             assertTrue(player.extractionCalls.isEmpty())
         }
 

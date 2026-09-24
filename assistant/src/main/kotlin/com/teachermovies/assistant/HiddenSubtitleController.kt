@@ -15,7 +15,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Where the cues of a hidden-mode session came from. */
 enum class SubtitleSource {
@@ -67,6 +70,9 @@ class HiddenSubtitleController(
 
     private var reassertJob: Job? = null
 
+    /** Bumped by every [stop]: a [start] still in flight when it changes gives up. */
+    private val generation = MutableStateFlow(0L)
+
     /**
      * Enters hidden mode for [mediaFile] in [language]: resolves the cues, hands the track to
      * [engine] and turns the player's own subtitles off.
@@ -74,7 +80,12 @@ class HiddenSubtitleController(
      * The sidecar subtitle file wins ([SubtitleSource.SIDECAR]); only without one is the player's
      * embedded subtitle track for [language] ([EmbeddedSubtitleTracks.pick] over
      * [Player.subtitleTracks]) extracted into the cache and parsed ([SubtitleSource.EMBEDDED]).
-     * [mediaFile] is expected to be the media currently open in [player].
+     * [mediaFile] is expected to be the media currently open in [player]. libVLC publishes a media's
+     * tracks only once it has parsed it, possibly after `PlaybackSession.open` returned: while
+     * [Player.subtitleTracks] is still empty, this suspends (never blocks) until it publishes a
+     * non-empty list, for at most [TRACKS_TIMEOUT_MS]; a list that is already known is used at once,
+     * even when it has no track for [language]. A [stop] while [start] is still waiting or extracting
+     * wins: that [start] returns [HiddenModeResult.NoSubtitleFile] at once and activates nothing.
      *
      * Any previous hidden-mode session is stopped first, so a failing call leaves [active] false
      * whatever the state was before it. No failure touches the player's subtitle selection: the
@@ -85,6 +96,7 @@ class HiddenSubtitleController(
         language: String = "en",
     ): HiddenModeResult {
         stop()
+        val session = generation.value
 
         val sidecar = SidecarSubtitles.findFor(mediaFile, language)
         val parsed: Parsing
@@ -94,7 +106,7 @@ class HiddenSubtitleController(
             source = SubtitleSource.SIDECAR
         } else {
             val candidate =
-                EmbeddedSubtitleTracks.pick(player.subtitleTracks.value, language)
+                EmbeddedSubtitleTracks.pick(publishedSubtitleTracks(session), language)
                     ?: return HiddenModeResult.NoSubtitleFile
             parsed = embedded(mediaFile, candidate)
             source = SubtitleSource.EMBEDDED
@@ -104,6 +116,7 @@ class HiddenSubtitleController(
                 is Parsing.Ok -> parsed.track
                 is Parsing.Failed -> return parsed.result
             }
+        if (generation.value != session) return HiddenModeResult.NoSubtitleFile
 
         engine.load(track)
         player.selectSubtitle(null)
@@ -128,10 +141,27 @@ class HiddenSubtitleController(
      * Nothing under `cacheDir` is deleted.
      */
     fun stop() {
+        generation.value += 1
         reassertJob?.cancel()
         reassertJob = null
         engine.load(null)
         mutableActive.value = false
+    }
+
+    /**
+     * The player's subtitle tracks: the current list when it is not empty, otherwise the first
+     * non-empty list published within [TRACKS_TIMEOUT_MS]; an empty list when none arrives or when
+     * [stop] ends [session] first.
+     */
+    private suspend fun publishedSubtitleTracks(session: Long): List<Track> {
+        val known = player.subtitleTracks.value
+        if (known.isNotEmpty()) return known
+        val published =
+            withTimeoutOrNull(TRACKS_TIMEOUT_MS) {
+                combine(player.subtitleTracks, generation) { tracks, current -> tracks.takeIf { current == session } }
+                    .first { it == null || it.isNotEmpty() }
+            }
+        return published ?: emptyList()
     }
 
     /** Cues of the embedded [candidate], from its cache file when a previous session wrote one. */
@@ -186,14 +216,17 @@ class HiddenSubtitleController(
         data class Failed(val result: HiddenModeResult.Unreadable) : Parsing
     }
 
-    private companion object {
-        const val SUBTITLE_CACHE_DIR = "subtitles"
+    companion object {
+        /** How long [start] waits for [Player.subtitleTracks] to publish tracks after an empty list. */
+        const val TRACKS_TIMEOUT_MS: Long = 3_000L
 
-        val UNSAFE_ID_CHARS = Regex("[^A-Za-z0-9_-]")
+        private const val SUBTITLE_CACHE_DIR = "subtitles"
 
-        fun sanitise(trackId: String): String = trackId.replace(UNSAFE_ID_CHARS, "_").ifEmpty { "_" }
+        private val UNSAFE_ID_CHARS = Regex("[^A-Za-z0-9_-]")
 
-        fun extensionOf(format: SubtitleFormat): String =
+        private fun sanitise(trackId: String): String = trackId.replace(UNSAFE_ID_CHARS, "_").ifEmpty { "_" }
+
+        private fun extensionOf(format: SubtitleFormat): String =
             when (format) {
                 SubtitleFormat.SRT -> "srt"
                 SubtitleFormat.ASS -> "ass"
