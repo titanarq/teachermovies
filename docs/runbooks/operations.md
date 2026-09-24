@@ -143,6 +143,23 @@ gh api -X PUT repos/titanarq/teachermovies/interaction-limits -f limit=collabora
   Workaround for now: compare diff content (`git diff origin/main...HEAD` -- should be empty) rather
   than commit ancestry before trusting the refusal; do not force the script past it by hand.
 
+  Manual remediation once the refusal is confirmed a false positive (content fully contained in
+  `origin/main`, nothing unique to the worktree, no backend process running against it): the
+  script's own actions have to be replicated by hand, because *both* of its ancestry-based guards
+  --  the `ahead` ff-check and the `--merged` filter in the branch-deletion loop -- miss a squash
+  merge, not just the first one. Confirmed on #75/PR #132 (squash commit `ef0a0cf`): after manually
+  verifying `git diff origin/main HEAD` for exactly the issue's own files is empty (the branch's
+  only unique contribution, per `git diff origin/main...HEAD --stat`, all present byte-identical on
+  `main`; any other diff noise is `main` being *ahead*, e.g. superseded placeholders or docs from
+  later issues, never something the worktree has that `main` lacks -- if that direction of check
+  turns up worktree-only content, stop and report instead of proceeding), archive any leftover
+  `scratchpad/progress.log` as the script would, then run the same two steps the script would have
+  run had its guards passed: `git -C <worktree> switch -q --detach origin/main`, then
+  `git -C <worktree> branch -q -D <backend-branch>` (force delete, not `-d`/`--merged`-gated, since
+  `--merged` will not see this branch as merged either -- safe only because the content check above
+  already established nothing on it is missing from `main`). Confirm the result looks idle with
+  `git -C <worktree> status --short --branch`.
+
 - to report (not yet filed upstream, seen 2026-09-24 control-plane check): a refiner/control-plane
   round-trip lost a human answer. On #84, a prior control-plane pass (2026-09-24T10:36) answered the
   refiner's parked/rewrite/keep question citing the dated decision on #29 and returned #84 to

@@ -63,6 +63,20 @@
   EngineRepositorySync` (#68), started when the container is built, on its own
   application-lifetime `CoroutineScope`.
 
+## Biblioteca (#72)
+- `LibraryViewModel(repo: TorrentRepository)` exposes `StateFlow<LibraryUiState(items: List<LibraryCard>)>`
+  mapped from `observeLibrary()` (newest completed first). `LibraryCard(id, title, sizeText,
+  resumeText?)`: `sizeText` is `Formatters.bytes(sizeBytes)`, `resumeText` is
+  `"Continuar en " + Formatters.eta(lastPositionMs / 1000)` when `lastPositionMs > 0`, else null.
+- `LibraryScreen`: `LazyVerticalGrid` of tv `Card`s (title, ▶ `100 %`, size, optional resume text);
+  DOWN from the tab row enters on the first card (`focusRestorer`, then the last focused card); OK
+  calls `onPlay(id)`. No movies -> `Tu biblioteca está vacía`, nothing focusable (focus stays on
+  the tab row). The shell takes it as the `libraryContent` slot.
+- Navigation: `MainUiState.route: AppRoute` is `Shell` or `Player(id)` (`player/{id}`);
+  `MainViewModel.openPlayer(id)` / `closePlayer()`. `MainActivity` shows `PlayerPlaceholderScreen`
+  (`Reproductor pendiente`, BACK -> `closePlayer`) instead of the shell for `Player`; the real
+  player replaces it in #78.
+
 ## Boundaries
 - Depends on feature modules' public interfaces only; contains no torrent, HTTP or VLC logic itself.
 - All screens fully usable with the D-pad; focus order and initial focus are acceptance criteria.

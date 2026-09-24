@@ -28,6 +28,10 @@ dependencies {
 
     implementation(project(":core-model"))
 
+    // `implementation`, never `api`: no `org.videolan` type crosses this module's boundary
+    // (ADR-0001 §2, `docs/modules/player.md`), so consumers compile against `api` alone.
+    implementation(libs.libvlc.all)
+
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }

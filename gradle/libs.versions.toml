@@ -58,6 +58,11 @@ ktor-server-content-negotiation = { group = "io.ktor", name = "ktor-server-conte
 ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
 ktor-server-status-pages = { group = "io.ktor", name = "ktor-server-status-pages", version.ref = "ktor" }
 ktor-server-test-host = { group = "io.ktor", name = "ktor-server-test-host", version.ref = "ktor" }
+# `EventsRouteTest` (#62): the in-process test host runs a request's whole pipeline to completion
+# before handing anything back to its client, which an SSE route never does on its own -- so that
+# test drives a real `embeddedServer` on a loopback port with a real client engine instead.
+ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
+ktor-client-cio = { group = "io.ktor", name = "ktor-client-cio", version.ref = "ktor" }
 
 # Native libraries (ADR-0001): :torrent -- #51, :player -- #75
 jlibtorrent = { group = "com.frostwire", name = "jlibtorrent", version.ref = "jlibtorrent" }
