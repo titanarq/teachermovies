@@ -5,15 +5,21 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.teachermovies.core.settings.AppSettings
 import com.teachermovies.core.settings.SettingsRepository
+import com.teachermovies.http.ServerState
 import com.teachermovies.storage.SpaceProvider
 import com.teachermovies.storage.StorageVolumeProvider
 import com.teachermovies.storage.VolumeInfo
 import com.teachermovies.storage.VolumeSelection
 import com.teachermovies.storage.VolumeSelector
+import com.teachermovies.tv.ui.server.pinRefreshTicker
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -37,7 +43,9 @@ data class VolumeRow(
  * volume downloads actually go to -- the persisted choice, or `VolumeSelector`'s fallback while the
  * persisted one is missing -- and null when there is none. [volumeMissing] is true while the
  * persisted volume is not mounted (a USB drive unplugged). [portError] is true after the last
- * [SettingsViewModel.changePort] was rejected, until a valid one succeeds.
+ * [SettingsViewModel.changePort] was rejected, until a valid one succeeds. [serverUrl] is
+ * `http://<lan-ip>:<port>` (null without a LAN address), [pin] the pairing PIN and [serverState]
+ * the embedded HTTP server's state (#66).
  */
 data class SettingsUiState(
     val httpPort: Int = AppSettings().httpPort,
@@ -45,6 +53,9 @@ data class SettingsUiState(
     val selectedVolumeId: String? = null,
     val volumeMissing: Boolean = false,
     val portError: Boolean = false,
+    val serverUrl: String? = null,
+    val pin: String = "",
+    val serverState: ServerState = ServerState.Stopped,
 )
 
 /**
@@ -54,22 +65,37 @@ data class SettingsUiState(
  *
  * [StorageVolumeProvider] is a snapshot, not a stream, so the list is re-read on every settings
  * change and on [refreshVolumes] -- which the screen calls each time it is shown, so a USB drive
- * plugged in meanwhile appears. A port change here is persisted only; restarting the HTTP server
- * on it is #65.
+ * plugged in meanwhile appears. A port change here is persisted only; `HttpServerController`
+ * follows the setting and restarts the server on it (#65), which [serverState] then reports.
+ *
+ * [pin] is read on creation, on [refreshVolumes] (each time the screen is shown), whenever
+ * [serverState] changes and on every `pinTicks` emission.
  */
 class SettingsViewModel(
     private val settings: SettingsRepository,
     private val volumes: StorageVolumeProvider,
     private val space: SpaceProvider,
+    private val pin: () -> String,
+    private val serverState: StateFlow<ServerState>,
+    serverUrl: Flow<String?> = flowOf(null),
+    pinTicks: Flow<Unit> = pinRefreshTicker(),
 ) : ViewModel() {
 
     private val portError = MutableStateFlow(false)
     private val volumeSnapshot = MutableStateFlow(volumes.volumes())
+    private val currentPin = MutableStateFlow(pin())
+
+    private val server = combine(serverUrl, currentPin, serverState) { url, p, state -> Triple(url, p, state) }
 
     val uiState: StateFlow<SettingsUiState> =
-        combine(settings.settings, volumeSnapshot, portError) { appSettings, available, error ->
-            buildState(appSettings, available, error)
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsUiState())
+        combine(settings.settings, volumeSnapshot, portError, server) { appSettings, available, error, (url, p, state) ->
+            buildState(appSettings, available, error).copy(serverUrl = url, pin = p, serverState = state)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsUiState(pin = currentPin.value, serverState = serverState.value))
+
+    init {
+        serverState.onEach { currentPin.value = pin() }.launchIn(viewModelScope)
+        pinTicks.onEach { currentPin.value = pin() }.launchIn(viewModelScope)
+    }
 
     /**
      * Persists [port] if it is in [VALID_HTTP_PORTS] and clears `portError`; otherwise saves
@@ -95,8 +121,9 @@ class SettingsViewModel(
         viewModelScope.launch { settings.setDownloadVolumeId(id) }
     }
 
-    /** Re-reads the attached volumes and their free space. */
+    /** Re-reads the attached volumes and their free space, and the PIN. */
     fun refreshVolumes() {
+        currentPin.value = pin()
         volumeSnapshot.update { volumes.volumes() }
     }
 
@@ -137,13 +164,16 @@ class SettingsViewModel(
         private val settings: SettingsRepository,
         private val volumes: StorageVolumeProvider,
         private val space: SpaceProvider,
+        private val pin: () -> String,
+        private val serverState: StateFlow<ServerState>,
+        private val serverUrl: Flow<String?>,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
                 "Unknown ViewModel class ${modelClass.name}"
             }
-            return SettingsViewModel(settings, volumes, space) as T
+            return SettingsViewModel(settings, volumes, space, pin, serverState, serverUrl) as T
         }
     }
 }

@@ -21,9 +21,6 @@
     <string name="library_play_mark">▶</string>
     <string name="library_complete">100 %</string>
 
-    <!-- Placeholder for the player route until #78. -->
-    <string name="player_pending">Reproductor pendiente</string>
-
     <!-- First run (#46). -->
     <string name="first_run_title">Bienvenido a Teacher Movies</string>
     <string name="first_run_hint">Abre esta dirección en el navegador del móvil, conectado a la misma red, para enviar películas a la TV.</string>
@@ -39,4 +36,29 @@
     <string name="engine_status_running">en marcha</string>
     <string name="engine_status_error">error</string>
     <string name="first_run_continue">Continuar</string>
+    <!-- HTTP server status and pairing PIN, first run and Configuración (#66). -->
+    <string name="server_pin">PIN %1$s</string>
+    <string name="server_stopped">Servidor detenido</string>
+    <string name="server_error_port_in_use">Error: puerto en uso</string>
+    <string name="server_error">Error: %1$s</string>
+    <string name="settings_server_title">Servidor</string>
+    <!-- Descargas (#70). -->
+    <string name="downloads_free_space">Espacio libre: %1$s</string>
+    <string name="downloads_free_space_unknown">Espacio libre: sin volumen</string>
+    <string name="downloads_empty">No hay descargas. Envía un magnet desde el móvil a %1$s</string>
+    <string name="downloads_empty_no_address">http://IP:puerto</string>
+    <string name="downloads_eta">ETA %1$s</string>
+    <string name="downloads_ratio">ratio %1$s</string>
+    <plurals name="downloads_peers">
+        <item quantity="one">%1$d peer</item>
+        <item quantity="other">%1$d peers</item>
+    </plurals>
+    <string name="downloads_action_choose_files">Elegir archivos</string>
+    <string name="downloads_action_delete">Borrar</string>
+    <string name="downloads_action_cancel">Cancelar</string>
+    <string name="downloads_confirm_delete">¿Borrar también los archivos?</string>
+    <string name="downloads_confirm_yes">Sí</string>
+    <string name="downloads_confirm_no">No</string>
+    <string name="downloads_choose_files_pending">La elección de archivos aún no está disponible.</string>
+    <string name="downloads_close">Cerrar</string>
 </resources>

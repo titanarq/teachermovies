@@ -60,4 +60,14 @@ class FormattersTest {
         assertEquals("Completado", Formatters.stateLabel(DownloadState.Completed))
         assertEquals("Error", Formatters.stateLabel(DownloadState.Error))
     }
+
+    @Test
+    fun playbackTimeIsMinutesSecondsOrHoursMinutesSeconds() {
+        assertEquals("0:00", Formatters.playbackTime(0))
+        assertEquals("0:59", Formatters.playbackTime(59_999))
+        assertEquals("1:05", Formatters.playbackTime(65_000))
+        assertEquals("59:59", Formatters.playbackTime(3_599_000))
+        assertEquals("1:02:05", Formatters.playbackTime(3_725_000))
+        assertEquals("0:00", Formatters.playbackTime(-5_000))
+    }
 }

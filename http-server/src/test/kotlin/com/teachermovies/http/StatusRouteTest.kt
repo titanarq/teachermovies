@@ -26,6 +26,7 @@ class StatusRouteTest {
             appVersion = "1.2.3",
             clock = { 0L },
             pairing = PairingManager(InMemorySettingsRepository(), SecureRandom(), { 0L }),
+            subtitles = FakeSubtitleStore(),
             allowTestRemoteHeader = true,
         )
 

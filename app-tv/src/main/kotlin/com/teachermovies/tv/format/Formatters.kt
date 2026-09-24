@@ -58,6 +58,19 @@ object Formatters {
         }
     }
 
+    /**
+     * Player clock (#78): `3_725_000` ms -> `"1:02:05"`, `65_000` -> `"1:05"`, `0` -> `"0:00"`;
+     * truncated to the second, negatives clamped to zero.
+     */
+    fun playbackTime(ms: Long): String {
+        val total = ms.coerceAtLeast(0) / 1000
+        val hours = total / 3600
+        val minutes = (total % 3600) / 60
+        val secs = total % 60
+        val ss = secs.toString().padStart(2, '0')
+        return if (hours > 0) "$hours:${minutes.toString().padStart(2, '0')}:$ss" else "$minutes:$ss"
+    }
+
     /** `72.44` -> `"72 %"`: rounded to the nearest whole percent. */
     fun percent(value: Double): String = "${value.roundToInt()} %"
 
