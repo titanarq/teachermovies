@@ -216,6 +216,20 @@
   `Error: puerto en uso` (`ServerStatusLabel.of`: a failure reason containing "in use"/`EADDRINUSE`)
   or `Error: <reason>`. Plain text only; focus order on both screens is unchanged.
 
+## LAN announcement (#103)
+- `app-tv` depends on `:discovery`. `AppContainer.serviceAnnouncer: ServiceAnnouncer` is
+  `NsdServiceAnnouncer(AndroidNsdRegistrar(application))`; `AppContainer.serverAnnouncementCoordinator`
+  is `discovery.ServerAnnouncementCoordinator(announcer, serverState = httpServerController.state,
+  deviceName = { Build.MODEL }, scope = applicationScope)` -- the container is the only place that
+  reads `Build.MODEL`.
+- `ServerAnnouncementCoordinator` (no Android types): `start()` collects the server state; on
+  `Running(port)` it announces `TvServiceInfo(ServiceNames.instanceName(deviceName()), port)`, again
+  only when the port differs from the one announced; on `Stopped`/`Failed` it calls
+  `announcer.stop()`. `stop()` cancels the collection and withdraws the announcement.
+- `TeacherMoviesApp.onCreate` starts it right after `httpServerController.start()`. The announcement
+  is never on the server's path (`ServiceAnnouncer` does not throw) and no screen reads
+  `AnnouncementState`: the TV keeps showing `http://IP:port` and the PIN as #66 defines them.
+
 ## Boundaries
 - Depends on feature modules' public interfaces only; contains no torrent, HTTP or VLC logic itself.
 - All screens fully usable with the D-pad; focus order and initial focus are acceptance criteria.
