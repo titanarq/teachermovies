@@ -8,8 +8,8 @@ import io.ktor.server.engine.embeddedServer
 /**
  * The embedded HTTP server (ADR-0002: Ktor + CIO) serving [module] on [host]:[port].
  *
- * [start] returns immediately; [stop] shuts down gracefully and is idempotent. Refusing non-LAN
- * clients is #59; starting it on the TV is #65.
+ * [start] returns immediately; [stop] shuts down gracefully and is idempotent. [module] refuses
+ * non-LAN clients (#59); starting this on the TV is #65.
  */
 class LocalHttpServer(
     private val deps: ServerDeps,

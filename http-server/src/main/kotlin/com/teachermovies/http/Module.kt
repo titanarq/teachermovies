@@ -1,5 +1,6 @@
 package com.teachermovies.http
 
+import com.teachermovies.http.auth.installLanAddressGuard
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -16,6 +17,8 @@ import kotlinx.serialization.json.Json
  * in-process with `testApplication { application { module(fakeDeps) } }`.
  */
 fun Application.module(deps: ServerDeps) {
+    // First: no other plugin or route ever sees a request from off the LAN (#59).
+    installLanAddressGuard(deps.allowTestRemoteHeader)
     install(ContentNegotiation) {
         // Nullable fields are always written (e.g. `"freeBytes":null`), so clients see every key.
         json(Json { explicitNulls = true })
