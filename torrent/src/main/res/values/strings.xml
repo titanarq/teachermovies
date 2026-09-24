@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- TorrentService's foreground notification (#54). -->
+    <string name="torrent_notification_channel_name">Descargas</string>
+    <string name="torrent_notification_title">Descargando</string>
+</resources>

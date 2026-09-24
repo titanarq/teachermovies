@@ -35,6 +35,12 @@ dependencies {
     implementation(libs.jlibtorrent.android.arm64)
     implementation(libs.jlibtorrent.android.x64)
 
+    // The foreground `TorrentService` (#54): `LifecycleService` + `lifecycleScope`, and
+    // `NotificationCompat`/`ServiceCompat`/`ContextCompat` for the notification and the typed
+    // `startForeground` across API 26-35.
+    implementation(libs.androidx.lifecycle.service)
+    implementation(libs.androidx.core.ktx)
+
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }
