@@ -14,10 +14,15 @@ import com.frostwire.jlibtorrent.TorrentFlags
 import com.frostwire.jlibtorrent.TorrentHandle
 import com.frostwire.jlibtorrent.TorrentInfo
 import com.frostwire.jlibtorrent.TorrentStatus
+import com.frostwire.jlibtorrent.Vectors
 import com.frostwire.jlibtorrent.alerts.AddTorrentAlert
 import com.frostwire.jlibtorrent.alerts.Alert
 import com.frostwire.jlibtorrent.alerts.AlertType
 import com.frostwire.jlibtorrent.alerts.MetadataReceivedAlert
+import com.frostwire.jlibtorrent.alerts.SaveResumeDataAlert
+import com.frostwire.jlibtorrent.alerts.SaveResumeDataFailedAlert
+import com.frostwire.jlibtorrent.swig.error_code
+import com.frostwire.jlibtorrent.swig.libtorrent
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
@@ -29,6 +34,8 @@ import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.api.TorrentFileInfo
 import com.teachermovies.torrent.api.TorrentSnapshot
 import com.teachermovies.torrent.policy.RawPhase
+import com.teachermovies.torrent.resume.FileResumeDataStore
+import com.teachermovies.torrent.resume.ResumeDataStore
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -40,10 +47,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.io.IOException
 
 /**
  * The jlibtorrent 2.x-backed [TorrentEngine] (ADR-0001 §3-4).
@@ -60,17 +70,29 @@ import java.io.File
  * metadata is known (a magnet's `metadata_received_alert`, or a `.torrent` file's successful add) the
  * engine applies `FileSelectionPolicy` through `prioritize_files` and records the chosen
  * [TorrentSnapshot.mainFileIndex]. Control operations act on the session's handle for the id and
- * republish at once; unknown ids answer [EngineError.UnknownTorrent]. Window prioritisation (E7) and
- * resume data (#53) answer [EngineError.Unsupported] until they land.
+ * republish at once; unknown ids answer [EngineError.UnknownTorrent]. Window prioritisation (E7)
+ * answers [EngineError.Unsupported] until it lands.
+ *
+ * Resume data (#53): the engine asks libtorrent for a torrent's resume data (with its info dict, so
+ * a magnet never re-fetches metadata) every [RESUME_SAVE_MILLIS] for the torrents that need it,
+ * right after an add, a metadata arrival and a [pause], and for every torrent in [saveResumeData]
+ * and [stop]; each `save_resume_data_alert` is written through [resumeData], and [remove] deletes
+ * the entry. [start] re-adds every stored torrent before reporting Running; the flags stored with it
+ * (paused, auto-managed) come back as they were, and its file priorities are kept rather than
+ * re-running the automatic selection. Entries the store or libtorrent cannot read are skipped and
+ * left on disk untouched.
  *
  * @param savePaths the per-torrent payload directory.
- * @param stateDir where the engine keeps its own state (session and resume data, #53).
+ * @param stateDir where the engine keeps its own state; resume data lives in `<stateDir>/resume`
+ *   unless [resumeData] says otherwise.
  * @param dispatcher where the engine's bookkeeping runs; it is confined to one task at a time.
+ * @param resumeData where resume data is persisted.
  */
 class JLibTorrentEngine(
     private val savePaths: SavePathProvider,
     private val stateDir: File,
     dispatcher: CoroutineDispatcher,
+    private val resumeData: ResumeDataStore = FileResumeDataStore(File(stateDir, RESUME_DIR)),
 ) : TorrentEngine {
     @OptIn(ExperimentalCoroutinesApi::class)
     private val serial: CoroutineDispatcher = dispatcher.limitedParallelism(1)
@@ -86,16 +108,36 @@ class JLibTorrentEngine(
     private var session: SessionManager? = null
     private val snapshots = LinkedHashMap<TorrentId, TorrentSnapshot>()
     private var ticker: Job? = null
+    private var resumeTicker: Job? = null
+
+    /** Torrents re-added from resume data whose `add_torrent_alert` has not arrived yet. */
+    private val restored = HashSet<TorrentId>()
+
+    /** Resume-data requests libtorrent has not answered yet (saved or failed). */
+    private val pendingResumeSaves = MutableStateFlow(0)
+
+    /** Resume-data failures (native or store writes) since the last [saveResumeData] began. */
+    private val resumeFailures = ArrayList<String>()
 
     private val listener =
         object : AlertListener {
-            override fun types(): IntArray = intArrayOf(AlertType.ADD_TORRENT.swig(), AlertType.METADATA_RECEIVED.swig())
+            override fun types(): IntArray =
+                intArrayOf(
+                    AlertType.ADD_TORRENT.swig(),
+                    AlertType.METADATA_RECEIVED.swig(),
+                    AlertType.SAVE_RESUME_DATA.swig(),
+                    AlertType.SAVE_RESUME_DATA_FAILED.swig(),
+                )
 
             override fun alert(alert: Alert<*>) {
                 val event =
                     when (alert) {
                         is AddTorrentAlert -> addedEvent(alert)
                         is MetadataReceivedAlert -> metadataEvent(alert)
+                        is SaveResumeDataAlert -> resumeDataEvent(alert)
+                        // libtorrent also answers this way when there was nothing to save or the
+                        // torrent is gone; it only settles the pending request.
+                        is SaveResumeDataFailedAlert -> SessionEvent.ResumeDataFailed(handleIdOf(alert.handle()))
                         else -> null
                     }
                 if (event != null) events.trySend(event)
@@ -126,7 +168,10 @@ class JLibTorrentEngine(
                 manager.addListener(listener)
                 manager.start(SessionParams(settings))
                 session = manager
+                restoreStored(manager)
+                publish()
                 ticker = scope.launch { tick() }
+                resumeTicker = scope.launch { saveResumeDataPeriodically() }
                 status.value = EngineStatus.Running
                 EngineResult.Ok(Unit)
             } catch (e: Exception) {
@@ -141,11 +186,24 @@ class JLibTorrentEngine(
         withContext(serial) {
             ticker?.cancel()
             ticker = null
+            resumeTicker?.cancel()
+            resumeTicker = null
             session?.let { manager ->
+                // Final resume data: pause the session so nothing changes underneath (each torrent
+                // keeps its own paused flag), then wait, bounded, for every answer to be written.
+                try {
+                    manager.pause()
+                    requestResumeDataForAll()
+                } catch (e: RuntimeException) {
+                    resumeFailures += e.message ?: e.javaClass.name
+                }
+                awaitResumeSaves()
                 session = null
                 manager.removeListener(listener)
                 manager.stop()
             }
+            pendingResumeSaves.value = 0
+            restored.clear()
             status.value = EngineStatus.Stopped
         }
     }
@@ -229,6 +287,7 @@ class JLibTorrentEngine(
         onHandle(id) { handle ->
             handle.unsetFlags(TorrentFlags.AUTO_MANAGED)
             handle.pause()
+            requestResumeData(handle)
             refreshAndPublish(id)
             EngineResult.Ok(Unit)
         }
@@ -262,11 +321,39 @@ class JLibTorrentEngine(
                 }
             }
             snapshots.remove(id)
+            restored.remove(id)
             publish()
-            EngineResult.Ok(Unit)
+            try {
+                resumeData.delete(id)
+                EngineResult.Ok(Unit)
+            } catch (e: IOException) {
+                failure(EngineError.Io(e.message ?: e.javaClass.name))
+            }
         }
 
-    override suspend fun saveResumeData(): EngineResult<Unit> = EngineResult.Failure(EngineError.Unsupported)
+    /**
+     * Asks libtorrent for every live torrent's resume data and waits (at most
+     * [RESUME_WAIT_MILLIS]) until each answer has been written. Ok while stopped: [stop] already
+     * saved everything. [EngineError.Io] when a save failed or libtorrent did not answer in time.
+     */
+    override suspend fun saveResumeData(): EngineResult<Unit> =
+        withContext(serial) {
+            if (session == null) return@withContext EngineResult.Ok(Unit)
+            resumeFailures.clear()
+            try {
+                requestResumeDataForAll()
+            } catch (e: RuntimeException) {
+                return@withContext nativeFailure(e)
+            }
+            val answered = awaitResumeSaves()
+            val failures = resumeFailures.toList()
+            resumeFailures.clear()
+            when {
+                failures.isNotEmpty() -> failure(EngineError.Io(failures.first()))
+                !answered -> failure(EngineError.Io("resume data not saved within $RESUME_WAIT_MILLIS ms"))
+                else -> EngineResult.Ok(Unit)
+            }
+        }
 
     /** Window prioritisation is epic E7 (#8): [EngineError.Unsupported] for a known torrent. */
     override suspend fun prioritizeWindow(
@@ -289,6 +376,25 @@ class JLibTorrentEngine(
         val info = alert.handle().takeIf { it.isValid }?.torrentFile()
         return SessionEvent.Added(id, errorMessage = null, files = info?.let(::filesOf))
     }
+
+    /** Serialises the alert's resume data now: its params are only valid during the callback. */
+    private fun resumeDataEvent(alert: SaveResumeDataAlert): SessionEvent {
+        val params = alert.params()
+        val id = idOf(params.getInfoHashes()) ?: return SessionEvent.ResumeDataFailed(null)
+        return try {
+            SessionEvent.ResumeDataSaved(id, Vectors.byte_vector2bytes(libtorrent.write_resume_data_buf_ex(params.swig())))
+        } catch (e: RuntimeException) {
+            SessionEvent.ResumeDataFailed(id, e.message ?: e.javaClass.name)
+        }
+    }
+
+    /** The id of [handle]'s torrent, or null when the handle is no longer valid (it was removed). */
+    private fun handleIdOf(handle: TorrentHandle): TorrentId? =
+        try {
+            if (handle.isValid) idOf(InfoHash(handle.swig().info_hashes())) else null
+        } catch (e: RuntimeException) {
+            null
+        }
 
     private fun metadataEvent(alert: MetadataReceivedAlert): SessionEvent? {
         val handle = alert.handle()
@@ -326,20 +432,133 @@ class JLibTorrentEngine(
     // -- serial: the only place state changes ---------------------------------------------------
 
     private fun apply(event: SessionEvent) {
-        val current = snapshots[event.id] ?: return
-        snapshots[event.id] =
-            when (event) {
-                is SessionEvent.Added ->
-                    when {
-                        event.errorMessage != null -> JlibMappers.withAddError(current, event.errorMessage)
-                        event.files != null -> withAutoSelection(current, event.files)
-                        else -> current
-                    }
-                is SessionEvent.MetadataReceived ->
-                    withAutoSelection(JlibMappers.withMetadata(current, event.name, event.totalBytes, event.savePath), event.files)
+        when (event) {
+            is SessionEvent.Added -> applyAdded(event)
+            is SessionEvent.MetadataReceived -> applyMetadata(event)
+            is SessionEvent.ResumeDataSaved -> {
+                resumeSaveAnswered()
+                // An answer arriving after [remove] must not bring the entry back.
+                if (event.id !in snapshots) return
+                try {
+                    resumeData.save(event.id, event.bytes)
+                } catch (e: IOException) {
+                    resumeFailures += e.message ?: e.javaClass.name
+                }
             }
+            is SessionEvent.ResumeDataFailed -> {
+                resumeSaveAnswered()
+                if (event.message != null) resumeFailures += event.message
+            }
+        }
+    }
+
+    private fun applyAdded(event: SessionEvent.Added) {
+        val current = snapshots[event.id] ?: return
+        val wasRestored = restored.remove(event.id)
+        snapshots[event.id] =
+            when {
+                event.errorMessage != null -> JlibMappers.withAddError(current, event.errorMessage)
+                // A restored torrent keeps the file priorities stored in its resume data.
+                wasRestored && event.files != null ->
+                    current.copy(mainFileIndex = StatusSampleMapper.autoSelection(event.files).mainFileIndex)
+                event.files != null -> withAutoSelection(current, event.files)
+                else -> current
+            }
+        if (event.errorMessage == null) {
+            // A restored torrent shows its stored state (e.g. paused) at once; a new one is
+            // persisted right away so it survives a crash before the next periodic save.
+            if (wasRestored) refresh(event.id) else handleOf(event.id)?.let(::requestResumeDataSafely)
+        }
         publish()
     }
+
+    private fun applyMetadata(event: SessionEvent.MetadataReceived) {
+        val current = snapshots[event.id] ?: return
+        snapshots[event.id] =
+            withAutoSelection(JlibMappers.withMetadata(current, event.name, event.totalBytes, event.savePath), event.files)
+        // Save the info dict now, so a restart never has to fetch the metadata again.
+        handleOf(event.id)?.let(::requestResumeDataSafely)
+        publish()
+    }
+
+    // -- resume data (serial) --------------------------------------------------------------------
+
+    /**
+     * Re-adds every torrent [resumeData] holds, before [start] reports Running. An entry libtorrent
+     * cannot parse, or whose info-hash does not match its name, is skipped and left on disk.
+     */
+    private fun restoreStored(manager: SessionManager) {
+        for ((id, bytes) in resumeData.load().entries) {
+            val params =
+                try {
+                    val error = error_code()
+                    val raw = libtorrent.read_resume_data_ex(Vectors.bytes2byte_vector(bytes), error)
+                    if (error.failed()) null else AddTorrentParams(raw)
+                } catch (e: RuntimeException) {
+                    null
+                } ?: continue
+            if (idOf(params.getInfoHashes()) != id) continue
+            if (params.savePath().isNullOrBlank()) params.savePath(savePaths.savePathFor(id).absolutePath)
+            val info = params.torrentInfo()
+            manager.swig().async_add_torrent(params.swig())
+            restored += id
+            if (id !in snapshots) {
+                snapshots[id] =
+                    JlibMappers.addedSnapshot(
+                        id = id,
+                        name = params.name()?.takeIf { it.isNotBlank() } ?: info?.name(),
+                        hasMetadata = info != null,
+                        totalBytes = info?.totalSize() ?: 0,
+                        savePath = params.savePath(),
+                    )
+            }
+        }
+    }
+
+    /** Every [RESUME_SAVE_MILLIS], asks for the resume data of torrents libtorrent flags as changed. */
+    private suspend fun saveResumeDataPeriodically() {
+        while (currentCoroutineContext().isActive) {
+            delay(RESUME_SAVE_MILLIS)
+            for (id in snapshots.keys.toList()) {
+                val handle = handleOf(id) ?: continue
+                try {
+                    if (handle.needSaveResumeData()) requestResumeData(handle)
+                } catch (e: RuntimeException) {
+                    resumeFailures += e.message ?: e.javaClass.name
+                }
+            }
+        }
+    }
+
+    private fun requestResumeDataForAll() {
+        for (id in snapshots.keys.toList()) handleOf(id)?.let(::requestResumeData)
+    }
+
+    /** Asks libtorrent for [handle]'s resume data (with the info dict); the answer is an alert. */
+    private fun requestResumeData(handle: TorrentHandle) {
+        handle.saveResumeData(TorrentHandle.SAVE_INFO_DICT)
+        pendingResumeSaves.value += 1
+    }
+
+    /** [requestResumeData] for an opportunistic save: a native failure is recorded, not thrown. */
+    private fun requestResumeDataSafely(handle: TorrentHandle) {
+        try {
+            requestResumeData(handle)
+        } catch (e: RuntimeException) {
+            resumeFailures += e.message ?: e.javaClass.name
+        }
+    }
+
+    private fun resumeSaveAnswered() {
+        if (pendingResumeSaves.value > 0) pendingResumeSaves.value -= 1
+    }
+
+    /**
+     * Suspends (so [events] keeps draining on [serial]) until every pending request is answered or
+     * [RESUME_WAIT_MILLIS] pass; false on timeout.
+     */
+    private suspend fun awaitResumeSaves(): Boolean =
+        withTimeoutOrNull(RESUME_WAIT_MILLIS) { pendingResumeSaves.first { it == 0 } } != null
 
     /**
      * Applies `FileSelectionPolicy` (via [StatusSampleMapper.autoSelection]) to the torrent's handle
@@ -480,13 +699,23 @@ class JLibTorrentEngine(
         /** How often the ticker republishes [torrents]. */
         const val TICK_MILLIS = 1_000L
 
+        /** How often torrents whose state changed get their resume data saved. */
+        const val RESUME_SAVE_MILLIS = 60_000L
+
+        /** How long [saveResumeData] and [stop] wait for libtorrent to answer every request. */
+        const val RESUME_WAIT_MILLIS = 10_000L
+
+        /** `<stateDir>/resume`: the default [FileResumeDataStore] directory. */
+        const val RESUME_DIR = "resume"
+
         const val SHA1_HEX_LENGTH = 40
     }
 }
 
 /** What the alert thread hands to [JLibTorrentEngine]'s serial side: plain values only. */
 internal sealed interface SessionEvent {
-    val id: TorrentId
+    /** The torrent the event is about, or null when it can no longer be identified. */
+    val id: TorrentId?
 
     /**
      * An `add_torrent_alert`; [errorMessage] is set when the session refused the torrent, [files] when
@@ -505,5 +734,20 @@ internal sealed interface SessionEvent {
         val totalBytes: Long,
         val savePath: String?,
         val files: List<TorrentFileInfo>,
+    ) : SessionEvent
+
+    /** A `save_resume_data_alert`, already serialised to the bencoded [bytes] to store. */
+    class ResumeDataSaved(
+        override val id: TorrentId,
+        val bytes: ByteArray,
+    ) : SessionEvent
+
+    /**
+     * A `save_resume_data_failed_alert`, or a save that could not be serialised (with its
+     * [message]); either way it answers one pending request.
+     */
+    data class ResumeDataFailed(
+        override val id: TorrentId?,
+        val message: String? = null,
     ) : SessionEvent
 }
