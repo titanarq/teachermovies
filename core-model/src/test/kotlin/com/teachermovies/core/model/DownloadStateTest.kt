@@ -13,16 +13,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadStateTest {
-    /** The lifecycle the issue specifies, restated here so the test owns the expectation. */
+    /**
+     * The lifecycle the issue specifies, restated here so the test owns the expectation: every move
+     * is allowed except going back to [FetchingMetadata] once the metadata is known.
+     */
     private val allowedTransitions =
         mapOf(
-            FetchingMetadata to setOf(Queued, Downloading, Paused, Error),
-            Queued to setOf(Downloading, Paused, Error),
-            Downloading to setOf(Verifying, Completed, Paused, Queued, Error),
-            Paused to setOf(Queued, Downloading, FetchingMetadata, Verifying),
-            Verifying to setOf(Downloading, Completed, Error),
-            Completed to setOf(Verifying, Paused),
-            Error to setOf(Queued, FetchingMetadata, Verifying),
+            FetchingMetadata to setOf(Queued, Downloading, Paused, Verifying, Completed, Error),
+            Queued to setOf(FetchingMetadata, Downloading, Paused, Verifying, Completed, Error),
+            Downloading to setOf(Queued, Paused, Verifying, Completed, Error),
+            Paused to setOf(FetchingMetadata, Queued, Downloading, Verifying, Completed, Error),
+            Verifying to setOf(Queued, Downloading, Paused, Completed, Error),
+            Completed to setOf(Queued, Downloading, Paused, Verifying, Error),
+            Error to setOf(FetchingMetadata, Queued, Downloading, Paused, Verifying, Completed),
         )
 
     @Test
@@ -55,18 +58,8 @@ class DownloadStateTest {
             }
         }
 
-        // 7x7 pairs minus the 7 self-transitions and the 24 allowed ones.
-        assertEquals(18, forbiddenTransitions)
-    }
-
-    @Test
-    fun rejectsCompletingAMetadataFetchThatNeverDownloaded() {
-        assertFalse(FetchingMetadata.canTransitionTo(Completed))
-    }
-
-    @Test
-    fun rejectsCompletingATorrentStillInTheQueue() {
-        assertFalse(Queued.canTransitionTo(Completed))
+        // 7x7 pairs minus the 7 self-transitions and the 39 allowed ones.
+        assertEquals(3, forbiddenTransitions)
     }
 
     @Test
@@ -75,23 +68,42 @@ class DownloadStateTest {
     }
 
     @Test
-    fun rejectsPausingWhileTheFileIsBeingVerified() {
-        assertFalse(Verifying.canTransitionTo(Paused))
+    fun rejectsFetchingMetadataAgainForATorrentBeingVerified() {
+        assertFalse(Verifying.canTransitionTo(FetchingMetadata))
     }
 
     @Test
-    fun rejectsDownloadingAgainACompletedTorrentWithoutVerifyingIt() {
-        assertFalse(Completed.canTransitionTo(Downloading))
+    fun rejectsFetchingMetadataAgainForACompletedTorrent() {
+        assertFalse(Completed.canTransitionTo(FetchingMetadata))
     }
 
     @Test
-    fun rejectsFailingAPausedTorrent() {
-        assertFalse(Paused.canTransitionTo(Error))
+    fun allowsCompletingAMetadataFetchWhenAFinishedTorrentIsReAdded() {
+        assertTrue(FetchingMetadata.canTransitionTo(Completed))
     }
 
     @Test
-    fun rejectsDownloadingStraightFromAnErrorWithoutRequeueing() {
-        assertFalse(Error.canTransitionTo(Downloading))
+    fun allowsCompletingATorrentStillInTheQueue() {
+        assertTrue(Queued.canTransitionTo(Completed))
+    }
+
+    @Test
+    fun allowsVerifyingAQueuedTorrentThatStartsCheckingFiles() {
+        assertTrue(Queued.canTransitionTo(Verifying))
+    }
+
+    @Test
+    fun allowsDownloadingAgainACompletedTorrentWhenASkippedFileIsUnSkipped() {
+        assertTrue(Completed.canTransitionTo(Downloading))
+    }
+
+    @Test
+    fun allowsErrorPausedAndQueuedFromEveryState() {
+        DownloadState.entries.forEach { from ->
+            listOf(Error, Paused, Queued).forEach { to ->
+                assertTrue("$from -> $to", from.canTransitionTo(to))
+            }
+        }
     }
 
     @Test
