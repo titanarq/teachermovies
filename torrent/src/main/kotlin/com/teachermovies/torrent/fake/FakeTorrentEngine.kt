@@ -10,6 +10,7 @@ import com.teachermovies.torrent.api.MagnetUri
 import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.api.TorrentFileInfo
 import com.teachermovies.torrent.api.TorrentSnapshot
+import com.teachermovies.torrent.policy.FileSelectionPolicy
 import com.teachermovies.torrent.policy.etaSeconds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -128,20 +129,24 @@ class FakeTorrentEngine : TorrentEngine {
 
     /**
      * Delivers metadata for torrent [id]: moves it to [DownloadState.Downloading], records its
-     * [files] (each starting at [FilePriority.Normal]) and sets `totalBytes` to the sum of their
-     * sizes.
+     * [files], applies the same automatic selection as the real engine ([FileSelectionPolicy]: the
+     * main video and subtitles at [FilePriority.Normal], everything else at [FilePriority.Skip]),
+     * sets `mainFileIndex` to the chosen movie file and `totalBytes` to the sum of the files that
+     * are not skipped.
      */
     fun emitMetadata(
         id: TorrentId,
         name: String,
         files: List<Pair<String, Long>>,
     ) {
-        val fileInfos =
+        val listed =
             files.mapIndexed { index, (path, sizeBytes) ->
                 TorrentFileInfo(index = index, path = path, sizeBytes = sizeBytes, priority = FilePriority.Normal, downloadedBytes = 0L)
             }
+        val selection = FileSelectionPolicy.select(listed)
+        val fileInfos = listed.map { file -> selection.priorities[file.index]?.let { file.copy(priority = it) } ?: file }
         filesByTorrent[id] = fileInfos
-        val totalBytes = fileInfos.sumOf { it.sizeBytes }
+        val totalBytes = fileInfos.filter { it.priority != FilePriority.Skip }.sumOf { it.sizeBytes }
         replaceSnapshot(id) { snapshot ->
             snapshot.copy(
                 name = name,
@@ -149,6 +154,7 @@ class FakeTorrentEngine : TorrentEngine {
                 totalBytes = totalBytes,
                 hasMetadata = true,
                 savePath = "/movies/${id.value}",
+                mainFileIndex = selection.mainFileIndex,
             )
         }
     }
