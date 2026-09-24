@@ -1,2 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- The engine talks BitTorrent (TCP/UDP, DHT) and checks connectivity. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- TorrentService is a foreground service; since Android 14 (targetSdk 34+) its type must be
+         declared both here and in `startForeground`, and the matching per-type permission held.
+         `dataSync` is the type for transferring data over the network. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Runtime permission on Android 13+; the app requests it (#55). Without it the service still
+         runs, only its notification is hidden. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <service
+            android:name=".service.TorrentService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+</manifest>
