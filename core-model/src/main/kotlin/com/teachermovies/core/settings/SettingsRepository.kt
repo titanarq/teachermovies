@@ -34,4 +34,10 @@ interface SettingsRepository {
 
     /** Turns on or off opening the app by itself when the TV powers on. */
     suspend fun setAutostartOnBoot(enabled: Boolean)
+
+    /**
+     * Stores the user's Anthropic API key for the translation provider, or clears it when [key] is
+     * null or blank. Implementations never log the key.
+     */
+    suspend fun setTranslationApiKey(key: String?)
 }
