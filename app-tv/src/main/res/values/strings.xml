@@ -46,6 +46,10 @@
     <string name="settings_autostart_title">Arranque</string>
     <string name="settings_autostart_label">Arrancar al encender la TV</string>
     <string name="settings_autostart_hint">Inicia el servidor y las descargas al encender; la app no se abre sola.</string>
+    <string name="settings_translation_key_title">Clave API de traducción (Anthropic)</string>
+    <string name="settings_translation_key_set">Configurada</string>
+    <string name="settings_translation_key_unset">No configurada</string>
+    <string name="settings_translation_key_hint">Pulsa OK para pegar tu clave; déjala vacía para borrarla. Las frases que traduzcas se envían a Anthropic.</string>
     <!-- Descargas (#70). -->
     <string name="downloads_free_space">Espacio libre: %1$s</string>
     <string name="downloads_free_space_unknown">Espacio libre: sin volumen</string>

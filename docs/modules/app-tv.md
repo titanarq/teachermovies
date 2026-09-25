@@ -192,8 +192,10 @@
   `Voz no disponible` for 3 s and nothing else. `TranslateLine` -> `translateAndSpeak(line)`.
   `DismissOverlay` (and BACK, exit, clear) also calls `reset()`. None of these keys resumes the movie.
 - `AppContainer`: `speaker = AndroidTextToSpeechSpeaker(application)`, translation provider
-  `CachingTranslationProvider(NullTranslationProvider)` (no provider is configurable yet, #31),
-  `assistantSpeechController` on the assistant's main-thread scope.
+  `CachingTranslationProvider(AnthropicTranslationProvider(config))`, where `config` is an
+  `AnthropicApiConfigSource` reading `settingsRepository.settings.first().translationApiKey` (blank
+  -> null) on every request (#212); with no key the provider answers `Unavailable` and the overlay
+  shows `Traducción no disponible`. No key is ever compiled into the app. `assistantSpeechController` on the assistant's main-thread scope.
 - `AssistantOverlay` under the English line: `Traduciendo…` (`Loading`), the Spanish text in amber
   (`Ready`), `Sin conexión para traducir` (`Failed(OFFLINE)`), `Traducción no disponible`
   (`Failed(UNAVAILABLE)`), nothing (`Idle`) -- `translationLine(state)`; then the message, `Hablando…`
@@ -253,6 +255,14 @@
   switch row `Arrancar al encender la TV` sits under the volume list (title `Arranque`). DOWN from
   the last volume reaches it (RIGHT from the port field when there is no volume), OK toggles it,
   UP returns to the list, LEFT to the port field. Entry focus is still the port field.
+- Configuración, translation key (#212): `SettingsUiState.translationApiKey` (empty when unset)
+  and `SettingsViewModel.changeTranslationApiKey(String)` (trimmed; blank clears the key via
+  `setTranslationApiKey(null)`; an unchanged key writes nothing). The field `Clave API de traducción
+  (Anthropic)` sits under the autostart switch: it shows only `Configurada` / `No configurada`,
+  never the key. DOWN from the switch reaches it, UP returns to the switch, LEFT to the port field;
+  OK opens a masked text field holding the stored key (all selected, so a paste replaces it), OK/Done
+  saves, BACK or moving focus away abandons the edit. `SettingsUiState.toString` redacts the key
+  (and the PIN); neither is ever logged.
 - Platform limits: after a boot only the process, the HTTP server (+ NSD announcement) and, where
   allowed, the torrent service run; the app is **not** brought to the foreground (Android 10+
   forbids starting an activity from a background receiver). `TorrentService` is a `dataSync`

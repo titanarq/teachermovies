@@ -33,6 +33,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -61,6 +62,7 @@ fun SettingsRoute(
         onPortChange = viewModel::changePort,
         onSelectVolume = viewModel::selectVolume,
         onAutostartChange = viewModel::setAutostartOnBoot,
+        onTranslationApiKeyChange = viewModel::changeTranslationApiKey,
         modifier = modifier,
     )
 }
@@ -68,7 +70,7 @@ fun SettingsRoute(
 /**
  * HTTP port on the left, with the server address, pairing PIN and (when not running) server state
  * under it as plain, unfocusable text; download volume list on the right, with the "Arrancar al
- * encender la TV" switch (#126) under it.
+ * encender la TV" switch (#126) and the "Clave API de traducción (Anthropic)" field (#212) under it.
  *
  * Focus: DOWN from the tab row enters on the port field (then on whatever last had focus in the
  * section). On the port field UP/DOWN change the port by one -- so they do not move focus -- OK
@@ -76,8 +78,11 @@ fun SettingsRoute(
  * volumes, OK selects one, LEFT returns to the port field and UP from the first volume reaches the
  * tab row. DOWN from the last volume reaches the autostart switch (RIGHT from the port field lands
  * on it directly when there is no volume); OK toggles it, UP goes back to the list and LEFT to the
- * port field. BACK anywhere in the section returns to the tab row (the shell's handler); while the
- * text field is open BACK only closes it, without saving.
+ * port field. DOWN from the switch reaches the translation-key field; UP goes back to the switch and
+ * LEFT to the port field. The key field shows only whether a key is set, never the key; OK opens a
+ * masked text field holding the stored key, where OK/Done saves (an empty field clears the key).
+ * BACK anywhere in the section returns to the tab row (the shell's handler); while a text field is
+ * open BACK only closes it, without saving, and so does moving focus out of it.
  */
 @Composable
 fun SettingsScreen(
@@ -85,6 +90,7 @@ fun SettingsScreen(
     onPortChange: (Int) -> Unit,
     onSelectVolume: (String) -> Unit,
     onAutostartChange: (Boolean) -> Unit,
+    onTranslationApiKeyChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val portRequester = remember { FocusRequester() }
@@ -143,6 +149,17 @@ fun SettingsScreen(
                 modifier = Modifier.padding(top = 16.dp),
             )
             AutostartItem(checked = uiState.autostartOnBoot, onChange = onAutostartChange)
+            Text(
+                text = stringResource(R.string.settings_translation_key_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+            TranslationKeyField(apiKey = uiState.translationApiKey, onKeyChange = onTranslationApiKeyChange)
+            Text(
+                text = stringResource(R.string.settings_translation_key_hint),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.width(560.dp),
+            )
         }
     }
 }
@@ -302,4 +319,111 @@ private fun AutostartItem(
     )
 }
 
+/**
+ * The translation API key (#212), shaped like [PortField]: a focusable value that only says whether
+ * a key is set, and OK opens [TranslationKeyTextField] to edit it. The key itself is never drawn in
+ * clear and never logged.
+ */
+@Composable
+private fun TranslationKeyField(
+    apiKey: String,
+    onKeyChange: (String) -> Unit,
+) {
+    val focusRequester = remember { FocusRequester() }
+    var editing by remember { mutableStateOf(false) }
+    var returnFocus by remember { mutableStateOf(false) }
+
+    if (!editing) {
+        Surface(
+            onClick = { editing = true },
+            modifier = Modifier.focusRequester(focusRequester).width(560.dp),
+        ) {
+            val label =
+                if (apiKey.isEmpty()) R.string.settings_translation_key_unset else R.string.settings_translation_key_set
+            Text(
+                text = stringResource(label),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+            )
+        }
+    } else {
+        TranslationKeyTextField(
+            initial = apiKey,
+            onFinish = { typed ->
+                if (typed != null) onKeyChange(typed)
+                editing = false
+                returnFocus = true
+            },
+        )
+    }
+
+    // Closing the text field removes the focused node; focus goes back to the value it edited.
+    LaunchedEffect(editing) {
+        if (!editing && returnFocus) {
+            focusRequester.requestFocus()
+            returnFocus = false
+        }
+    }
+}
+
+/**
+ * Masked single-line field holding [initial], all of it selected so a paste replaces it.
+ * [onFinish] gets the typed text on OK/Done, or null when the edit is abandoned.
+ */
+@Composable
+private fun TranslationKeyTextField(
+    initial: String,
+    onFinish: (String?) -> Unit,
+) {
+    var value by remember { mutableStateOf(TextFieldValue(initial, selection = TextRange(0, initial.length))) }
+    val fieldRequester = remember { FocusRequester() }
+    var hadFocus by remember { mutableStateOf(false) }
+    var okPressed by remember { mutableStateOf(false) }
+
+    // Registered after the shell's handler, so it wins while the field is open.
+    BackHandler { onFinish(null) }
+
+    BasicTextField(
+        value = value,
+        onValueChange = { next -> if (next.text.length <= MAX_API_KEY_LENGTH) value = next },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions =
+            KeyboardOptions(
+                keyboardType = KeyboardType.Password,
+                autoCorrectEnabled = false,
+                imeAction = ImeAction.Done,
+            ),
+        keyboardActions = KeyboardActions(onDone = { onFinish(value.text) }),
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        modifier =
+            Modifier
+                .focusRequester(fieldRequester)
+                .onPreviewKeyEvent { event ->
+                    // Same OK handling as PortTextField: DPAD_CENTER is not Done for a text field,
+                    // and only a press that started here counts.
+                    val isOk =
+                        event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter
+                    if (isOk && event.type == KeyEventType.KeyDown) okPressed = true
+                    if (isOk && event.type == KeyEventType.KeyUp && okPressed) onFinish(value.text)
+                    isOk
+                }.onFocusChanged { state ->
+                    // D-pad moving focus away abandons the edit, like BACK.
+                    if (state.isFocused) {
+                        hadFocus = true
+                    } else if (hadFocus) {
+                        onFinish(null)
+                    }
+                }.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                .padding(horizontal = 24.dp, vertical = 12.dp)
+                .width(512.dp),
+    )
+
+    LaunchedEffect(Unit) { fieldRequester.requestFocus() }
+}
+
 private const val MAX_PORT_DIGITS = 5
+
+/** Far longer than any Anthropic key; only bounds what a stray paste can put in the field. */
+private const val MAX_API_KEY_LENGTH = 256

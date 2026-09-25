@@ -10,8 +10,9 @@ import com.teachermovies.assistant.LineCaptureController
 import com.teachermovies.assistant.SubtitleEngine
 import com.teachermovies.assistant.speech.AndroidTextToSpeechSpeaker
 import com.teachermovies.assistant.speech.Speaker
+import com.teachermovies.assistant.translation.AnthropicApiConfigSource
+import com.teachermovies.assistant.translation.AnthropicTranslationProvider
 import com.teachermovies.assistant.translation.CachingTranslationProvider
-import com.teachermovies.assistant.translation.NullTranslationProvider
 import com.teachermovies.assistant.translation.TranslationProvider
 import com.teachermovies.core.db.TeacherMoviesDatabase
 import com.teachermovies.core.repo.RoomTorrentRepository
@@ -181,9 +182,19 @@ class AppContainer(
     /** Android text-to-speech for the assistant's spoken answers (#92); prepared by the player screen. */
     private val speaker: Speaker = AndroidTextToSpeechSpeaker(application)
 
-    // No translation provider is configured yet (#31): the player shows `Traducción no disponible`
-    // until one is. The cache sits in front of whichever provider is wired here.
-    private val translationProvider: TranslationProvider = CachingTranslationProvider(NullTranslationProvider)
+    // The user's own Anthropic key from Configuración (#212), read on every request so a key typed
+    // or cleared there applies at once. Without one the provider answers `Unavailable` and the
+    // player shows `Traducción no disponible` (#90). The key is never logged.
+    private val translationApiKeySource =
+        AnthropicApiConfigSource {
+            settingsRepository.settings
+                .first()
+                .translationApiKey
+                ?.takeIf { it.isNotBlank() }
+        }
+
+    private val translationProvider: TranslationProvider =
+        CachingTranslationProvider(AnthropicTranslationProvider(translationApiKeySource))
 
     val assistantSpeechController: AssistantSpeechController =
         AssistantSpeechController(speaker, translationProvider, assistantScope)

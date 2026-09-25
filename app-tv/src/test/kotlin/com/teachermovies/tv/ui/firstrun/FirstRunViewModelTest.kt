@@ -331,6 +331,10 @@ class FirstRunViewModelTest {
         override suspend fun setAutostartOnBoot(enabled: Boolean) {
             state.update { it.copy(autostartOnBoot = enabled) }
         }
+
+        override suspend fun setTranslationApiKey(key: String?) {
+            state.update { it.copy(translationApiKey = key?.takeUnless { k -> k.isBlank() }) }
+        }
     }
 
     private class FakeVolumeProvider(

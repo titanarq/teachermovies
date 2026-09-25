@@ -52,7 +52,15 @@
     | `Pairing(instanceName, baseUrl, error: String? = null, busy = false)` | `Connected(pairedTv)`.
   - `Loading` until `store.pairedTv` gives its first value: a stored TV -> `Connected(it)`,
     otherwise `Searching(<last discovered list>)`. Then `discoverer.discover()` (`_http._tcp`) is
-    collected for the ViewModel's whole life: while `Searching` each emission replaces `tvs`; while
+    collected for the ViewModel's whole life. Each emission is first filtered to the services whose
+    `instanceName` starts with `ServiceNames.BASE_NAME` (`Movie Assistant`, #207) -- `Movie
+    Assistant`, `Movie Assistant (<device>)` and NSD conflict renames such as `Movie Assistant (2)`
+    stay, a printer, router or NAS web UI is dropped -- and that filtered list is the only one the
+    ViewModel keeps: it is `Searching.tvs`, the list `cancelPairing()`, `forgetTv()` and a cleared
+    store return to, and the one searched for the paired `instanceName` while `Connected` (so a TV
+    paired by typed address, `instanceName` = `host:port`, is never rewritten by an unrelated
+    service of that name). `:discovery` itself still returns every resolved service; a typed
+    address (`enterAddress`) is not filtered. While `Searching` each emission replaces `tvs`; while
     `Connected`, a TV with the paired `instanceName` whose `baseUrl` differs from the stored one
     triggers `store.updateBaseUrl(newBaseUrl)` and `Connected` with the new URL (DHCP moved the
     TV); an unchanged address or another TV does nothing. `store.pairedTv` is also collected for
@@ -256,7 +264,10 @@ JVM tests for link parsing and API client with a fake server.
   PINs never reaching the API, `Paired` stored and connected with `Build.MODEL`'s stand-in as the
   device name, `busy` in flight, `WrongPin`/`TooManyAttempts`/`Failed` errors, retry after an
   error, `cancelPairing`, the stored-TV start, `updateBaseUrl` on a re-resolved address, no update
-  for an unchanged address or another TV, and `forgetTv`.
+  for an unchanged address or another TV, and `forgetTv`; the Movie Assistant filter (#207): a
+  non-matching service (`HP LaserJet`) never listed, also after `cancelPairing` and `forgetTv`, a
+  conflict-renamed `Movie Assistant (2)` listed, and a TV paired by typed address never rewritten
+  by a non-matching service with the same name.
 - `send/MagnetSenderTest` (#198): JVM, `runTest`, `FakeTvApi` and `InMemoryPairedTvStore`: an
   accepted magnet posted with the stored base URL and token, a magnet pulled out of surrounding
   shared text, and every outcome mapped -- `AlreadyExists`, `InvalidMagnet`,
