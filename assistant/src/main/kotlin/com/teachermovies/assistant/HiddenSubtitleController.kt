@@ -63,6 +63,10 @@ sealed interface HiddenModeResult {
  * the choice. Hidden mode stays [active] and [engine] keeps its cues, so the assistant still reads
  * and captures lines; the next [start] (the next movie) forces subtitles off again.
  *
+ * A choice the viewer made in an earlier session and persisted for the movie (#248) counts as a
+ * viewer choice too: passed to [start] as `viewerSubtitleId`, that track is never turned off, so
+ * the playback session can re-apply it on reopen while hidden mode keeps reading the cues.
+ *
  * Embedded tracks are extracted under `<cacheDir>/subtitles` and reused by later sessions for the
  * same movie; nothing here deletes them.
  */
@@ -96,6 +100,12 @@ class HiddenSubtitleController(
      * even when it has no track for [language]. A [stop] while [start] is still waiting or extracting
      * wins: that [start] returns [HiddenModeResult.NoSubtitleFile] at once and activates nothing.
      *
+     * [viewerSubtitleId] is the subtitle track the viewer chose for this movie in an earlier session
+     * (the persisted id, null = none): selecting it is left alone -- at start and while [active] --
+     * so it survives a reopen (#248); any other track is still turned off. Whether it actually gets
+     * selected is up to whoever re-applies the persisted choice (the playback session's track
+     * policy), before or after this call.
+     *
      * Any previous hidden-mode session is stopped first, so a failing call leaves [active] false
      * whatever the state was before it. No failure touches the player's subtitle selection: the
      * caller can fall back to on-screen subtitles without anything to undo.
@@ -103,6 +113,7 @@ class HiddenSubtitleController(
     suspend fun start(
         mediaFile: File,
         language: String = "en",
+        viewerSubtitleId: String? = null,
     ): HiddenModeResult {
         stop()
         val session = generation.value
@@ -128,12 +139,14 @@ class HiddenSubtitleController(
         if (generation.value != session) return HiddenModeResult.NoSubtitleFile
 
         engine.load(track)
-        player.selectSubtitle(null)
+        // The viewer's persisted choice may already be applied: selecting null here would both hide
+        // it and let the session persist that null over it (#248).
+        if (player.selectedSubtitleId.value != viewerSubtitleId) player.selectSubtitle(null)
         mutableActive.value = true
         reassertJob =
             scope.launch {
                 player.selectedSubtitleId.collect { id ->
-                    if (id != null) {
+                    if (id != null && id != viewerSubtitleId) {
                         player.selectSubtitle(null)
                     }
                 }

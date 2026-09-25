@@ -130,6 +130,50 @@ class HiddenSubtitleControllerTest {
             assertNull(player.selectedSubtitleId.value)
         }
 
+    // -- The viewer's choice persisted from an earlier session (#248) --
+
+    @Test
+    fun `a persisted viewer choice already applied is left on by start`() =
+        runTest {
+            writeSubtitle("movie.en.srt")
+            val player = FakePlayer()
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            // The session's track policy re-applied the stored choice before hidden mode started.
+            player.selectSubtitle("sub-2")
+
+            val result = controller.start(mediaFile, viewerSubtitleId = "sub-2")
+            runCurrent()
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.SIDECAR), result)
+            assertTrue(controller.active.value)
+            assertEquals("sub-2", player.selectedSubtitleId.value)
+        }
+
+    @Test
+    fun `a persisted viewer choice applied after start is kept, any other track is reverted`() =
+        runTest {
+            writeSubtitle("movie.en.srt")
+            val player = FakePlayer()
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            // A default track selected before the stored choice is re-applied is still turned off.
+            player.selectSubtitle("sub-1")
+
+            controller.start(mediaFile, viewerSubtitleId = "sub-2")
+            runCurrent()
+            assertNull(player.selectedSubtitleId.value)
+
+            player.selectSubtitle("sub-2")
+            runCurrent()
+            assertEquals("sub-2", player.selectedSubtitleId.value)
+
+            player.selectSubtitle("sub-1")
+            runCurrent()
+            assertNull(player.selectedSubtitleId.value)
+            assertTrue(controller.active.value)
+        }
+
     @Test
     fun `after a viewer choice the assistant still reads and captures lines`() =
         runTest {

@@ -211,7 +211,13 @@ class PlayerViewModel(
                 when (result) {
                     is SessionResult.Opened -> {
                         local.update { it.copy(title = result.item.title) }
-                        val available = hidden.start(File(result.item.mainFilePath)) is HiddenModeResult.Started
+                        // The subtitle track the viewer chose last time stays on (#248).
+                        val started =
+                            hidden.start(
+                                File(result.item.mainFilePath),
+                                viewerSubtitleId = result.item.subtitleTrackId,
+                            )
+                        val available = started is HiddenModeResult.Started
                         local.update { it.copy(assistantAvailable = available) }
                     }
 
