@@ -23,6 +23,9 @@ import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.Track
 import com.teachermovies.player.fake.FakePlayer
 import com.teachermovies.player.session.PlaybackSession
+import com.teachermovies.player.streaming.StreamPolicy
+import com.teachermovies.player.streaming.StreamingPlaybackController
+import com.teachermovies.torrent.fake.FakeTorrentEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -766,5 +769,155 @@ class PlayerViewModelTest {
                 vm.uiState.value.assistant!!
                     .text,
             )
+        }
+
+    // -- Playing an in-progress download (#226) -------------------------------------------------
+
+    // 100 pieces of 1 KiB; the controller opens once pieces 0..3 (head + start buffer) and 99
+    // (tail) are on disk -- the same small policy as PlaybackSessionTest.
+    private val piece = 1024
+    private val fileSize = piece * 100L
+    private val poll = 500L
+    private val openRangePieces = (0..3).toSet() + 99
+    private val engine = FakeTorrentEngine()
+
+    private fun TestScope.streamingViewModel(): PlayerViewModel {
+        val subtitles = SubtitleEngine(player.positionMs, backgroundScope)
+        hidden = HiddenSubtitleController(player, subtitles, backgroundScope, tmp.newFolder("cache"))
+        capture = LineCaptureController(player, subtitles, backgroundScope)
+        speech = AssistantSpeechController(speaker, translations, backgroundScope)
+        val controller =
+            StreamingPlaybackController(
+                player = player,
+                engine = engine,
+                scope = backgroundScope,
+                policy =
+                    StreamPolicy(
+                        headBytes = 2L * piece,
+                        tailBytes = 1L * piece,
+                        startBufferBytes = 4L * piece,
+                        readAheadBytes = 8L * piece,
+                        underrunBytes = 2L * piece,
+                        resumeBytes = 6L * piece,
+                    ),
+                pollIntervalMs = poll,
+                minWindowMoveBytes = piece.toLong(),
+            )
+        return PlayerViewModel(
+            PlaybackSession(player, repo, backgroundScope, clock = { 0L }),
+            player,
+            hidden,
+            capture,
+            speech,
+            backgroundScope,
+            prepareDispatcher = dispatcher,
+            streamingController = controller,
+            repo = repo,
+        )
+    }
+
+    /** [movie] is the main file of a torrent still downloading. */
+    private suspend fun seedInProgress(movie: File) {
+        repo.upsert(
+            Torrent(
+                id = id,
+                name = "Big Movie",
+                state = DownloadState.Downloading,
+                progressPercent = 12.0,
+                downloadedBytes = 12L * piece,
+                totalBytes = fileSize,
+                savePath = movie.parent,
+                mainFileIndex = 0,
+                errorMessage = null,
+            ),
+            mainFilePath = movie.path,
+            now = 1L,
+        )
+    }
+
+    /** The engine knows the torrent and its single file, with [pieces] on disk. */
+    private suspend fun engineHas(pieces: Set<Int>) {
+        engine.addMagnet("magnet:?xt=urn:btih:${id.value}&dn=movie")
+        engine.emitMetadata(id, "Big Movie", listOf("Big Movie.mkv" to fileSize))
+        engine.setPieces(id, piece, pieces)
+    }
+
+    @Test
+    fun anInProgressItemOpensThroughTheStreamingControllerOnceItsRangesAreReady() =
+        runTest(dispatcher) {
+            val movie = movieFile()
+            seedInProgress(movie)
+            engineHas(openRangePieces - 99)
+            val vm = streamingViewModel()
+
+            vm.open(id)
+            runCurrent()
+
+            assertNull(player.lastOpen)
+            assertTrue(
+                vm.uiState.value.streamStatus!!
+                    .startsWith(PlayerViewModel.PREPARING_PREFIX),
+            )
+
+            engine.setPieces(id, piece, openRangePieces)
+            advanceTimeBy(poll)
+            runCurrent()
+
+            assertEquals(FakePlayer.OpenCall(movie, 0L, growing = true), player.lastOpen)
+            assertEquals(PlayerState.Playing, player.state.value)
+            assertEquals("Big Movie", vm.uiState.value.title)
+            assertNull(vm.uiState.value.streamStatus)
+            assertNull(vm.uiState.value.error)
+        }
+
+    @Test
+    fun aStreamingFailureShowsTheStreamingErrorText() =
+        runTest(dispatcher) {
+            // The repository knows the download, the engine does not: the size lookup fails.
+            seedInProgress(movieFile())
+            val vm = streamingViewModel()
+
+            vm.open(id)
+            runCurrent()
+
+            assertEquals(PlayerViewModel.STREAMING_FAILED, vm.uiState.value.error)
+            assertNull(player.lastOpen)
+            assertNull(vm.uiState.value.streamStatus)
+        }
+
+    @Test
+    fun aCompletedItemStillUsesThePlainOpenEvenWithAController() =
+        runTest(dispatcher) {
+            val movie = movieFile()
+            seed(movie)
+            val vm = streamingViewModel()
+
+            vm.open(id)
+            runCurrent()
+
+            assertEquals(FakePlayer.OpenCall(movie, 0L, growing = false), player.lastOpen)
+            assertTrue(engine.recordedCalls.isEmpty())
+            assertNull(vm.uiState.value.streamStatus)
+        }
+
+    @Test
+    fun exitWhileStillPreparingStopsWaitingAndReportsExited() =
+        runTest(dispatcher) {
+            seedInProgress(movieFile())
+            engineHas(emptySet())
+            val vm = streamingViewModel()
+            vm.open(id)
+            runCurrent()
+            assertTrue(vm.uiState.value.streamStatus != null)
+
+            vm.onAction(PlayerAction.Exit)
+            runCurrent()
+
+            assertTrue(vm.uiState.value.exited)
+            // Ranges arriving later no longer open anything.
+            engine.setPieces(id, piece, openRangePieces)
+            advanceTimeBy(poll * 2)
+            runCurrent()
+            assertNull(player.lastOpen)
         }
 }

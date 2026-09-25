@@ -61,6 +61,7 @@
         <item quantity="one">%1$d peer</item>
         <item quantity="other">%1$d peers</item>
     </plurals>
+    <string name="downloads_action_play">Reproducir</string>
     <string name="downloads_action_choose_files">Elegir archivos</string>
     <string name="downloads_action_delete">Borrar</string>
     <string name="downloads_action_cancel">Cancelar</string>

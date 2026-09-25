@@ -170,6 +170,21 @@ fun PlayerScreen(
             TransportOverlay(state = state, modifier = Modifier.align(Alignment.BottomCenter))
         }
 
+        // Playing a download still in progress (#226): what the streaming controller waits for.
+        val streamStatus = state.streamStatus
+        if (streamStatus != null) {
+            Text(
+                text = streamStatus,
+                style = MaterialTheme.typography.headlineSmall,
+                color = Color.White,
+                modifier =
+                    Modifier
+                        .align(Alignment.Center)
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .padding(horizontal = 32.dp, vertical = 16.dp),
+            )
+        }
+
         val panel = state.tracksPanel
         if (panel != null) {
             TracksPanel(

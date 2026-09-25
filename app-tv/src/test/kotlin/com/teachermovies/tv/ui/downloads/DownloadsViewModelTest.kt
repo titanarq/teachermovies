@@ -11,9 +11,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -155,7 +157,7 @@ class DownloadsViewModelTest {
     }
 
     @Test
-    fun openActionsOnADownloadingRowOffersPauseFirstAndFocusesIt() {
+    fun openActionsOnADownloadingRowOffersPlayFirstAndFocusesIt() {
         val viewModel = DownloadsViewModel(engine, sync) { null }
         val id = downloadingTorrent()
 
@@ -166,6 +168,7 @@ class DownloadsViewModelTest {
         val dialog = state.dialog as DownloadsDialog.Actions
         assertEquals(
             listOf(
+                DownloadAction.Play,
                 DownloadAction.PauseResume,
                 DownloadAction.ChooseFiles,
                 DownloadAction.Delete,
@@ -175,8 +178,78 @@ class DownloadsViewModelTest {
         )
         assertTrue(dialog.items.all { it.enabled })
         assertEquals("Pausar", dialog.pauseResumeLabel)
-        assertEquals(DownloadAction.PauseResume, dialog.focused)
+        assertEquals(DownloadAction.Play, dialog.focused)
     }
+
+    // -- Reproducir while downloading (#226) --
+
+    @Test
+    fun aPausedRowWithAMainFileCanBePlayed() {
+        val viewModel = DownloadsViewModel(engine, sync) { null }
+        val id = downloadingTorrent()
+        viewModel.pause(id)
+
+        viewModel.openActions(id)
+
+        val dialog = viewModel.uiState.value.dialog as DownloadsDialog.Actions
+        assertTrue(
+            viewModel.uiState.value.rows
+                .single()
+                .canPlay,
+        )
+        assertEquals(DownloadAction.Play, dialog.items.first().action)
+    }
+
+    @Test
+    fun noPlayWithoutAMainFileOrOnceCompleted() {
+        val viewModel = DownloadsViewModel(engine, sync) { null }
+        val fetching = addMagnet()
+
+        viewModel.openActions(fetching)
+        assertFalse(
+            viewModel.uiState.value.rows
+                .single()
+                .canPlay,
+        )
+        assertTrue(
+            (viewModel.uiState.value.dialog as DownloadsDialog.Actions).items.none {
+                it.action ==
+                    DownloadAction.Play
+            },
+        )
+
+        engine.emitMetadata(fetching, "Movie", listOf("Movie.mkv" to 1_000L))
+        engine.complete(fetching)
+        assertFalse(
+            viewModel.uiState.value.rows
+                .single()
+                .canPlay,
+        )
+        assertTrue(
+            (viewModel.uiState.value.dialog as DownloadsDialog.Actions).items.none {
+                it.action ==
+                    DownloadAction.Play
+            },
+        )
+    }
+
+    @Test
+    fun playClosesTheDialogAndRequestsThePlayerOnce() =
+        runTest(UnconfinedTestDispatcher()) {
+            val viewModel = DownloadsViewModel(engine, sync) { null }
+            val id = downloadingTorrent()
+            val requested = mutableListOf<TorrentId>()
+            backgroundScope.launch { viewModel.playRequests.collect { requested += it } }
+
+            viewModel.openActions(id)
+            viewModel.onAction(DownloadAction.Play)
+
+            assertNull(viewModel.uiState.value.dialog)
+            assertEquals(id, viewModel.uiState.value.selectedRowId)
+            assertEquals(listOf(id), requested)
+            // Nothing else reached the engine.
+            assertTrue(engine.recordedCalls.none { it.startsWith("pause") || it.startsWith("remove") })
+        }
 
     @Test
     fun aPausedRowOffersResume() {
