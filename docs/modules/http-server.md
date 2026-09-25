@@ -35,7 +35,9 @@
   `169.254/16`, `fe80::/10`, `fc00::/7`, and the IPv4-mapped IPv6 form of any allowed IPv4 range.
   Parses addresses by hand and never resolves a hostname, so an unparsable string (including a real
   hostname) is refused without a DNS lookup. The application-level guard applies it to
-  `call.request.origin.remoteHost`; only when `ServerDeps.allowTestRemoteHeader` is `true` does an
+  `call.request.origin.remoteAddress` -- the socket peer's IP literal, never `remoteHost`, which
+  Ktor fills with a reverse-resolved name when one exists (`127.0.0.1` arrives as `localhost`, a
+  DHCP client as e.g. `android-phone.lan`) and so would be refused (#221); only when `ServerDeps.allowTestRemoteHeader` is `true` does an
   `X-Test-Remote` request header override that address, for route tests.
 - `com.teachermovies.http.auth.PairingManager(settings: SettingsRepository, random: SecureRandom,
   clock: () -> Long)`: `currentPin()` (6 digits, zero-padded; new every 10 min and after each
