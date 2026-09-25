@@ -24,7 +24,8 @@
   graceful and idempotent.
 - `fun Application.module(deps: ServerDeps)` holds all plugins and routing; tests run it in-process
   with `testApplication { application { module(fakeDeps) } }`.
-- `ServerDeps(engine: TorrentEngine, space: () -> SpaceInfo?, appVersion: String, clock: () -> Long,
+- `ServerDeps(engine: TorrentEngine, remove: suspend (TorrentId, Boolean) -> EngineResult<Unit>,
+  space: () -> SpaceInfo?, appVersion: String, clock: () -> Long,
   pairing: PairingManager, subtitles: SubtitleStore, library: TorrentRepository,
   allowTestRemoteHeader: Boolean = false)`,
   extended by later issues. `allowTestRemoteHeader` is test-only (#59) and must stay `false` in
