@@ -24,6 +24,7 @@ import com.frostwire.jlibtorrent.alerts.SaveResumeDataAlert
 import com.frostwire.jlibtorrent.alerts.SaveResumeDataFailedAlert
 import com.frostwire.jlibtorrent.alerts.TorrentDeleteFailedAlert
 import com.frostwire.jlibtorrent.alerts.TorrentDeletedAlert
+import com.frostwire.jlibtorrent.alerts.TorrentFinishedAlert
 import com.frostwire.jlibtorrent.swig.error_code
 import com.frostwire.jlibtorrent.swig.libtorrent
 import com.teachermovies.core.model.TorrentId
@@ -87,7 +88,8 @@ import java.io.IOException
  *
  * Resume data (#53): the engine asks libtorrent for a torrent's resume data (with its info dict, so
  * a magnet never re-fetches metadata) every [RESUME_SAVE_MILLIS] for the torrents that need it,
- * right after an add, a metadata arrival, a [pause] and a [resume], and for every torrent in
+ * right after an add, a metadata arrival, a [pause], a [resume] and a `torrent_finished_alert`
+ * (#246), and for every torrent in
  * [saveResumeData] and [stop]; each `save_resume_data_alert` is written through [resumeData], and
  * [remove] deletes the entry. [start] re-adds every stored torrent before reporting Running; the flags stored with it
  * (paused, auto-managed) come back as they were, and its file priorities are kept rather than
@@ -150,6 +152,7 @@ class JLibTorrentEngine(
                     AlertType.SAVE_RESUME_DATA_FAILED.swig(),
                     AlertType.TORRENT_DELETED.swig(),
                     AlertType.TORRENT_DELETE_FAILED.swig(),
+                    AlertType.TORRENT_FINISHED.swig(),
                 )
 
             override fun alert(alert: Alert<*>) {
@@ -168,6 +171,8 @@ class JLibTorrentEngine(
                         is TorrentDeletedAlert -> idOf(alert.getInfoHashes())?.let(SessionEvent::FilesDeleted)
 
                         is TorrentDeleteFailedAlert -> deleteFailedEvent(alert)
+
+                        is TorrentFinishedAlert -> SessionEvent.Finished(handleIdOf(alert.handle()))
 
                         else -> null
                     }
@@ -593,6 +598,11 @@ class JLibTorrentEngine(
             is SessionEvent.FilesDeleteFailed -> {
                 dirCleanup.deleteFailed(event.id)
             }
+
+            is SessionEvent.Finished -> {
+                // Persist completion now, not at the next periodic save (#246).
+                ResumeSaveTriggers.torrentToSave(event, snapshots.keys)?.let(::handleOf)?.let(::requestResumeDataSafely)
+            }
         }
     }
 
@@ -981,5 +991,10 @@ internal sealed interface SessionEvent {
     /** A `torrent_delete_failed_alert`: some of a removed torrent's files could not be deleted. */
     data class FilesDeleteFailed(
         override val id: TorrentId,
+    ) : SessionEvent
+
+    /** A `torrent_finished_alert`: every wanted piece is on disk (the torrent is now complete). */
+    data class Finished(
+        override val id: TorrentId?,
     ) : SessionEvent
 }
