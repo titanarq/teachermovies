@@ -180,9 +180,25 @@ gh api -X PUT repos/titanarq/teachermovies/interaction-limits -f limit=collabora
   planner tried to relaunch qwen with the review as context (would have been the first retry,
   within `relaunch_cap`), and the mechanism refused because the qwen worktree still carried its
   own `scratchpad/progress.log` from the finished run -- see roedor-planner's comment on #129 at
-  2026-09-25T06:28:41Z. Left for the human to choose how to unblock (delete the stray file and
-  wake the planner, edit the PR description by hand, or accept the PR as is); not filed upstream
-  yet.
+  2026-09-25T06:28:41Z. Resolved without a relaunch: PR #202 was merged and #129 closed; not
+  filed upstream yet.
+
+- to report (host workaround bug): `clean_stale_worker.sh` never cleans a worktree whose PR was
+  **squash-merged**, which is how every PR here merges. Its "HEAD has commits not on
+  `origin/main`" guard is an ancestry check (`git log origin/main..HEAD`), and a squash merge
+  never makes the branch's commits ancestors of `origin/main`, so after #129 closed the
+  board-sync timer refused on every tick ("HEAD has commits not on origin/main, refusing:
+  9dfb8c8 ... 5f29ba4") and left `task/129-specialuse-fgs` checked out with the diary. The next
+  dispatch (#197, qwen) then hit agent-os#18 and the planner blocked #197 on the human
+  (roedor-planner on #197, 2026-09-25T07:02:57Z). Workaround applied by the control plane
+  (2026-09-25, delegated authority for agent_os workarounds): confirmed #129 closed, PR #202
+  merged at the worktree's HEAD (`9dfb8c8`), and every file the branch touched identical on
+  `origin/main` (`git diff HEAD origin/main -- <files>` empty); then removed only
+  `scratchpad/` from `../teachermovies-qwen`. The worktree is still on the merged branch, not
+  detached. Fix to make in the host script: compare content, not ancestry (e.g. treat HEAD as
+  merged when `git diff HEAD origin/main -- $(git diff --name-only $(git merge-base HEAD
+  origin/main) HEAD)` is empty, or when the PR for the branch is merged at HEAD's SHA), and
+  delete the branch with `-D` only in that case. The root cause stays agent-os#18.
 
 ## Refiner
 
