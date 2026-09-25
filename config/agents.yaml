@@ -20,6 +20,7 @@ project:
     planner_run_cap_reached: "[teachermovies] El planificador ha agotado su tope diario de ejecuciones ({runs}/{cap}) y no despachará nada más hoy; {pending} evento(s) esperan a mañana: {context}"
     backend_worktree_missing: "[teachermovies] Backend sin worktree: {backend} no tiene worktree en {worktree} y {issue_count} incidencia(s) lista(s) no pueden avanzar hasta que la crees"
     unreviewed_pull_request: "[teachermovies] Revisión perdida: la PR #{pr} de la incidencia #{issue} no tiene revisión ni un {role} en marcha — puede haber muerto sin dejar rastro"
+    backend_worktree_dirty: "Blocked backend: {backend}'s worktree {worktree} has uncommitted work no run will clear ({paths}); {issue_count} ready issue(s) wait, and no run on it can start or resume until you commit or clean it"
   test_command: scripts/test.sh
   # ci.yml already runs scripts/test.sh (with the JDK/Android SDK it needs) on every pull request,
   # GitHub-hosted; the generic ci-host.yml template would only duplicate it without the toolchain.

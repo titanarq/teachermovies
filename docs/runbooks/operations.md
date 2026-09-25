@@ -84,7 +84,7 @@ gh api -X PUT repos/titanarq/teachermovies/interaction-limits -f limit=collabora
 
 ## Known mechanism issues
 
-Fixed upstream and pulled with the agent-os subtree at 36985fc, or 4319091 where noted
+Fixed upstream and pulled with the agent-os subtree at 36985fc, or 4319091 / 5a2da21 where noted
 (`agent_os/docs/CHANGELOG.md`); their host workarounds are gone:
 
 - agent-os#14 board item resolution -- fixed (PR #26); `board_sync.py` kept for the reasons above.
@@ -116,27 +116,18 @@ Fixed upstream and pulled with the agent-os subtree at 36985fc, or 4319091 where
   The two `--deselect` lines in `.github/workflows/ci-agent-os.yml` are gone and the file matches
   `agent_os/templates/ci-agent-os.yml` again, so `agent-os-install --force` no longer needs a
   `git checkout -- .github/workflows/ci-agent-os.yml` after it.
+- agent-os#84 and agent-os#86 `worker_task.sh resume --after manual` after a `DONE` run refused
+  to relaunch over the run's own diary ("worktree is dirty ... ?? scratchpad/"), so every
+  requested-changes loop needed a human -- fixed (PR #85, PR #87; pulled at 5a2da21).
+  `worker_task.sh` now writes `scratchpad/.gitignore` (`*`) in every worker worktree it touches,
+  and `resume` over a `DONE` run drops that run's diary from the dirty check. Any other dirt in an
+  idle worker worktree is read by the guard: that backend's ready issues leave the dispatchable set
+  and the human is paged once with `project.messages.backend_worktree_dirty`. The `scratchpad/`
+  entry in the shared `.git/info/exclude` is gone.
 
 `project.install_host_ci` is `false` in `config/agents.yaml`: `ci.yml` already runs
 `scripts/test.sh` on every pull request (GitHub-hosted), so `agent-os-install` must not add the
 generic `ci-host.yml` (agent-os#50).
-
-Open, host workaround (reported as agent-os#84; gap in agent-os#18/#75's fix, PR #20/#80;
-still open at the 4319091 pull):
-`worker_task.sh resume --after manual` after a `DONE` run refuses to relaunch --
-"worktree is dirty; commit or clean it first: ?? scratchpad/" -- because
-`retire_finished_runs_scratchpad` (`agent_os/bin/worker_task.sh`) only runs on `start`; `resume`
-keeps the same run's diary and leaves it out of the dirty check only when the run it continues was
-cut by the guard (`drop_the_cut_runs_diary`, agent-os#22), never when it ended `DONE`. `resume
---after manual` is exactly the path the rules prescribe for "changes requested", so this repeats on
-every requested-changes relaunch until fixed upstream. Seen on #198's relaunch after the PR #209
-review (2026-09-25). Workaround: add `scratchpad/` to the shared `info/exclude` -- one file, the
-common `.git/info/exclude` (`git rev-parse --git-common-dir`), covers every worktree of this repo,
-worker and lane alike -- so the diary never registers as worktree-dirtying; move any diary already
-sitting in a worker worktree out of the way first, e.g.
-`mkdir -p .cache/diaries && mv ../teachermovies-qwen/scratchpad/progress.log
-.cache/diaries/worker_qwen-issue198-manual.progress.log`. Remove the `info/exclude` entry once
-`resume --after manual` archives a finished run's scratchpad the same way `start` does.
 
 ## Refiner
 
