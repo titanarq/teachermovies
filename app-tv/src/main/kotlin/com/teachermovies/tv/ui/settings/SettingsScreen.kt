@@ -171,75 +171,81 @@ private fun PortField(
     focusRequester: FocusRequester,
 ) {
     var editing by remember { mutableStateOf(false) }
-    var returnFocus by remember { mutableStateOf(false) }
 
-    if (!editing) {
-        Surface(
-            onClick = { editing = true },
-            modifier =
-                Modifier
-                    .focusRequester(focusRequester)
-                    .onPreviewKeyEvent { event ->
-                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        when (event.key) {
-                            Key.DirectionUp -> {
-                                onPortChange(port + 1)
-                                true
-                            }
-
-                            Key.DirectionDown -> {
-                                onPortChange(port - 1)
-                                true
-                            }
-
-                            else -> {
-                                false
-                            }
+    // The editor lives inside the row's Surface instead of replacing it (#222): the row stays in
+    // composition and focused until the editor is attached and takes focus from it, and on close
+    // focus goes back to the row before the editor leaves. So focus is never on a removed node,
+    // which would drop it to the first focusable on screen (the Biblioteca tab).
+    Surface(
+        onClick = { editing = true },
+        modifier =
+            Modifier
+                .focusRequester(focusRequester)
+                .onPreviewKeyEvent { event ->
+                    if (editing || event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (event.key) {
+                        Key.DirectionUp -> {
+                            onPortChange(port + 1)
+                            true
                         }
-                    },
-        ) {
+
+                        Key.DirectionDown -> {
+                            onPortChange(port - 1)
+                            true
+                        }
+
+                        else -> {
+                            false
+                        }
+                    }
+                },
+    ) {
+        if (!editing) {
             Text(
                 text = port.toString(),
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
             )
-        }
-    } else {
-        PortTextField(
-            initial = port,
-            onFinish = { typed ->
-                // Anything that is not a number is as invalid as an out-of-range one: 0 is outside
-                // the valid range, so the ViewModel rejects it and flags the error.
-                if (typed != null) onPortChange(typed.toIntOrNull() ?: 0)
-                editing = false
-                returnFocus = true
-            },
-        )
-    }
-
-    // Closing the text field removes the focused node; focus goes back to the value it edited.
-    LaunchedEffect(editing) {
-        if (!editing && returnFocus) {
-            focusRequester.requestFocus()
-            returnFocus = false
+        } else {
+            PortTextField(
+                initial = port,
+                onFinish = { typed, focusLeft ->
+                    // Anything that is not a number is as invalid as an out-of-range one: 0 is
+                    // outside the valid range, so the ViewModel rejects it and flags the error.
+                    if (typed != null) onPortChange(typed.toIntOrNull() ?: 0)
+                    if (!focusLeft) focusRequester.requestFocus()
+                    editing = false
+                },
+            )
         }
     }
 }
 
-/** [onFinish] gets the typed text on OK/Done, or null when the edit is abandoned. */
+/**
+ * [onFinish] gets the typed text on OK/Done, or null when the edit is abandoned, and whether focus
+ * has already left the field (then the caller must not pull it back). It runs at most once.
+ */
 @Composable
 private fun PortTextField(
     initial: Int,
-    onFinish: (String?) -> Unit,
+    onFinish: (typed: String?, focusLeft: Boolean) -> Unit,
 ) {
     val initialText = initial.toString()
     var value by remember { mutableStateOf(TextFieldValue(initialText, selection = TextRange(0, initialText.length))) }
     val fieldRequester = remember { FocusRequester() }
     var hadFocus by remember { mutableStateOf(false) }
     var okPressed by remember { mutableStateOf(false) }
+    var finished by remember { mutableStateOf(false) }
+    val finish = { typed: String?, focusLeft: Boolean ->
+        // Handing focus back to the row makes this field lose focus, which must not finish twice.
+        if (!finished) {
+            finished = true
+            onFinish(typed, focusLeft)
+        }
+    }
 
     // Registered after the shell's handler, so it wins while the field is open.
-    BackHandler { onFinish(null) }
+    BackHandler { finish(null, false) }
 
     BasicTextField(
         value = value,
@@ -248,7 +254,7 @@ private fun PortTextField(
         },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = { onFinish(value.text) }),
+        keyboardActions = KeyboardActions(onDone = { finish(value.text, false) }),
         textStyle = MaterialTheme.typography.headlineMedium.copy(color = MaterialTheme.colorScheme.onSurface),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         modifier =
@@ -261,20 +267,21 @@ private fun PortTextField(
                     val isOk =
                         event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter
                     if (isOk && event.type == KeyEventType.KeyDown) okPressed = true
-                    if (isOk && event.type == KeyEventType.KeyUp && okPressed) onFinish(value.text)
+                    if (isOk && event.type == KeyEventType.KeyUp && okPressed) finish(value.text, false)
                     isOk
                 }.onFocusChanged { state ->
                     // D-pad moving focus away abandons the edit, like BACK.
                     if (state.isFocused) {
                         hadFocus = true
                     } else if (hadFocus) {
-                        onFinish(null)
+                        finish(null, true)
                     }
                 }.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
                 .padding(horizontal = 24.dp, vertical = 12.dp)
                 .width(160.dp),
     )
 
+    // Runs after this composition is applied, so the field's focus node is attached by then.
     LaunchedEffect(Unit) { fieldRequester.requestFocus() }
 }
 
@@ -331,13 +338,13 @@ private fun TranslationKeyField(
 ) {
     val focusRequester = remember { FocusRequester() }
     var editing by remember { mutableStateOf(false) }
-    var returnFocus by remember { mutableStateOf(false) }
 
-    if (!editing) {
-        Surface(
-            onClick = { editing = true },
-            modifier = Modifier.focusRequester(focusRequester).width(560.dp),
-        ) {
+    // Same focus hand-over as PortField (#222): the editor opens inside the focused row.
+    Surface(
+        onClick = { editing = true },
+        modifier = Modifier.focusRequester(focusRequester).width(560.dp),
+    ) {
+        if (!editing) {
             val label =
                 if (apiKey.isEmpty()) R.string.settings_translation_key_unset else R.string.settings_translation_key_set
             Text(
@@ -345,43 +352,43 @@ private fun TranslationKeyField(
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
             )
-        }
-    } else {
-        TranslationKeyTextField(
-            initial = apiKey,
-            onFinish = { typed ->
-                if (typed != null) onKeyChange(typed)
-                editing = false
-                returnFocus = true
-            },
-        )
-    }
-
-    // Closing the text field removes the focused node; focus goes back to the value it edited.
-    LaunchedEffect(editing) {
-        if (!editing && returnFocus) {
-            focusRequester.requestFocus()
-            returnFocus = false
+        } else {
+            TranslationKeyTextField(
+                initial = apiKey,
+                onFinish = { typed, focusLeft ->
+                    if (typed != null) onKeyChange(typed)
+                    if (!focusLeft) focusRequester.requestFocus()
+                    editing = false
+                },
+            )
         }
     }
 }
 
 /**
  * Masked single-line field holding [initial], all of it selected so a paste replaces it.
- * [onFinish] gets the typed text on OK/Done, or null when the edit is abandoned.
+ * [onFinish] as for [PortTextField].
  */
 @Composable
 private fun TranslationKeyTextField(
     initial: String,
-    onFinish: (String?) -> Unit,
+    onFinish: (typed: String?, focusLeft: Boolean) -> Unit,
 ) {
     var value by remember { mutableStateOf(TextFieldValue(initial, selection = TextRange(0, initial.length))) }
     val fieldRequester = remember { FocusRequester() }
     var hadFocus by remember { mutableStateOf(false) }
     var okPressed by remember { mutableStateOf(false) }
+    var finished by remember { mutableStateOf(false) }
+    val finish = { typed: String?, focusLeft: Boolean ->
+        // Handing focus back to the row makes this field lose focus, which must not finish twice.
+        if (!finished) {
+            finished = true
+            onFinish(typed, focusLeft)
+        }
+    }
 
     // Registered after the shell's handler, so it wins while the field is open.
-    BackHandler { onFinish(null) }
+    BackHandler { finish(null, false) }
 
     BasicTextField(
         value = value,
@@ -394,7 +401,7 @@ private fun TranslationKeyTextField(
                 autoCorrectEnabled = false,
                 imeAction = ImeAction.Done,
             ),
-        keyboardActions = KeyboardActions(onDone = { onFinish(value.text) }),
+        keyboardActions = KeyboardActions(onDone = { finish(value.text, false) }),
         textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         modifier =
@@ -406,20 +413,21 @@ private fun TranslationKeyTextField(
                     val isOk =
                         event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter
                     if (isOk && event.type == KeyEventType.KeyDown) okPressed = true
-                    if (isOk && event.type == KeyEventType.KeyUp && okPressed) onFinish(value.text)
+                    if (isOk && event.type == KeyEventType.KeyUp && okPressed) finish(value.text, false)
                     isOk
                 }.onFocusChanged { state ->
                     // D-pad moving focus away abandons the edit, like BACK.
                     if (state.isFocused) {
                         hadFocus = true
                     } else if (hadFocus) {
-                        onFinish(null)
+                        finish(null, true)
                     }
                 }.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
                 .padding(horizontal = 24.dp, vertical = 12.dp)
                 .width(512.dp),
     )
 
+    // Runs after this composition is applied, so the field's focus node is attached by then.
     LaunchedEffect(Unit) { fieldRequester.requestFocus() }
 }
 

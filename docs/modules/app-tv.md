@@ -17,6 +17,15 @@
 - `SettingsScreen`: port field on the left (UP/DOWN +/-1, OK opens a numeric text field, BACK
   cancels it), radio-style volume list on the right (`X,Y GB libres de Z GB`). RIGHT/LEFT move
   between them; entry focus is the port field; BACK returns to the tab row.
+- Text-field editors (port, translation key; #222): OK opens the editor *inside* the focused row's
+  `Surface` instead of swapping the row out, so the row keeps focus until the editor is attached;
+  the editor then takes focus from a `LaunchedEffect` (IME opens). On OK/Done or BACK the row takes
+  focus back *before* the editor leaves composition, so focus is never left on a removed node
+  (which dropped it to the first focusable, the Biblioteca tab, and switched tabs). Moving focus
+  out of an open editor abandons the edit and leaves focus where it went. Manual check on the TV
+  emulator: Configuración -> OK on the port row -> focused node is the text field and the
+  Configuración tab stays selected; BACK -> focus back on the port row; same for the key row
+  (`adb shell input keyevent DPAD_CENTER` / `BACK`, then `uiautomator dump` for the focused bounds).
 - The shell takes the section as a slot; `MainActivity` builds the ViewModel from `AppContainer`.
 
 ## First run (#46)
