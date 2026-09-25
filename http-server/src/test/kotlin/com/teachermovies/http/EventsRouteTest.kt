@@ -54,6 +54,7 @@ class EventsRouteTest {
     private val deps =
         ServerDeps(
             engine = engine,
+            remove = engine::remove,
             space = { null },
             appVersion = "test",
             clock = { 0L },

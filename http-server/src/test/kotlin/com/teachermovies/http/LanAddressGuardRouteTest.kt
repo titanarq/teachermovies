@@ -19,9 +19,12 @@ import java.security.SecureRandom
 
 /** #59: the application-level LAN-address guard, exercised through the real routing. */
 class LanAddressGuardRouteTest {
+    private val engine = FakeTorrentEngine()
+
     private fun deps(allowTestRemoteHeader: Boolean) =
         ServerDeps(
-            engine = FakeTorrentEngine(),
+            engine = engine,
+            remove = engine::remove,
             space = { null },
             appVersion = "test",
             clock = { 0L },

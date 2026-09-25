@@ -36,9 +36,12 @@ class LibraryRouteTest {
     private val repo = InMemoryTorrentRepository()
     private val pairing = PairingManager(InMemorySettingsRepository(), SecureRandom(), { 0L })
 
+    private val engine = FakeTorrentEngine()
+
     private val deps =
         ServerDeps(
-            engine = FakeTorrentEngine(),
+            engine = engine,
+            remove = engine::remove,
             space = { null },
             appVersion = "test",
             clock = { 0L },

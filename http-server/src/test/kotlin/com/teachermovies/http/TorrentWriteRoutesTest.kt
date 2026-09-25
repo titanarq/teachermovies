@@ -1,6 +1,7 @@
 package com.teachermovies.http
 
 import com.teachermovies.core.model.DownloadState
+import com.teachermovies.core.model.Torrent
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
 import com.teachermovies.http.auth.InMemorySettingsRepository
@@ -9,11 +10,13 @@ import com.teachermovies.http.auth.lanClient
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.FilePriority
 import com.teachermovies.torrent.fake.FakeTorrentEngine
+import com.teachermovies.torrent.sync.EngineRepositorySync
 import io.ktor.client.HttpClient
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.delete
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
+import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
@@ -26,10 +29,15 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.MessageDigest
@@ -43,16 +51,19 @@ class TorrentWriteRoutesTest {
     private val engine = FakeTorrentEngine()
     private val settings = InMemorySettingsRepository()
     private val pairing = PairingManager(settings, SecureRandom(), { 0L })
+    private val repo = InMemoryTorrentRepository()
+    private val sync = EngineRepositorySync(engine, repo, CoroutineScope(Dispatchers.Unconfined), { 0L })
 
     private val deps =
         ServerDeps(
             engine = engine,
+            remove = sync::remove,
             space = { null },
             appVersion = "test",
             clock = { 0L },
             pairing = pairing,
             subtitles = FakeSubtitleStore(),
-            library = InMemoryTorrentRepository(),
+            library = repo,
             allowTestRemoteHeader = true,
         )
 
@@ -324,6 +335,54 @@ class TorrentWriteRoutesTest {
             assertTrue(engine.recordedCalls.isEmpty())
             assertEquals(1, engine.torrents.value.size)
         }
+
+    @Test
+    fun `delete removes the library row once the engine confirms (#219)`() =
+        withApi { client, token ->
+            val id = addTorrent('a')
+            repo.upsert(completedRow(id), "/vol/Movies/a/Movie.mkv", 1_000L)
+            assertEquals(1, client.libraryIds(token).size)
+
+            val response = client.delete("/api/torrents/${id.value}?deleteFiles=true") { bearerAuth(token) }
+
+            assertEquals(HttpStatusCode.NoContent, response.status)
+            assertEquals(emptyList<String>(), client.libraryIds(token))
+            assertNull(repo.get(id))
+        }
+
+    @Test
+    fun `an engine failure on delete leaves the library row in place (#219)`() =
+        withApi { client, token ->
+            // A row the engine does not know: remove fails with unknown_torrent.
+            val id = TorrentId(unknownId)
+            repo.upsert(completedRow(id), "/vol/Movies/c/Movie.mkv", 1_000L)
+
+            val response = client.delete("/api/torrents/${id.value}") { bearerAuth(token) }
+
+            assertEquals(HttpStatusCode.NotFound, response.status)
+            assertEquals("unknown_torrent", response.errorCode(response.bodyAsText()))
+            assertNotNull(repo.get(id))
+            assertEquals(listOf(id.value), client.libraryIds(token))
+        }
+
+    private fun completedRow(id: TorrentId): Torrent =
+        Torrent(
+            id = id,
+            name = "Movie",
+            state = DownloadState.Completed,
+            progressPercent = 100.0,
+            downloadedBytes = 1_000L,
+            totalBytes = 1_000L,
+            savePath = "/vol/Movies/${id.value}",
+            mainFileIndex = 0,
+            errorMessage = null,
+        )
+
+    private suspend fun HttpClient.libraryIds(token: String): List<String> =
+        Json
+            .parseToJsonElement(get("/api/library") { bearerAuth(token) }.bodyAsText())
+            .jsonArray
+            .map { it.jsonObject["id"]!!.jsonPrimitive.content }
 
     @Test
     fun `delete of an unknown id is 404, invalid id or deleteFiles 400`() =

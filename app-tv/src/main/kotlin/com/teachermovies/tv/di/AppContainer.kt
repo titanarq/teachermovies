@@ -213,6 +213,7 @@ class AppContainer(
     private fun serverDeps(): ServerDeps =
         ServerDeps(
             engine = torrentEngine,
+            remove = engineRepositorySync::remove,
             space = ::downloadVolumeSpace,
             appVersion = appVersion,
             clock = System::currentTimeMillis,

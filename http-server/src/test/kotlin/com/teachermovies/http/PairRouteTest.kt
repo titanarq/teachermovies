@@ -41,9 +41,12 @@ class PairRouteTest {
     private val pairing = PairingManager(settings, CountingSecureRandom(), clock)
     private var handlerRuns = 0
 
+    private val engine = FakeTorrentEngine()
+
     private val deps =
         ServerDeps(
-            engine = FakeTorrentEngine(),
+            engine = engine,
+            remove = engine::remove,
             space = { null },
             appVersion = "test",
             clock = clock,
