@@ -5,6 +5,7 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,6 +18,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Tab
 import androidx.tv.material3.TabRow
 import androidx.tv.material3.Text
@@ -57,7 +59,12 @@ fun MainShell(
         // nearest one -- which, as tabs select on focus, would switch sections (#224).
         TabRow(
             selectedTabIndex = destinations.indexOf(uiState.selected),
-            modifier = Modifier.focusRestorer(tabFocusRequesters.getValue(uiState.selected)).focusGroup(),
+            modifier =
+                Modifier
+                    // TV overscan-safe margin (#225): 48 dp from the sides, 27 dp from the top.
+                    .padding(horizontal = OVERSCAN_HORIZONTAL, vertical = OVERSCAN_VERTICAL)
+                    .focusRestorer(tabFocusRequesters.getValue(uiState.selected))
+                    .focusGroup(),
         ) {
             destinations.forEach { destination ->
                 Tab(
@@ -90,3 +97,7 @@ fun MainShell(
     // recreated with a section already chosen -- focusing the first tab instead would re-select it.
     LaunchedEffect(Unit) { tabFocusRequesters.getValue(uiState.selected).requestFocus() }
 }
+
+/** Overscan-safe margins around the tab row, per the Android TV layout guidelines. */
+private val OVERSCAN_HORIZONTAL = 48.dp
+private val OVERSCAN_VERTICAL = 27.dp
