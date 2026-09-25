@@ -171,6 +171,19 @@ gh api -X PUT repos/titanarq/teachermovies/interaction-limits -f limit=collabora
   Re-applied the same decision by hand this round; needs reproduction of the marker-clearing path
   before filing upstream.
 
+- to report: `worker_task.sh start` refuses a **relaunch on a still-open issue**
+  with the same "uncommitted work" guard as agent-os#18, but the automated wrapper
+  (`clean_stale_workers_if_closed.sh`) only ever runs `clean_stale_worker.sh` when
+  `.cache/worker_<backend>.issue` names an issue that is CLOSED, so a retry attempt while the
+  issue is still open (PR under review, `status:blocked-on-human`, etc.) has no workaround at
+  all. Seen on #129/PR #202 (2026-09-25): the validator asked for a PR-description-only fix, the
+  planner tried to relaunch qwen with the review as context (would have been the first retry,
+  within `relaunch_cap`), and the mechanism refused because the qwen worktree still carried its
+  own `scratchpad/progress.log` from the finished run -- see roedor-planner's comment on #129 at
+  2026-09-25T06:28:41Z. Left for the human to choose how to unblock (delete the stray file and
+  wake the planner, edit the PR description by hand, or accept the PR as is); not filed upstream
+  yet.
+
 ## Refiner
 
 `config/agents.yaml`'s `refiner_unattended` is `true`: the refiner runs unattended. First
