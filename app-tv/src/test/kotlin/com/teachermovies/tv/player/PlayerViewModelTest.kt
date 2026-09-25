@@ -363,6 +363,55 @@ class PlayerViewModelTest {
         }
 
     @Test
+    fun reopeningAMovieRestoresTheStoredSubtitleWhileHiddenModeKeepsReading() =
+        runTest(dispatcher) {
+            // #248: a subtitle chosen in an earlier session is stored for the movie.
+            seed(movieWithEnglishSubtitles())
+            repo.updatePlayback(id, positionMs = 90_000L, audioTrackId = "a1", subtitleTrackId = "s2")
+            val vm = openedWithTracks()
+
+            assertEquals("s2", player.selectedSubtitleId.value)
+            assertTrue(hidden.active.value)
+            assertTrue(vm.uiState.value.assistantAvailable)
+            assertEquals("s2", repo.getLibraryItem(id)?.subtitleTrackId)
+
+            // Hidden mode still reads the English cues and captures them.
+            player.emitPosition(1_500L)
+            runCurrent()
+            vm.onAssistantAction(AssistantAction.CaptureLine)
+            runCurrent()
+            assertEquals(
+                "Hello there.",
+                vm.uiState.value.assistant
+                    ?.text,
+            )
+
+            vm.onAssistantAction(AssistantAction.DismissOverlay)
+            vm.onAction(PlayerAction.Exit)
+            runCurrent()
+            assertEquals("s2", repo.getLibraryItem(id)?.subtitleTrackId)
+        }
+
+    @Test
+    fun reopeningAMovieWithoutAStoredSubtitleKeepsSubtitlesOff() =
+        runTest(dispatcher) {
+            seed(movieWithEnglishSubtitles())
+            repo.updatePlayback(id, positionMs = 90_000L, audioTrackId = "a1", subtitleTrackId = null)
+            val vm = openedWithTracks()
+
+            assertNull(player.selectedSubtitleId.value)
+            assertTrue(vm.uiState.value.assistantAvailable)
+
+            // A default-track policy is still turned off by hidden mode, and nothing stores it.
+            player.selectSubtitle("s1")
+            runCurrent()
+            assertNull(player.selectedSubtitleId.value)
+            vm.onAction(PlayerAction.Exit)
+            runCurrent()
+            assertNull(repo.getLibraryItem(id)?.subtitleTrackId)
+        }
+
+    @Test
     fun selectingDesactivadosTurnsSubtitlesOffAndIsPersisted() =
         runTest(dispatcher) {
             seed(movieFile())
