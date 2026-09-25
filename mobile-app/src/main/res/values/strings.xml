@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Movie Assistant</string>
-    <!-- Placeholder main screen (#195); later sub-issues of #35 replace it. -->
+    <!-- TV list (#197). -->
     <string name="searching_tv">Buscando la TV...</string>
+    <string name="enter_address">Introducir dirección</string>
+    <string name="connect">CONECTAR</string>
+    <!-- Pairing screen (#197). -->
+    <string name="pin_prompt">Escribe el PIN que muestra la TV</string>
+    <string name="pin_label">PIN</string>
+    <string name="pair">EMPAREJAR</string>
+    <string name="cancel">CANCELAR</string>
+    <!-- Connected placeholder (#197). -->
+    <string name="tv_connected">%1$s ● conectada</string>
+    <string name="forget_tv">OLVIDAR ESTA TV</string>
 </resources>
