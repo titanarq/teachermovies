@@ -24,7 +24,8 @@
   graceful and idempotent.
 - `fun Application.module(deps: ServerDeps)` holds all plugins and routing; tests run it in-process
   with `testApplication { application { module(fakeDeps) } }`.
-- `ServerDeps(engine: TorrentEngine, space: () -> SpaceInfo?, appVersion: String, clock: () -> Long,
+- `ServerDeps(engine: TorrentEngine, remove: suspend (TorrentId, Boolean) -> EngineResult<Unit>,
+  space: () -> SpaceInfo?, appVersion: String, clock: () -> Long,
   pairing: PairingManager, subtitles: SubtitleStore, library: TorrentRepository,
   allowTestRemoteHeader: Boolean = false)`,
   extended by later issues. `allowTestRemoteHeader` is test-only (#59) and must stay `false` in
@@ -72,7 +73,10 @@
     `MAX_TORRENT_FILE_BYTES` = 10 MiB; never buffers more than that) | 409 `already_exists`.
   - `POST /api/torrents/{id}/pause`, `POST /api/torrents/{id}/resume` -> 204.
   - `DELETE /api/torrents/{id}?deleteFiles=true|false` (default `false`; anything else 400
-    `bad_request`) -> 204.
+    `bad_request`) -> 204. Goes through `ServerDeps.remove` (wired to `EngineRepositorySync.remove`,
+    the same path as the TV's Descargas delete), so once the engine confirms, the torrent's Room row
+    is deleted too and it leaves `GET /api/library` and Biblioteca (#219); an engine failure leaves
+    the row in place.
   - `PUT /api/torrents/{id}/files` `[{"index":0,"priority":"skip|normal|high"}]` -> 204 | 409
     `not_ready` before metadata | 400 `invalid_priority` | 400 `invalid_index` | 400 `bad_request`;
     a rejected body applies no change at all.

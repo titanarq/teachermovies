@@ -23,6 +23,7 @@ class StatusRouteTest {
     private fun deps(space: SpaceInfo?) =
         ServerDeps(
             engine = engine,
+            remove = engine::remove,
             space = { space },
             appVersion = "1.2.3",
             clock = { 0L },

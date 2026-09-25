@@ -13,9 +13,12 @@ import java.security.SecureRandom
 
 class HttpServerControllerTest {
     private val settings = InMemorySettingsRepository()
+    private val engine = FakeTorrentEngine()
+
     private val deps =
         ServerDeps(
-            engine = FakeTorrentEngine(),
+            engine = engine,
+            remove = engine::remove,
             space = { null },
             appVersion = "1.2.3",
             clock = { 0L },

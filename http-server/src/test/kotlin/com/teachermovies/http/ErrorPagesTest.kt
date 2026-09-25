@@ -20,9 +20,12 @@ import org.junit.Test
 import java.security.SecureRandom
 
 class ErrorPagesTest {
+    private val engine = FakeTorrentEngine()
+
     private val deps =
         ServerDeps(
-            engine = FakeTorrentEngine(),
+            engine = engine,
+            remove = engine::remove,
             space = { null },
             appVersion = "test",
             clock = { 0L },

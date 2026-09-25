@@ -107,7 +107,7 @@ internal fun Route.torrentWriteRoutes(deps: ServerDeps) {
                         return@delete
                     }
                 }
-            call.respondNoContentOr(deps.engine.remove(id, deleteFiles))
+            call.respondNoContentOr(deps.remove(id, deleteFiles))
         }
         put("/api/torrents/{id}/files") {
             val id = call.torrentIdOrRespond() ?: return@put

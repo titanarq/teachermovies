@@ -17,9 +17,12 @@ import org.junit.Test
 import java.security.SecureRandom
 
 class WebUiRouteTest {
+    private val engine = FakeTorrentEngine()
+
     private fun deps() =
         ServerDeps(
-            engine = FakeTorrentEngine(),
+            engine = engine,
+            remove = engine::remove,
             space = { null },
             appVersion = "1.0",
             clock = { 0L },
