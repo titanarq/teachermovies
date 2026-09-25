@@ -46,7 +46,9 @@ data class VolumeRow(
  * [SettingsViewModel.changePort] was rejected, until a valid one succeeds. [serverUrl] is
  * `http://<lan-ip>:<port>` (null without a LAN address), [pin] the pairing PIN and [serverState]
  * the embedded HTTP server's state (#66). [autostartOnBoot] mirrors the persisted "Arrancar al
- * encender la TV" switch (#126), off by default.
+ * encender la TV" switch (#126), off by default. [translationApiKey] is the user's own Anthropic
+ * API key for subtitle translation (#212), the empty string when none is set; it is never logged
+ * (`SettingsUiState.toString` redacts it).
  */
 data class SettingsUiState(
     val httpPort: Int = AppSettings().httpPort,
@@ -58,7 +60,14 @@ data class SettingsUiState(
     val pin: String = "",
     val serverState: ServerState = ServerState.Stopped,
     val autostartOnBoot: Boolean = AppSettings().autostartOnBoot,
-)
+    val translationApiKey: String = "",
+) {
+    override fun toString(): String =
+        "SettingsUiState(httpPort=$httpPort, volumes=$volumes, selectedVolumeId=$selectedVolumeId, " +
+            "volumeMissing=$volumeMissing, portError=$portError, serverUrl=$serverUrl, pin=<redacted>, " +
+            "serverState=$serverState, autostartOnBoot=$autostartOnBoot, " +
+            "translationApiKey=${if (translationApiKey.isEmpty()) "\"\"" else "<redacted>"})"
+}
 
 /**
  * State holder for the Configuración screen: the HTTP port and the download volume, both persisted
@@ -136,6 +145,16 @@ class SettingsViewModel(
         viewModelScope.launch { settings.setAutostartOnBoot(enabled) }
     }
 
+    /**
+     * Persists [key], trimmed, as the translation API key (#212); a blank one clears the stored
+     * key. Nothing is written when the trimmed key equals the one already stored.
+     */
+    fun changeTranslationApiKey(key: String) {
+        val trimmed = key.trim()
+        if (trimmed == uiState.value.translationApiKey) return
+        viewModelScope.launch { settings.setTranslationApiKey(trimmed.ifEmpty { null }) }
+    }
+
     /** Re-reads the attached volumes and their free space, and the PIN. */
     fun refreshVolumes() {
         currentPin.value = pin()
@@ -161,6 +180,7 @@ class SettingsViewModel(
             volumeMissing = selection is VolumeSelection.PersistedMissing,
             portError = error,
             autostartOnBoot = appSettings.autostartOnBoot,
+            translationApiKey = appSettings.translationApiKey.orEmpty(),
         )
     }
 

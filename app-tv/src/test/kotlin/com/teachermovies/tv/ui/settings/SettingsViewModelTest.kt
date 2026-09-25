@@ -26,6 +26,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.File
+import com.teachermovies.core.settings.fake.InMemorySettingsRepository as CoreInMemorySettingsRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
@@ -310,6 +311,64 @@ class SettingsViewModelTest {
         assertNull(viewModel.uiState.value.selectedVolumeId)
         assertFalse(viewModel.uiState.value.volumeMissing)
     }
+
+    @Test
+    fun translationApiKeyIsEmptyWhenUnset() {
+        val viewModel = keyViewModel(CoreInMemorySettingsRepository())
+
+        assertEquals("", viewModel.uiState.value.translationApiKey)
+    }
+
+    @Test
+    fun translationApiKeyReflectsThePersistedKey() {
+        val settings = CoreInMemorySettingsRepository(AppSettings(translationApiKey = "sk-ant-stored"))
+        val viewModel = keyViewModel(settings)
+
+        assertEquals("sk-ant-stored", viewModel.uiState.value.translationApiKey)
+    }
+
+    @Test
+    fun changeTranslationApiKeyRoundTripsTrimmed() {
+        val settings = CoreInMemorySettingsRepository()
+        val viewModel = keyViewModel(settings)
+
+        viewModel.changeTranslationApiKey("  sk-ant-new  ")
+
+        assertEquals("sk-ant-new", settings.current.translationApiKey)
+        assertEquals("sk-ant-new", viewModel.uiState.value.translationApiKey)
+    }
+
+    @Test
+    fun blankTranslationApiKeyClearsTheStoredOne() {
+        val settings = CoreInMemorySettingsRepository(AppSettings(translationApiKey = "sk-ant-old"))
+        val viewModel = keyViewModel(settings)
+
+        viewModel.changeTranslationApiKey("   ")
+
+        assertNull(settings.current.translationApiKey)
+        assertEquals("", viewModel.uiState.value.translationApiKey)
+    }
+
+    @Test
+    fun uiStateToStringNeverContainsTheKey() {
+        val settings = CoreInMemorySettingsRepository(AppSettings(translationApiKey = "sk-ant-secret"))
+        val viewModel = keyViewModel(settings)
+
+        val text = viewModel.uiState.value.toString()
+
+        assertFalse(text.contains("sk-ant-secret"))
+        assertFalse(text.contains(pin))
+    }
+
+    private fun keyViewModel(settings: SettingsRepository) =
+        SettingsViewModel(
+            settings,
+            FakeVolumeProvider(listOf(internal)),
+            space,
+            pin = { pin },
+            serverState = serverState,
+            pinTicks = pinTicks,
+        )
 
     private fun volume(
         id: String,
