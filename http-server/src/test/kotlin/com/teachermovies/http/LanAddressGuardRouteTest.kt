@@ -14,9 +14,9 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import java.net.ServerSocket
 import java.security.SecureRandom
