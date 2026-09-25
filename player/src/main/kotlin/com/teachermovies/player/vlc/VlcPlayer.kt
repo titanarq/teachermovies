@@ -239,7 +239,7 @@ class VlcPlayer(
 
     // endregion
 
-    private fun libVlc(): LibVLC = libVlc ?: LibVLC(appContext, VlcMediaOptions.LIB_VLC).also { libVlc = it }
+    private fun libVlc(): LibVLC = libVlc ?: LibVLC(appContext, VlcMediaOptions.libVlcOptions()).also { libVlc = it }
 
     private fun mediaPlayer(): MediaPlayer =
         mediaPlayer
