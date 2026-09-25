@@ -84,8 +84,8 @@ gh api -X PUT repos/titanarq/teachermovies/interaction-limits -f limit=collabora
 
 ## Known mechanism issues
 
-Fixed upstream and pulled with the agent-os subtree at 36985fc (`agent_os/docs/CHANGELOG.md`);
-their host workarounds are gone:
+Fixed upstream and pulled with the agent-os subtree at 36985fc, or 4319091 where noted
+(`agent_os/docs/CHANGELOG.md`); their host workarounds are gone:
 
 - agent-os#14 board item resolution -- fixed (PR #26); `board_sync.py` kept for the reasons above.
 - agent-os#15 refiner-created tasks missed the `[task] ` prefix -- fixed (PR #60).
@@ -110,20 +110,19 @@ their host workarounds are gone:
   the separate GraphQL bucket (`gh api rate_limit --jq .resources.graphql`); `gh_text` now names
   the empty bucket and its reset, and `issues.py validate` reads over REST.
 - agent-os#72 an answered refiner doubt came back -- fixed (PR #77).
-
-Open, host workaround (to report upstream; regression of agent-os#53, PR #68):
-`agent_os/tests/test_no_host_literals.py`'s `test_no_host_literal_anywhere_under_agent_os` and
-`test_every_exclusion_still_applies` require a `.git` directly under `agent_os/`, which a
-`git subtree` host never has, so they fail in `ci-agent-os.yml` on every mechanism PR. That
-workflow `--deselect`s both, commented. `agent-os-install --force` rewrites the file from the
-template and drops the deselect: run `git checkout -- .github/workflows/ci-agent-os.yml` after
-it. Remove both once fixed upstream and pulled.
+- agent-os#82 `test_no_host_literals.py`'s `test_no_host_literal_anywhere_under_agent_os` and
+  `test_every_exclusion_still_applies` required a `.git` directly under `agent_os/` (regression of
+  agent-os#53, PR #68) and failed on every mechanism PR here -- fixed (PR #83, pulled at 4319091).
+  The two `--deselect` lines in `.github/workflows/ci-agent-os.yml` are gone and the file matches
+  `agent_os/templates/ci-agent-os.yml` again, so `agent-os-install --force` no longer needs a
+  `git checkout -- .github/workflows/ci-agent-os.yml` after it.
 
 `project.install_host_ci` is `false` in `config/agents.yaml`: `ci.yml` already runs
 `scripts/test.sh` on every pull request (GitHub-hosted), so `agent-os-install` must not add the
 generic `ci-host.yml` (agent-os#50).
 
-Open, host workaround (to report upstream; gap in agent-os#18/#75's fix, PR #20/#80):
+Open, host workaround (reported as agent-os#84; gap in agent-os#18/#75's fix, PR #20/#80;
+still open at the 4319091 pull):
 `worker_task.sh resume --after manual` after a `DONE` run refuses to relaunch --
 "worktree is dirty; commit or clean it first: ?? scratchpad/" -- because
 `retire_finished_runs_scratchpad` (`agent_os/bin/worker_task.sh`) only runs on `start`; `resume`
