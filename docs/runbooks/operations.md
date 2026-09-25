@@ -123,6 +123,22 @@ it. Remove both once fixed upstream and pulled.
 `scripts/test.sh` on every pull request (GitHub-hosted), so `agent-os-install` must not add the
 generic `ci-host.yml` (agent-os#50).
 
+Open, host workaround (to report upstream; gap in agent-os#18/#75's fix, PR #20/#80):
+`worker_task.sh resume --after manual` after a `DONE` run refuses to relaunch --
+"worktree is dirty; commit or clean it first: ?? scratchpad/" -- because
+`retire_finished_runs_scratchpad` (`agent_os/bin/worker_task.sh`) only runs on `start`; `resume`
+keeps the same run's diary and leaves it out of the dirty check only when the run it continues was
+cut by the guard (`drop_the_cut_runs_diary`, agent-os#22), never when it ended `DONE`. `resume
+--after manual` is exactly the path the rules prescribe for "changes requested", so this repeats on
+every requested-changes relaunch until fixed upstream. Seen on #198's relaunch after the PR #209
+review (2026-09-25). Workaround: add `scratchpad/` to the shared `info/exclude` -- one file, the
+common `.git/info/exclude` (`git rev-parse --git-common-dir`), covers every worktree of this repo,
+worker and lane alike -- so the diary never registers as worktree-dirtying; move any diary already
+sitting in a worker worktree out of the way first, e.g.
+`mkdir -p .cache/diaries && mv ../teachermovies-qwen/scratchpad/progress.log
+.cache/diaries/worker_qwen-issue198-manual.progress.log`. Remove the `info/exclude` entry once
+`resume --after manual` archives a finished run's scratchpad the same way `start` does.
+
 ## Refiner
 
 `config/agents.yaml`'s `refiner_unattended` is `true`: the refiner runs unattended. First
