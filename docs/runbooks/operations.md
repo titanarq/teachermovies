@@ -111,6 +111,14 @@ their host workarounds are gone:
   the empty bucket and its reset, and `issues.py validate` reads over REST.
 - agent-os#72 an answered refiner doubt came back -- fixed (PR #77).
 
+Open, host workaround (to report upstream; regression of agent-os#53, PR #68):
+`agent_os/tests/test_no_host_literals.py`'s `test_no_host_literal_anywhere_under_agent_os` and
+`test_every_exclusion_still_applies` require a `.git` directly under `agent_os/`, which a
+`git subtree` host never has, so they fail in `ci-agent-os.yml` on every mechanism PR. That
+workflow `--deselect`s both, commented. `agent-os-install --force` rewrites the file from the
+template and drops the deselect: run `git checkout -- .github/workflows/ci-agent-os.yml` after
+it. Remove both once fixed upstream and pulled.
+
 `project.install_host_ci` is `false` in `config/agents.yaml`: `ci.yml` already runs
 `scripts/test.sh` on every pull request (GitHub-hosted), so `agent-os-install` must not add the
 generic `ci-host.yml` (agent-os#50).
