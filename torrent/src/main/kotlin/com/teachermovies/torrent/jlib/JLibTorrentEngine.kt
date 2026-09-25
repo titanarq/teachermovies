@@ -85,9 +85,9 @@ import java.io.IOException
  *
  * Resume data (#53): the engine asks libtorrent for a torrent's resume data (with its info dict, so
  * a magnet never re-fetches metadata) every [RESUME_SAVE_MILLIS] for the torrents that need it,
- * right after an add, a metadata arrival and a [pause], and for every torrent in [saveResumeData]
- * and [stop]; each `save_resume_data_alert` is written through [resumeData], and [remove] deletes
- * the entry. [start] re-adds every stored torrent before reporting Running; the flags stored with it
+ * right after an add, a metadata arrival, a [pause] and a [resume], and for every torrent in
+ * [saveResumeData] and [stop]; each `save_resume_data_alert` is written through [resumeData], and
+ * [remove] deletes the entry. [start] re-adds every stored torrent before reporting Running; the flags stored with it
  * (paused, auto-managed) come back as they were, and its file priorities are kept rather than
  * re-running the automatic selection. Entries the store or libtorrent cannot read are skipped and
  * left on disk untouched.
@@ -326,11 +326,15 @@ class JLibTorrentEngine(
             EngineResult.Ok(Unit)
         }
 
-    /** Resumes the torrent under manual control (not auto-managed), matching [pause]. */
+    /**
+     * Resumes the torrent under manual control (not auto-managed), matching [pause], and saves its
+     * resume data at once so a power cut before the periodic save does not bring it back paused.
+     */
     override suspend fun resume(id: TorrentId): EngineResult<Unit> =
         onHandle(id) { handle ->
             handle.unsetFlags(TorrentFlags.AUTO_MANAGED)
             handle.resume()
+            requestResumeData(handle)
             refreshAndPublish(id)
             EngineResult.Ok(Unit)
         }
