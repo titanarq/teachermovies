@@ -3,6 +3,7 @@ package com.teachermovies.mobile.connection
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.teachermovies.discovery.ServiceNames
 import com.teachermovies.discovery.client.DiscoveredTv
 import com.teachermovies.discovery.client.ServiceDiscoverer
 import com.teachermovies.mobile.api.PairOutcome
@@ -21,7 +22,10 @@ import kotlinx.coroutines.launch
  *
  * Starts in [ConnectionUiState.Loading] until [store] gives its first value: a stored TV goes
  * straight to [ConnectionUiState.Connected], otherwise [ConnectionUiState.Searching]. From then on
- * [discoverer] is collected for the ViewModel's whole life: while searching it feeds the TV list,
+ * [discoverer] is collected for the ViewModel's whole life, keeping only the services whose
+ * `instanceName` starts with [ServiceNames.BASE_NAME] (#207; a printer or router that also serves
+ * `_http._tcp` is dropped, a conflict-renamed `Movie Assistant (2)` is kept): while searching it
+ * feeds the TV list,
  * and while connected a TV with the paired `instanceName` that resolves to another base URL (DHCP
  * moved it) is written back with [PairedTvStore.updateBaseUrl]. [store] is also collected for the
  * ViewModel's whole life: when it empties while [ConnectionUiState.Connected] (a revoked token was
@@ -38,7 +42,7 @@ class ConnectionViewModel(
 
     val uiState: StateFlow<ConnectionUiState> = _uiState.asStateFlow()
 
-    // The last list discovery emitted, so returning to Searching shows it immediately.
+    // The last Movie Assistant list discovery emitted, so returning to Searching shows it immediately.
     private var discovered: List<DiscoveredTv> = emptyList()
 
     private var pairingJob: Job? = null
@@ -140,7 +144,8 @@ class ConnectionViewModel(
         }
     }
 
-    private suspend fun onDiscovered(tvs: List<DiscoveredTv>) {
+    private suspend fun onDiscovered(services: List<DiscoveredTv>) {
+        val tvs = services.filter { it.instanceName.startsWith(ServiceNames.BASE_NAME) }
         discovered = tvs
         when (val state = _uiState.value) {
             is ConnectionUiState.Searching -> {
