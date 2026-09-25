@@ -217,6 +217,73 @@ class DataStoreSettingsRepositoryTest {
             assertTrue("nothing was written to $storeFile", storeFile.length() > 0L)
         }
 
+    @Test
+    fun translationApiKeyIsNullByDefault() =
+        runTest {
+            assertNull(newRepository().settings.first().translationApiKey)
+        }
+
+    @Test
+    fun setTranslationApiKeyIsWhatSettingsEmitsNext() =
+        runTest {
+            val repository = newRepository()
+
+            repository.setTranslationApiKey("sk-ant-test-key")
+
+            assertEquals("sk-ant-test-key", repository.settings.first().translationApiKey)
+        }
+
+    @Test
+    fun setTranslationApiKeyClearsTheKeyWithNull() =
+        runTest {
+            val repository = newRepository()
+            repository.setTranslationApiKey("sk-ant-test-key")
+
+            repository.setTranslationApiKey(null)
+
+            assertNull(repository.settings.first().translationApiKey)
+        }
+
+    @Test
+    fun setTranslationApiKeyClearsTheKeyWithABlankString() =
+        runTest {
+            val repository = newRepository()
+
+            repository.setTranslationApiKey("sk-ant-test-key")
+            repository.setTranslationApiKey("")
+            assertNull(repository.settings.first().translationApiKey)
+
+            repository.setTranslationApiKey("sk-ant-test-key")
+            repository.setTranslationApiKey("   ")
+            assertNull(repository.settings.first().translationApiKey)
+        }
+
+    @Test
+    fun settingTheTranslationApiKeyLeavesTheOtherSettingsAlone() =
+        runTest {
+            val repository = newRepository()
+            repository.setHttpPort(9000)
+            repository.setDownloadVolumeId("usb-1")
+            repository.addAuthTokenHash("hash-a")
+            repository.setFirstRunCompleted(true)
+            repository.setAutostartOnBoot(true)
+            val before = repository.settings.first()
+
+            repository.setTranslationApiKey("sk-ant-test-key")
+            assertEquals(before.copy(translationApiKey = "sk-ant-test-key"), repository.settings.first())
+
+            repository.setTranslationApiKey(null)
+            assertEquals(before, repository.settings.first())
+        }
+
+    @Test
+    fun toStringNeverPrintsTheTranslationApiKey() {
+        val settings = AppSettings(translationApiKey = "sk-ant-test-key")
+
+        assertFalse(settings.toString().contains("sk-ant-test-key"))
+        assertTrue(settings.toString().contains("translationApiKey=<redacted>"))
+    }
+
     /** The suspend cousin of `assertThrows`, for a call that has to run inside `runTest`. */
     private suspend fun assertRejected(block: suspend () -> Unit) {
         val failure = runCatching { block() }.exceptionOrNull()

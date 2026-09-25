@@ -13,7 +13,8 @@ private const val MAX_HTTP_PORT = 65535
  * Deterministic [SettingsRepository] over a [MutableStateFlow], for other modules' JVM tests
  * (ADR-0003): no DataStore, no Android runtime, no real time. It applies the same rules as
  * `DataStoreSettingsRepository` -- the same defaults and the 1024..65535 check in [setHttpPort],
- * where a rejected port leaves the stored one untouched.
+ * where a rejected port leaves the stored one untouched -- and the rule in
+ * [setTranslationApiKey] that a null or blank key clears the stored one.
  */
 class InMemorySettingsRepository(
     initial: AppSettings = AppSettings(),
@@ -50,5 +51,9 @@ class InMemorySettingsRepository(
 
     override suspend fun setAutostartOnBoot(enabled: Boolean) {
         state.update { it.copy(autostartOnBoot = enabled) }
+    }
+
+    override suspend fun setTranslationApiKey(key: String?) {
+        state.update { it.copy(translationApiKey = key?.takeUnless { k -> k.isBlank() }) }
     }
 }
