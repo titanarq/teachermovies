@@ -1,6 +1,7 @@
 package com.teachermovies.player.vlc
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -14,6 +15,33 @@ class VlcMediaOptionsTest {
 
     @Test
     fun keepsEveryFrameInsteadOfDroppingTheLateOnes() {
+        assertEquals(
+            listOf("--no-drop-late-frames", "--no-skip-frames", "--audio-time-stretch"),
+            VlcMediaOptions.LIB_VLC,
+        )
+    }
+
+    @Test
+    fun handsLibvlcAMutableListItCanAppendItsOwnOptionsTo() {
+        val options: MutableList<String> = VlcMediaOptions.libVlcOptions()
+
+        options.add("-vvv") // what LibVLC(context, options) does; a read-only list throws here (#217)
+
+        assertEquals(
+            listOf("--no-drop-late-frames", "--no-skip-frames", "--audio-time-stretch", "-vvv"),
+            options,
+        )
+    }
+
+    @Test
+    fun handsLibvlcAFreshCopyEachTimeWithTheSameOptions() {
+        val first = VlcMediaOptions.libVlcOptions()
+        first.add("-vvv")
+
+        val second = VlcMediaOptions.libVlcOptions()
+
+        assertNotSame(first, second)
+        assertEquals(VlcMediaOptions.LIB_VLC, second)
         assertEquals(
             listOf("--no-drop-late-frames", "--no-skip-frames", "--audio-time-stretch"),
             VlcMediaOptions.LIB_VLC,

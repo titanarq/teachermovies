@@ -22,6 +22,14 @@ internal object VlcMediaOptions {
         )
 
     /**
+     * A fresh, mutable copy of [LIB_VLC] for one `LibVLC(context, options)` call. libVLC 3.x
+     * appends its own options to the list it is given (`LibVLC.java:76`), so a read-only list makes
+     * the constructor throw `UnsupportedOperationException` and the first playback crash (#217); a
+     * new copy each call also keeps libVLC's additions out of [LIB_VLC].
+     */
+    fun libVlcOptions(): ArrayList<String> = ArrayList(LIB_VLC)
+
+    /**
      * The `Media` option that starts playback [startPositionMs] into the file, or null when it
      * starts at the beginning. libVLC's `:start-time` is in seconds, and passing `:start-time=0.0`
      * would only ask for a seek that is already where playback begins.
