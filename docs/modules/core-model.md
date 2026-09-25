@@ -17,11 +17,13 @@
   Package `com.teachermovies.core.db`: `TeacherMoviesDatabase` (file `teachermovies.db`,
   `TeacherMoviesDatabase.build(context)`), table `torrents` = `TorrentEntity` keyed by `infoHash`
   (`state` stores the `DownloadState` name), and `TorrentDao` (`upsert`, `get`, `observeAll`
-  newest first by `addedAtEpochMs`, `observeByState`, `updateProgress`, `updatePlayback`,
+  newest first by `addedAtEpochMs`, `observeByState`, `observeLibrary`, `updateProgress`, `updatePlayback`,
   `delete`). Schemas are exported to `core-model/schemas/` and committed.
 - `TorrentRepository` (`com.teachermovies.core.repo`) is the domain-level read/write path over
   `TorrentDao`: `observeDownloads()`/`observeLibrary()` split torrents by `DownloadState.Completed`
-  (library = completed with a known main file, newest completed first), `upsert(torrent,
+  (library = completed once -- `completedAtEpochMs` set -- with a known main file, whatever the
+  current state: paused, re-checking or seeding rows stay listed and only `delete` removes them,
+  #247; `getLibraryItem` follows the same rule; newest completed first), `upsert(torrent,
   mainFilePath, now)` keeps an existing row's `addedAtEpochMs` and stamps `completedAtEpochMs` only
   the first time a torrent's state becomes `Completed`, and `updatePlayback`/`delete` round out the
   contract. `RoomTorrentRepository` implements it over Room (an unknown persisted `state` string

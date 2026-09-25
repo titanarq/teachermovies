@@ -39,6 +39,8 @@ class TorrentDaoTest {
         addedAt: Long = 1_000L,
         state: String = "Downloading",
         name: String = "Movie $infoHash",
+        mainFilePath: String? = "movie.mkv",
+        completedAt: Long? = null,
     ) = TorrentEntity(
         infoHash = infoHash,
         name = name,
@@ -48,11 +50,11 @@ class TorrentDaoTest {
         totalBytes = 1_000L,
         savePath = "/storage/Movies/$infoHash",
         mainFileIndex = 0,
-        mainFilePath = "movie.mkv",
+        mainFilePath = mainFilePath,
         audioTrackId = null,
         subtitleTrackId = null,
         addedAtEpochMs = addedAt,
-        completedAtEpochMs = null,
+        completedAtEpochMs = completedAt,
         errorMessage = null,
     )
 
@@ -109,6 +111,25 @@ class TorrentDaoTest {
             )
             assertEquals(listOf("b"), dao.observeByState("Completed").first().map { it.infoHash })
             assertEquals(emptyList<TorrentEntity>(), dao.observeByState("Paused").first())
+        }
+
+    @Test
+    fun observeLibraryListsRowsCompletedOnceWithAMainFileWhateverTheirStateNewestCompletedFirst() =
+        runTest {
+            dao.upsert(entity("a", state = "Completed", completedAt = 10L))
+            // Completed once, then paused / re-checking: still in the library (#247).
+            dao.upsert(entity("b", state = "Paused", completedAt = 30L))
+            dao.upsert(entity("c", state = "Verifying", completedAt = 20L))
+            // Never completed, even though paused with a main file: not in the library.
+            dao.upsert(entity("d", state = "Paused"))
+            // Completed but no main file: not in the library.
+            dao.upsert(entity("e", state = "Completed", mainFilePath = null, completedAt = 40L))
+
+            assertEquals(listOf("b", "c", "a"), dao.observeLibrary().first().map { it.infoHash })
+
+            dao.delete("b")
+
+            assertEquals(listOf("c", "a"), dao.observeLibrary().first().map { it.infoHash })
         }
 
     @Test

@@ -19,19 +19,14 @@ class RoomTorrentRepository(
         }
 
     override fun observeLibrary(): Flow<List<LibraryItem>> =
-        dao.observeByState(DownloadState.Completed.name).map { entities ->
-            entities
-                .filter { it.mainFilePath != null }
-                .sortedByDescending { it.completedAtEpochMs ?: 0L }
-                .map { it.toLibraryItem() }
-        }
+        dao.observeLibrary().map { entities -> entities.map { it.toLibraryItem() } }
 
     override suspend fun get(id: TorrentId): Torrent? = dao.get(id.value)?.toDomain()
 
     override suspend fun getLibraryItem(id: TorrentId): LibraryItem? =
         dao
             .get(id.value)
-            ?.takeIf { it.state == DownloadState.Completed.name && it.mainFilePath != null }
+            ?.takeIf { it.isInLibrary() }
             ?.toLibraryItem()
 
     override suspend fun getPlaybackItem(id: TorrentId): LibraryItem? =
@@ -76,6 +71,12 @@ class RoomTorrentRepository(
 
     override suspend fun delete(id: TorrentId) = dao.delete(id.value)
 }
+
+/**
+ * Library membership (#247): completed once and a main file is known, whatever the current state.
+ * Mirrors [TorrentDao.observeLibrary].
+ */
+private fun TorrentEntity.isInLibrary(): Boolean = completedAtEpochMs != null && mainFilePath != null
 
 /**
  * `completedAtEpochMs` for the row replacing [this]: kept once set, otherwise stamped with [now] the
