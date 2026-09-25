@@ -94,7 +94,7 @@ A PR merges only when **all** of these hold; verify each one yourself, do not tr
 5. The PR body closes exactly the issue it was dispatched for, and the module doc changed if
    behaviour or a contract changed.
 
-Then `gh pr merge N --merge --delete-branch`, `issues.py move <issue> done`, and comment the
+Then squash-merge via the REST API -- `gh api -X PUT repos/<repo>/pulls/N/merge -f merge_method=squash -f sha=<head-sha>` -- delete the branch (`gh api -X DELETE repos/<repo>/git/refs/heads/<branch>`), `issues.py move <issue> done`, and comment the
 outcome on the issue in two lines. If any condition fails: `gh pr review N --request-changes` with
 the failing condition and the evidence, leave `status:review`, and report it. Never merge to
 "unblock" a round; the next round waits.
