@@ -31,7 +31,10 @@ kotlin {
 }
 
 dependencies {
-    // No project module (#195, #196): the phone app talks to the TV only through its HTTP API.
+    // The only project module (#197): the discovery client contract (`ServiceDiscoverer`,
+    // `NsdServiceDiscoverer`, `AndroidNsdBrowser`, `FakeServiceDiscoverer`), reused unchanged.
+    // Everything else about the TV goes through its HTTP API.
+    implementation(project(":discovery"))
 
     // Phone UI: Compose Material 3, versioned by the Compose BOM (ADR-0004). `tv-material` is the
     // TV app's and is not used here.
@@ -40,6 +43,11 @@ dependencies {
 
     // `ComponentActivity` + `setContent` for the launcher activity.
     implementation(libs.androidx.activity.compose)
+
+    // `ConnectionViewModel : ViewModel` (+ `viewModelScope`) and lifecycle-aware collection of its
+    // `StateFlow` in `MainActivity` (#197).
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
 
     // TV API client (#196, ADR-0004 "Ktor client in `:mobile-app`"): Ktor client on CIO, JSON via
     // kotlinx.serialization. No `:http-server` dependency -- that would pack the Ktor server into
