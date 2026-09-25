@@ -85,6 +85,8 @@ class AssParser : SubtitleParser {
     private companion object {
         const val BOM = "\uFEFF"
         val TIME_REGEX = Regex("""(\d+):(\d{2}):(\d{2})\.(\d{2})""")
-        val OVERRIDE_BLOCK_REGEX = Regex("""\{[^}]*}""")
+
+        // The closing brace is escaped: Android's ICU regex engine rejects a bare `}` (the JVM accepts it).
+        val OVERRIDE_BLOCK_REGEX = Regex("""\{[^}]*\}""")
     }
 }

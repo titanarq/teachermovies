@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class AssParserTest {
     private val parser = AssParser()
@@ -159,5 +160,99 @@ class AssParserTest {
         val track = parser.parse(ass)
 
         assertEquals(0, track.cues.size)
+    }
+
+    @Test
+    fun `every Regex literal in assistant main code is valid on Android ICU (no bare braces)`() {
+        val mainDir = listOf(File("src/main"), File("assistant/src/main")).first { it.isDirectory }
+        val literals =
+            mainDir
+                .walkTopDown()
+                .filter { it.isFile && it.extension == "kt" }
+                .flatMap { file -> regexLiterals(file.readText()).map { file.name to it } }
+                .toList()
+
+        val offenders = literals.filter { (_, pattern) -> hasBareBrace(pattern) }
+        assertTrue("ICU-incompatible Regex literals: $offenders", offenders.isEmpty())
+        assertTrue("expected the AssParser override-block pattern", literals.any { it.second == OVERRIDE_BLOCK })
+    }
+
+    @Test
+    fun `the brace checker flags a bare closing brace and accepts escapes, classes and quantifiers`() {
+        assertTrue(hasBareBrace("""\{[^}]*}"""))
+        assertTrue(hasBareBrace("""a{b"""))
+        assertFalse(hasBareBrace(OVERRIDE_BLOCK))
+        assertFalse(hasBareBrace("""(\d{1,2}):(\d{2})\n{2,}[{}]"""))
+    }
+
+    private companion object {
+        const val OVERRIDE_BLOCK = """\{[^}]*\}"""
+        val REGEX_CALL = Regex("""Regex\(\s*(""\"(.*?)""\"|"((?:[^"\\]|\\.)*)")""", RegexOption.DOT_MATCHES_ALL)
+
+        fun regexLiterals(source: String): List<String> =
+            REGEX_CALL
+                .findAll(source)
+                .map { m ->
+                    m.groups[2]?.value ?: unescapeKotlin(m.groupValues[3])
+                }.toList()
+
+        fun unescapeKotlin(s: String): String {
+            val out = StringBuilder()
+            var i = 0
+            while (i < s.length) {
+                val c = s[i]
+                if (c == '\\' && i + 1 < s.length) {
+                    out.append(
+                        when (val n = s[i + 1]) {
+                            'n' -> '\n'
+                            't' -> '\t'
+                            'r' -> '\r'
+                            else -> n
+                        },
+                    )
+                    i += 2
+                } else {
+                    out.append(c)
+                    i++
+                }
+            }
+            return out.toString()
+        }
+
+        /** True if [pattern] has a `{` or `}` outside a character class that is not an escaped literal or a quantifier. */
+        fun hasBareBrace(pattern: String): Boolean {
+            val quantifier = Regex("""\{\d+(,\d*)?\}""")
+            var inClass = false
+            var i = 0
+            while (i < pattern.length) {
+                val c = pattern[i]
+                when {
+                    c == '\\' -> {
+                        i++
+                    }
+
+                    inClass -> {
+                        if (c == ']') inClass = false
+                    }
+
+                    c == '[' -> {
+                        inClass = true
+                        if (pattern.getOrNull(i + 1) == '^') i++
+                        if (pattern.getOrNull(i + 1) == ']') i++
+                    }
+
+                    c == '{' -> {
+                        val q = quantifier.matchAt(pattern, i) ?: return true
+                        i = q.range.last
+                    }
+
+                    c == '}' -> {
+                        return true
+                    }
+                }
+                i++
+            }
+            return false
+        }
     }
 }
