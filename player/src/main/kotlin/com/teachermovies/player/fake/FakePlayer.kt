@@ -150,6 +150,19 @@ class FakePlayer : Player {
         mutableSubtitleTracks.value = subs
     }
 
+    /**
+     * Replaces only the audio track list, leaving the subtitle list as it is: libVLC reports each
+     * track as it discovers it, so a media's audio can be known before its subtitle tracks (#248).
+     */
+    fun emitAudioTracks(audio: List<Track>) {
+        mutableAudioTracks.value = audio
+    }
+
+    /** Replaces only the subtitle track list; the later half of an [emitAudioTracks] sequence. */
+    fun emitSubtitleTracks(subs: List<Track>) {
+        mutableSubtitleTracks.value = subs
+    }
+
     /** Reports a new playback position, as the real player's position updates do. */
     fun emitPosition(ms: Long) {
         mutablePositionMs.value = ms

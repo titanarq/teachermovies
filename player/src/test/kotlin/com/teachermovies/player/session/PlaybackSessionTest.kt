@@ -160,6 +160,110 @@ class PlaybackSessionTest {
         }
 
     @Test
+    fun persistedSubtitleIsReappliedWhenItsTrackAppearsAfterTheAudio() =
+        runTest {
+            seed(movieFile(), audioTrackId = "a1", subtitleTrackId = "s2")
+            session().open(id)
+            player.play()
+            runCurrent()
+
+            // libVLC reports the audio first; the sidecar subtitle tracks come a moment later (#248).
+            player.emitAudioTracks(listOf(audioEs, audioEn))
+            runCurrent()
+            assertEquals("a1", player.selectedAudioId.value)
+            assertNull(player.selectedSubtitleId.value)
+
+            // A periodic save before the subtitle track is published keeps the persisted choice.
+            now += PlaybackSession.SAVE_INTERVAL_MS
+            player.emitPosition(5_000L)
+            runCurrent()
+            assertEquals(5_000L, persisted().lastPositionMs)
+            assertEquals("s2", persisted().subtitleTrackId)
+
+            player.emitSubtitleTracks(listOf(subEn, subEs))
+            runCurrent()
+            assertEquals("s2", player.selectedSubtitleId.value)
+
+            now += PlaybackSession.SAVE_INTERVAL_MS
+            player.emitPosition(10_000L)
+            runCurrent()
+            assertEquals("s2", persisted().subtitleTrackId)
+        }
+
+    @Test
+    fun persistedSubtitleSurvivesAReopenWithANewPlayerWhoseSubtitleTracksComeLate() =
+        runTest {
+            // First session: the viewer picks the Spanish subtitle and leaves.
+            seed(movieFile())
+            val first = session()
+            first.open(id)
+            runCurrent()
+            player.emitTracks(audio = listOf(audioEs, audioEn), subs = listOf(subEn, subEs))
+            runCurrent()
+            player.selectSubtitle("s2")
+            runCurrent()
+            first.close()
+            assertEquals("s2", persisted().subtitleTrackId)
+
+            // Cold reopen (the app was force-stopped): a fresh player and session read the row back.
+            val coldPlayer = FakePlayer()
+            val second = PlaybackSession(coldPlayer, repo, backgroundScope, clock = { now })
+            second.open(id)
+            coldPlayer.play()
+            runCurrent()
+            coldPlayer.emitAudioTracks(listOf(audioEs, audioEn))
+            runCurrent()
+            now += PlaybackSession.SAVE_INTERVAL_MS
+            coldPlayer.emitPosition(20_000L)
+            runCurrent()
+            assertEquals("s2", persisted().subtitleTrackId)
+
+            coldPlayer.emitSubtitleTracks(listOf(subEn, subEs))
+            runCurrent()
+            assertEquals("s2", coldPlayer.selectedSubtitleId.value)
+
+            coldPlayer.emitPosition(25_000L)
+            second.close()
+            assertEquals("s2", persisted().subtitleTrackId)
+            assertEquals(25_000L, persisted().lastPositionMs)
+        }
+
+    @Test
+    fun persistedSubtitleIsKeptWhenItsTrackNeverAppears() =
+        runTest {
+            seed(movieFile(), audioTrackId = "a1", subtitleTrackId = "s2")
+            val session = session()
+            session.open(id)
+            runCurrent()
+            player.emitTracks(audio = listOf(audioEs, audioEn), subs = listOf(subEn))
+            runCurrent()
+
+            advanceTimeBy(PlaybackSession.SUBTITLE_TRACK_TIMEOUT_MS + 1)
+            runCurrent()
+            session.close()
+
+            assertNull(player.selectedSubtitleId.value)
+            assertEquals("s2", persisted().subtitleTrackId)
+        }
+
+    @Test
+    fun subtitleChangeAfterTheWaitForAMissingTrackIsSaved() =
+        runTest {
+            seed(movieFile(), audioTrackId = "a1", subtitleTrackId = "s2")
+            session().open(id)
+            runCurrent()
+            player.emitTracks(audio = listOf(audioEs, audioEn), subs = listOf(subEn))
+            runCurrent()
+            advanceTimeBy(PlaybackSession.SUBTITLE_TRACK_TIMEOUT_MS + 1)
+            runCurrent()
+
+            player.selectSubtitle("s1")
+            runCurrent()
+
+            assertEquals("s1", persisted().subtitleTrackId)
+        }
+
+    @Test
     fun withoutPersistedTracksEnglishAudioIsPickedAndSubtitlesStayOff() =
         runTest {
             seed(movieFile())
