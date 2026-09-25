@@ -121,8 +121,8 @@ Fixed upstream and pulled with the agent-os subtree at 36985fc, or 4319091 where
 `scripts/test.sh` on every pull request (GitHub-hosted), so `agent-os-install` must not add the
 generic `ci-host.yml` (agent-os#50).
 
-Open, host workaround (to report upstream; gap in agent-os#18/#75's fix, PR #20/#80; still
-open at the 4319091 pull):
+Open, host workaround (reported as agent-os#84; gap in agent-os#18/#75's fix, PR #20/#80;
+still open at the 4319091 pull):
 `worker_task.sh resume --after manual` after a `DONE` run refuses to relaunch --
 "worktree is dirty; commit or clean it first: ?? scratchpad/" -- because
 `retire_finished_runs_scratchpad` (`agent_os/bin/worker_task.sh`) only runs on `start`; `resume`
