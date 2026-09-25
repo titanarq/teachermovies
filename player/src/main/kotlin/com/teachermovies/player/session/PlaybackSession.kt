@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 /**
@@ -46,6 +47,14 @@ class PlaybackSession(
     @Volatile private var job: Job? = null
 
     @Volatile private var tracksApplied = false
+
+    /**
+     * Whether saves take the subtitle from the player's selection rather than the persisted id: only
+     * once the persisted track has been re-applied (or there was none, or the selection changed after
+     * the wait for it). Separate from [tracksApplied] because libVLC may publish a media's subtitle
+     * tracks -- the sidecar files added as slaves -- after its audio tracks (#248).
+     */
+    @Volatile private var subtitleApplied = false
 
     @Volatile private var lastSavedAtMs = 0L
 
@@ -167,6 +176,7 @@ class PlaybackSession(
         externalSubtitles(file).forEach { player.addExternalSubtitle(it, select = false) }
         current = item
         tracksApplied = false
+        subtitleApplied = false
         lastSavedAtMs = clock()
         job = scope.launch { watch(item) }
     }
@@ -216,32 +226,58 @@ class PlaybackSession(
         }
 
     /**
-     * Waits for the player to report the media's audio tracks, applies [TrackPolicy] with the
-     * persisted ids, then saves whenever the viewer picks another track.
+     * Waits for the player to report the media's audio tracks and applies [TrackPolicy] with the
+     * persisted audio id; then re-applies the persisted subtitle id once that track is published,
+     * and from then on saves whenever the viewer picks another track.
+     *
+     * libVLC publishes the tracks as it discovers them (one `ESAdded` each), so the subtitle list
+     * can still lack the persisted track -- a sidecar file added as a slave -- when audio first
+     * appears (#248). The persisted subtitle is therefore awaited on its own, for at most
+     * [SUBTITLE_TRACK_TIMEOUT_MS]; until it is applied, saves keep writing the persisted id, so a
+     * track that is merely not published yet is never stored as "off". When it never shows up, the
+     * persisted id is kept until the selection changes.
      */
     private suspend fun applyTracksWhenKnown(item: LibraryItem) {
         player.audioTracks.first { it.isNotEmpty() }
         TrackPolicy.audio(player.audioTracks.value, item.audioTrackId)?.let(player::selectAudio)
-        player.selectSubtitle(TrackPolicy.subtitle(player.subtitleTracks.value, item.subtitleTrackId))
         tracksApplied = true
+
+        val persistedSubtitle = item.subtitleTrackId
+        if (persistedSubtitle == null) {
+            player.selectSubtitle(null)
+            subtitleApplied = true
+        } else {
+            val published =
+                withTimeoutOrNull(SUBTITLE_TRACK_TIMEOUT_MS) {
+                    player.subtitleTracks.first { TrackPolicy.subtitle(it, persistedSubtitle) != null }
+                }
+            if (published != null) {
+                player.selectSubtitle(persistedSubtitle)
+                subtitleApplied = true
+            }
+        }
 
         combine(player.selectedAudioId, player.selectedSubtitleId) { audio, sub -> audio to sub }
             .distinctUntilChanged()
             // The first value is the selection just applied, not a change by the viewer.
             .drop(1)
-            .collect { save(item, player.positionMs.value) }
+            .collect {
+                subtitleApplied = true
+                save(item, player.positionMs.value)
+            }
     }
 
     /**
      * Writes [positionMs] and the chosen tracks: the player's selection once [TrackPolicy] has been
-     * applied, the persisted ids before that, so a save while still opening never clears them.
+     * applied (the subtitle once the persisted track has been re-applied), the persisted ids before
+     * that, so a save while still opening never clears them.
      */
     private suspend fun save(
         item: LibraryItem,
         positionMs: Long,
     ) {
         val audio = if (tracksApplied) player.selectedAudioId.value else item.audioTrackId
-        val subtitle = if (tracksApplied) player.selectedSubtitleId.value else item.subtitleTrackId
+        val subtitle = if (subtitleApplied) player.selectedSubtitleId.value else item.subtitleTrackId
         lastSavedAtMs = clock()
         repo.updatePlayback(item.id, positionMs, audio, subtitle)
     }
@@ -249,6 +285,9 @@ class PlaybackSession(
     internal companion object {
         /** How often progress is written while playing. */
         const val SAVE_INTERVAL_MS = 5_000L
+
+        /** How long the persisted subtitle track is awaited after the audio tracks appeared. */
+        const val SUBTITLE_TRACK_TIMEOUT_MS = 10_000L
 
         private val SUBTITLE_EXTENSIONS = setOf("srt", "ass", "ssa", "vtt")
         private const val SUBS_DIR_NAME = "subs"

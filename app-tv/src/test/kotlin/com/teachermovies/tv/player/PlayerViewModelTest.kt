@@ -393,6 +393,35 @@ class PlayerViewModelTest {
         }
 
     @Test
+    fun reopeningRestoresTheStoredSubtitleWhenItsTrackIsPublishedAfterTheAudio() =
+        runTest(dispatcher) {
+            // #248 (emulator): libVLC publishes the sidecar subtitle tracks after the audio ones.
+            seed(movieWithEnglishSubtitles())
+            repo.updatePlayback(id, positionMs = 90_000L, audioTrackId = "a1", subtitleTrackId = "s2")
+            val vm = openedViewModel()
+            player.play()
+            player.emitAudioTracks(listOf(english, spanish))
+            runCurrent()
+            assertTrue(hidden.active.value)
+
+            // A save while the subtitle track is not published yet keeps the stored choice.
+            player.emitPosition(95_000L)
+            player.pause()
+            runCurrent()
+            assertEquals(95_000L, repo.getLibraryItem(id)?.lastPositionMs)
+            assertEquals("s2", repo.getLibraryItem(id)?.subtitleTrackId)
+
+            player.emitSubtitleTracks(listOf(subEn, subEs))
+            runCurrent()
+            assertEquals("s2", player.selectedSubtitleId.value)
+            assertTrue(hidden.active.value)
+
+            vm.onAction(PlayerAction.Exit)
+            runCurrent()
+            assertEquals("s2", repo.getLibraryItem(id)?.subtitleTrackId)
+        }
+
+    @Test
     fun reopeningAMovieWithoutAStoredSubtitleKeepsSubtitlesOff() =
         runTest(dispatcher) {
             seed(movieWithEnglishSubtitles())
