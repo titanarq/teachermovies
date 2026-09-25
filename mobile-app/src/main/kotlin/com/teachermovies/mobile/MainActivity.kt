@@ -20,15 +20,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.teachermovies.mobile.connection.ConnectedScreen
 import com.teachermovies.mobile.connection.ConnectionUiState
 import com.teachermovies.mobile.connection.ConnectionViewModel
 import com.teachermovies.mobile.connection.PairingScreen
 import com.teachermovies.mobile.connection.TvListScreen
+import com.teachermovies.mobile.downloads.DownloadsScreen
+import com.teachermovies.mobile.downloads.DownloadsViewModel
 
-/** Launcher activity: hosts the connection screens driven by [ConnectionViewModel] (#197). */
+/**
+ * Launcher activity: hosts the connection screens driven by [ConnectionViewModel] (#197) and, once
+ * paired, the downloads driven by [DownloadsViewModel] (#198). Both are built from the one
+ * `MobileContainer`.
+ */
 class MainActivity : ComponentActivity() {
-    private val viewModel: ConnectionViewModel by viewModels {
+    private val connectionViewModel: ConnectionViewModel by viewModels {
         val container = (application as MobileApp).container
         ConnectionViewModel.Factory(
             discoverer = container.serviceDiscoverer,
@@ -38,12 +43,21 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private val downloadsViewModel: DownloadsViewModel by viewModels {
+        val container = (application as MobileApp).container
+        DownloadsViewModel.Factory(
+            api = container.tvApi,
+            store = container.pairedTvStore,
+            magnetSender = container.magnetSender,
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
-                val state by viewModel.uiState.collectAsStateWithLifecycle()
-                ConnectionScreen(state, viewModel)
+                val state by connectionViewModel.uiState.collectAsStateWithLifecycle()
+                ConnectionScreen(state, connectionViewModel, downloadsViewModel)
             }
         }
     }
@@ -53,7 +67,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun ConnectionScreen(
     state: ConnectionUiState,
-    viewModel: ConnectionViewModel,
+    connectionViewModel: ConnectionViewModel,
+    downloadsViewModel: DownloadsViewModel,
 ) {
     Scaffold(
         topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }) },
@@ -69,24 +84,34 @@ private fun ConnectionScreen(
             is ConnectionUiState.Searching -> {
                 TvListScreen(
                     state = state,
-                    onSelectTv = viewModel::selectTv,
-                    onEnterAddress = viewModel::enterAddress,
+                    onSelectTv = connectionViewModel::selectTv,
+                    onEnterAddress = connectionViewModel::enterAddress,
                     modifier = modifier,
                 )
             }
 
             is ConnectionUiState.Pairing -> {
-                BackHandler(onBack = viewModel::cancelPairing)
+                BackHandler(onBack = connectionViewModel::cancelPairing)
                 PairingScreen(
                     state = state,
-                    onSubmitPin = viewModel::submitPin,
-                    onCancel = viewModel::cancelPairing,
+                    onSubmitPin = connectionViewModel::submitPin,
+                    onCancel = connectionViewModel::cancelPairing,
                     modifier = modifier,
                 )
             }
 
             is ConnectionUiState.Connected -> {
-                ConnectedScreen(state = state, onForget = viewModel::forgetTv, modifier = modifier)
+                // Collected only while a TV is paired: what the ViewModel is subscribed to is what
+                // decides whether the TV is polled at all.
+                val downloads by downloadsViewModel.uiState.collectAsStateWithLifecycle()
+                DownloadsScreen(
+                    state = downloads,
+                    instanceName = state.pairedTv.instanceName,
+                    onSend = downloadsViewModel::send,
+                    onNoticeShown = downloadsViewModel::noticeShown,
+                    onForget = connectionViewModel::forgetTv,
+                    modifier = modifier,
+                )
             }
         }
     }

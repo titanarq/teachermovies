@@ -13,6 +13,7 @@ import com.teachermovies.mobile.api.KtorTvApi
 import com.teachermovies.mobile.api.TvApi
 import com.teachermovies.mobile.data.DataStorePairedTvStore
 import com.teachermovies.mobile.data.PairedTvStore
+import com.teachermovies.mobile.send.MagnetSender
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 
@@ -21,8 +22,8 @@ private val Context.pairedTvDataStore: DataStore<Preferences> by preferencesData
 
 /**
  * The phone app's object graph, built by hand (ADR-0003): constructor injection only, created once
- * by `MobileApp` and exposed typed as interfaces, so no caller can reach a concrete type. No fake
- * is wired in production code.
+ * by `MobileApp` and exposing each collaborator as its interface where it has one, so no caller can
+ * reach an implementation. No fake is wired in production code.
  */
 class MobileContainer(
     application: Application,
@@ -38,6 +39,9 @@ class MobileContainer(
 
     /** The one paired TV and its token, in the `paired_tv` Preferences DataStore. */
     val pairedTvStore: PairedTvStore = DataStorePairedTvStore(application.pairedTvDataStore)
+
+    /** Sends a magnet to the paired TV (#198): what the downloads screen's field calls. */
+    val magnetSender: MagnetSender = MagnetSender(tvApi, pairedTvStore)
 
     /** Sent as `deviceName` to `POST /api/pair`; this is the only place `Build.MODEL` is read. */
     val deviceName: String = Build.MODEL ?: DEFAULT_DEVICE_NAME
