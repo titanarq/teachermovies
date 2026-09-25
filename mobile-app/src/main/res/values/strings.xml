@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Movie Assistant</string>
+    <!-- Placeholder main screen (#195); later sub-issues of #35 replace it. -->
+    <string name="searching_tv">Buscando la TV...</string>
+</resources>

@@ -43,6 +43,9 @@ androidx-lifecycle-service = { group = "androidx.lifecycle", name = "lifecycle-s
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 androidx-tv-material = { group = "androidx.tv", name = "tv-material", version.ref = "tvMaterial" }
+# :mobile-app phone UI (#195): versioned by the Compose BOM above, so no version.ref; ADR-0004 row
+# "Compose Material 3 (`androidx.compose.material3:material3`)".
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 
 # Every module: coroutines + Flow/StateFlow is the concurrency model (AGENTS.md); the test artifact
 # is what gives the JVM tests `runTest`.
