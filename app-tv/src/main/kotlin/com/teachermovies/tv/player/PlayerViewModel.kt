@@ -340,10 +340,14 @@ class PlayerViewModel(
         closeTracks()
     }
 
-    /** Makes subtitle track [id] the active one (null = `Desactivados`) and closes the panel. */
+    /**
+     * Makes subtitle track [id] the active one (null = `Desactivados`) and closes the panel. It goes
+     * through [HiddenSubtitleController.selectByViewer], so hidden EN mode does not revert the
+     * viewer's own choice (#227).
+     */
     fun selectSubtitle(id: String?) {
         if (exiting) return
-        player.selectSubtitle(id)
+        hidden.selectByViewer(id)
         closeTracks()
     }
 

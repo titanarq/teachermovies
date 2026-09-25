@@ -86,6 +86,99 @@ class HiddenSubtitleControllerTest {
             assertNull(player.selectedSubtitleId.value)
         }
 
+    // -- The viewer's own choice in the tracks panel (#227) --
+
+    @Test
+    fun `a subtitle track the viewer picks is kept while hidden mode stays active`() =
+        runTest {
+            writeSubtitle("movie.en.srt")
+            val player = FakePlayer()
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            controller.start(mediaFile)
+            runCurrent()
+
+            controller.selectByViewer("sub-2")
+            runCurrent()
+
+            assertEquals("sub-2", player.selectedSubtitleId.value)
+            assertTrue(controller.active.value)
+
+            // Another choice later in the same movie is honoured too, including "Desactivados".
+            controller.selectByViewer(null)
+            runCurrent()
+            assertNull(player.selectedSubtitleId.value)
+            controller.selectByViewer("sub-1")
+            runCurrent()
+            assertEquals("sub-1", player.selectedSubtitleId.value)
+        }
+
+    @Test
+    fun `a policy selection before any viewer choice is still reverted`() =
+        runTest {
+            writeSubtitle("movie.en.srt")
+            val player = FakePlayer()
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            controller.start(mediaFile)
+            runCurrent()
+
+            // A default-track policy selects directly on the player, not through selectByViewer.
+            player.selectSubtitle("sub-1")
+            runCurrent()
+
+            assertNull(player.selectedSubtitleId.value)
+        }
+
+    @Test
+    fun `after a viewer choice the assistant still reads and captures lines`() =
+        runTest {
+            writeSubtitle("movie.en.srt")
+            val player = FakePlayer()
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            val capture = LineCaptureController(player, engine, backgroundScope)
+            controller.start(mediaFile)
+            runCurrent()
+            controller.selectByViewer("sub-1")
+            runCurrent()
+
+            player.play()
+            player.emitPosition(1_500L)
+            runCurrent()
+
+            assertEquals("Hello there.", engine.currentSubtitle.value?.text)
+            assertEquals(CaptureResult.Captured, capture.capture())
+            assertEquals(
+                "Hello there.",
+                capture.captured.value
+                    ?.cue
+                    ?.text,
+            )
+            assertEquals("sub-1", player.selectedSubtitleId.value)
+        }
+
+    @Test
+    fun `the next movie's start forces subtitles off again after a viewer choice`() =
+        runTest {
+            writeSubtitle("movie.en.srt")
+            val player = FakePlayer()
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            controller.start(mediaFile)
+            runCurrent()
+            controller.selectByViewer("sub-1")
+            runCurrent()
+
+            controller.start(mediaFile)
+            runCurrent()
+            assertNull(player.selectedSubtitleId.value)
+
+            player.selectSubtitle("sub-2")
+            runCurrent()
+            assertNull(player.selectedSubtitleId.value)
+        }
+
     @Test
     fun `currentSubtitle follows the positions the player emits while hidden mode is active`() =
         runTest {
