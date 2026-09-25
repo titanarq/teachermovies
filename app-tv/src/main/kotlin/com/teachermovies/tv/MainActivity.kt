@@ -142,6 +142,8 @@ class MainActivity : ComponentActivity() {
                                             viewModel = libraryViewModel,
                                             onPlay = mainViewModel::openPlayer,
                                             modifier = modifier,
+                                            restoreFocusTo = uiState.restoreFocusTo,
+                                            onFocusRestored = mainViewModel::focusRestored,
                                         )
                                     },
                                     downloadsContent = { modifier ->

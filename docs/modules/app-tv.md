@@ -127,6 +127,13 @@
 - Navigation: `MainUiState.route: AppRoute` is `Shell` or `Player(id)` (`player/{id}`);
   `MainViewModel.openPlayer(id)` / `closePlayer()`. `MainActivity` shows the player route (#78)
   instead of the shell for `Player`.
+- Focus after the player (#249): `closePlayer()` from the Biblioteca section sets
+  `MainUiState.restoreFocusTo` to the played id; `LibraryScreen(..., restoreFocusTo, onFocusRestored)`
+  scrolls the grid to that card (`restoreFocusIndex`), waits a frame (so it wins over the shell's
+  launch request on the tab) and focuses it, then `MainViewModel.focusRestored()` clears it. A
+  movie no longer in the library leaves focus on the Biblioteca tab; changing section drops a
+  pending restore. Manual check: OK on a card -> player -> BACK -> `uiautomator dump` shows that
+  card's bounds focused.
 
 ## Reproductor (#78)
 - `com.teachermovies.tv.player.RemoteKeyMapper.map(keyCode): PlayerAction?` (pure):
