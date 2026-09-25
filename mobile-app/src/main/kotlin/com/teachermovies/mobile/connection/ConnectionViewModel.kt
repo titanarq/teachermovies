@@ -23,7 +23,9 @@ import kotlinx.coroutines.launch
  * straight to [ConnectionUiState.Connected], otherwise [ConnectionUiState.Searching]. From then on
  * [discoverer] is collected for the ViewModel's whole life: while searching it feeds the TV list,
  * and while connected a TV with the paired `instanceName` that resolves to another base URL (DHCP
- * moved it) is written back with [PairedTvStore.updateBaseUrl]. [deviceName] is what
+ * moved it) is written back with [PairedTvStore.updateBaseUrl]. [store] is also collected for the
+ * ViewModel's whole life: when it empties while [ConnectionUiState.Connected] (a revoked token was
+ * cleared elsewhere), the state goes back to [ConnectionUiState.Searching]. [deviceName] is what
  * `POST /api/pair` receives. Nothing here logs the PIN or the token.
  */
 class ConnectionViewModel(
@@ -46,7 +48,8 @@ class ConnectionViewModel(
             val stored = store.pairedTv.first()
             _uiState.value =
                 if (stored != null) ConnectionUiState.Connected(stored) else ConnectionUiState.Searching(discovered)
-            discoverer.discover().collect(::onDiscovered)
+            launch { discoverer.discover().collect(::onDiscovered) }
+            store.pairedTv.collect(::onStored)
         }
     }
 
@@ -125,6 +128,14 @@ class ConnectionViewModel(
         if (_uiState.value !is ConnectionUiState.Connected) return
         viewModelScope.launch {
             store.clear()
+            _uiState.value = ConnectionUiState.Searching(discovered)
+        }
+    }
+
+    // The store emptied from elsewhere (a revoked token cleared by DownloadsViewModel or
+    // MagnetSender): leave Connected for the TV list, as forgetTv() would.
+    private fun onStored(tv: PairedTv?) {
+        if (tv == null && _uiState.value is ConnectionUiState.Connected) {
             _uiState.value = ConnectionUiState.Searching(discovered)
         }
     }

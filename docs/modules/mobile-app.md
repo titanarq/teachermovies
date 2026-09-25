@@ -18,14 +18,20 @@
   `androidx-datastore-preferences`; (#197) `androidx-lifecycle-viewmodel-ktx`,
   `androidx-lifecycle-runtime-compose`.
 - Manifest: `android.permission.INTERNET`, `application android:name=".MobileApp"` and one
-  launcher `MainActivity` (`ComponentActivity` + `setContent`) hosting the connection screens
-  (#197) under a Material 3 top bar titled `Movie Assistant`.
+  launcher `MainActivity` (`ComponentActivity` + `setContent`) hosting the connection screens (#197)
+  and, once a TV is paired, the downloads screen (#198) under a Material 3 top bar titled
+  `Movie Assistant`. Both ViewModels come from the one container through `by viewModels` factories,
+  and `DownloadsViewModel.uiState` is collected only while `ConnectionUiState.Connected` is shown --
+  that collection is what decides whether the TV is polled at all.
 - DI (#197, ADR-0003): `di.MobileContainer(application)` is built once in `MobileApp.onCreate`
-  (`MobileApp.container`). It exposes, typed as interfaces: `serviceDiscoverer: ServiceDiscoverer`
+  (`MobileApp.container`). Each collaborator is exposed as its interface where it has one, so no
+  caller reaches an implementation: `serviceDiscoverer: ServiceDiscoverer`
   = `NsdServiceDiscoverer(AndroidNsdBrowser(application))`; `tvApi: TvApi` = `KtorTvApi` over one
   `HttpClient(CIO)` (private); `pairedTvStore: PairedTvStore` = `DataStorePairedTvStore` over the
-  `preferencesDataStore` named `paired_tv`; and `deviceName: String` = `android.os.Build.MODEL`
-  (the only place it is read; `Android` if the platform reports none). No fake is wired.
+  `preferencesDataStore` named `paired_tv`; `deviceName: String` = `android.os.Build.MODEL`
+  (the only place it is read; `Android` if the platform reports none); and (#198)
+  `magnetSender: MagnetSender` = `MagnetSender(tvApi, pairedTvStore)`, a concrete class because it
+  has no interface of its own. No fake is wired.
 - Connection flow (#197), package `connection`:
   - `ConnectionViewModel(discoverer: ServiceDiscoverer, api: TvApi, store: PairedTvStore,
     deviceName: String)` exposes `uiState: StateFlow<ConnectionUiState>`; `ConnectionViewModel.Factory`
@@ -38,7 +44,11 @@
     collected for the ViewModel's whole life: while `Searching` each emission replaces `tvs`; while
     `Connected`, a TV with the paired `instanceName` whose `baseUrl` differs from the stored one
     triggers `store.updateBaseUrl(newBaseUrl)` and `Connected` with the new URL (DHCP moved the
-    TV); an unchanged address or another TV does nothing.
+    TV); an unchanged address or another TV does nothing. `store.pairedTv` is also collected for
+    the ViewModel's whole life (#198): when it turns `null` while `Connected` -- a revoked token
+    cleared by `DownloadsViewModel` or `MagnetSender` on `Unauthorized` -- the state goes to
+    `Searching(<last discovered list>)` at once, so the app returns to pairing instead of showing a
+    list that no longer polls. Any other store emission leaves the state as it is.
   - `selectTv(tv)` (from `Searching`) -> `Pairing(tv.instanceName, tv.baseUrl)`.
   - `enterAddress(text)` (from `Searching`): trimmed `host` or `host:port`, host made of letters,
     digits, `.` and `-` (no scheme, path or IPv6), port digits in `1..65535`, default 8787 ->
@@ -58,9 +68,71 @@
     empty; an `Introducir dirección` field with a `CONECTAR` button and the address error),
     `PairingScreen` (the TV name, `Escribe el PIN que muestra la TV`, a numeric PIN field that keeps
     at most 6 digits, `EMPAREJAR`, `CANCELAR`, the error text and a progress indicator while busy)
-    and `ConnectedScreen` (`<instanceName> ● conectada`, `OLVIDAR ESTA TV`; a placeholder until the
-    downloads list lands). `Loading` shows a progress indicator. The PIN lives only in the pairing
-    screen's field and the one `pair` call; nothing logs it or the token.
+    and, for `Connected`, the downloads screen below. `Loading` shows a progress indicator. The PIN
+    lives only in the pairing screen's field and the one `pair` call; nothing logs it or the token.
+    The #197 placeholder for `Connected` is deleted (`connection/ConnectedScreen.kt`):
+    `downloads/DownloadsScreen` (#198) took its place, and `OLVIDAR ESTA TV` is still `forgetTv`.
+- Sending a magnet (#198), package `send` -- the one path the downloads screen's field uses and the
+  share intent filter will reuse:
+  - `MagnetSender(api: TvApi, store: PairedTvStore)` has one method, `suspend fun send(text:
+    String?): SendOutcome`. It never throws (`TvApi` answers with sealed results) and never calls
+    the API when there is no magnet to send or no TV to send it to.
+  - Order of work: `SharedLinkParser.extractMagnet(text)` first, so text without a magnet is
+    `NoMagnet` even when nothing is paired; then `store.pairedTv.first()`, so no stored TV is
+    `NotPaired`; then `api.addMagnet(tv.baseUrl, tv.token, magnet)`, mapped one to one:
+    `Added` -> `Sent(tv.instanceName)`, `AlreadyExists` -> `AlreadyOnTv(tv.instanceName)`,
+    `InvalidMagnet` -> `Rejected`, `Failed(Unauthorized)` -> `store.clear()` and then
+    `NeedsPairing`, any other `Failed` -> `Unreachable` with the TV left stored. Clearing the store
+    drops the revoked token, which also stops `DownloadsViewModel`'s polling (below).
+  - `sealed interface SendOutcome` carries `message`, the Spanish text a screen shows, so no screen
+    builds a string of its own: `Sent` `Enviado a <tvName>`, `AlreadyOnTv` `Ya estaba en <tvName>`,
+    `Rejected` `La TV rechazó el enlace magnet`, `NoMagnet` `No hay ningún enlace magnet`,
+    `NotPaired` `Empareja primero la TV`, `NeedsPairing` `Vuelve a emparejar la TV`, `Unreachable`
+    `No se puede conectar con la TV`. Nothing here logs a token.
+- Downloads list (#198), package `downloads` -- the phone side of the "UX móvil" web UX in
+  `docs/VISION.md`. Pause, resume, delete and uploads stay on the web UI:
+  - `DownloadFormat`, an `object` of pure Kotlin with no Android type, holds every text of one row so
+    no screen formats a number. `progress(value: Double)` -> `72,4 %` (one decimal, rounded half up,
+    negatives clamped to zero); `stateLabel(state: String)` turns the snake_case state
+    `GET /api/torrents` reports into Spanish -- `fetching_metadata` `Obteniendo metadata`, `queued`
+    `Esperando`, `downloading` `Descargando`, `paused` `En pausa`, `verifying` `Verificando`,
+    `completed` `Completado`, `error` `Error` -- and returns a value outside that set unchanged
+    rather than guessing at a state a newer TV knows; `speed(bytesPerSecond: Long)` -> `8,3 MB/s`;
+    `size(downloadedBytes, totalBytes)` -> `18,4 / 25,6 GB`, both numbers always in GB, so the
+    unknown total before metadata arrives reads `1,5 / 0,0 GB`. Units are decimal (1000-based, what
+    the TV's own web UI shows) and every number is a `DecimalFormat` over
+    `DecimalFormatSymbols(es-ES)` with no grouping separator, whatever the phone's locale is.
+  - `DownloadsUiState` = `Loading(notice: String? = null)` | `Loaded(items: List<TorrentSummary>,
+    offline: Boolean = false, notice: String? = null)`, produced only by `DownloadsViewModel`.
+    `items` is what the TV last answered, kept across failed polls so the list does not blink away;
+    `offline` is true while the TV is not answering; `notice` is the message of the last `send`. The
+    row texts are not here: the screen builds each one with `DownloadFormat`.
+  - `DownloadsViewModel(api: TvApi, store: PairedTvStore, magnetSender: MagnetSender,
+    pollIntervalMs: Long = DEFAULT_POLL_INTERVAL_MS)` exposes `uiState: StateFlow<DownloadsUiState>`,
+    and `DownloadsViewModel.Factory(api, store, magnetSender)` is what `MainActivity` builds from the
+    container. `DEFAULT_POLL_INTERVAL_MS` is `3_000`, what the TV's web UI polls at.
+  - Polling is gated on `_uiState.subscriptionCount`, so a screen nobody looks at costs the TV no
+    request. While subscribed, `store.pairedTv` is flat-mapped: a stored TV calls
+    `api.torrents(baseUrl, token)` at once and then every `pollIntervalMs`, emitting `Loaded`; no
+    stored TV polls nothing through a flow that never completes, so pairing one later starts the
+    polling. The wait between two polls is `withTimeoutOrNull(pollIntervalMs) { refreshes.first() }`
+    over a `MutableSharedFlow` with one buffered unit (`DROP_OLDEST`), which is what lets a refresh
+    cut it short while a second, nobody-waiting-for refresh is dropped.
+  - A failed poll keeps the last `items` and sets `offline = true` (`TV sin conexión`); the next
+    successful one clears it. `Unauthorized` also calls `store.clear()`, so the flat-mapped
+    `store.pairedTv` turns `null`, the polling stops with the revoked token dropped, and
+    `ConnectionViewModel`, which observes the same store, returns the app to pairing.
+  - `send(text)` posts with `MagnetSender` and puts `outcome.message` in `notice`; `Sent` also emits
+    a refresh, so an accepted torrent appears at once instead of at the next interval. Every state
+    update carries `notice` over, so a poll does not wipe it, and `noticeShown()` drops it: the
+    screen calls that once it has shown the notice for 3 s, which is what makes it transient.
+  - `DownloadsScreen(state, instanceName, onSend, onNoticeShown, onForget)` (Compose Material 3,
+    Spanish, strings in `res/values/strings.xml`): `%1$s ● conectada` or `%1$s ● sin conexión`, a
+    `Pega aquí el enlace magnet` field beside `ENVIAR A LA TV` (the IME `Send` action posts too), the
+    notice, a `DESCARGANDO` header over the list -- one `ListItem` per torrent keyed by `id`, with
+    its name, a `LinearProgressIndicator` over `progress / 100` and the four `DownloadFormat` texts
+    joined by `  ·  ` -- a progress indicator while `Loading`, and `OLVIDAR ESTA TV`. The typed
+    magnet stays in this screen's field.
 - `share.SharedLinkParser.extractMagnet(text: String?): String?` -- pure Kotlin, no Android type:
   - finds the first `magnet:?` in `text` (scheme matched case-insensitively), cut at the first
     whitespace character, so a magnet inside surrounding shared text or followed by a newline works;
@@ -136,3 +208,30 @@ JVM tests for link parsing and API client with a fake server.
   device name, `busy` in flight, `WrongPin`/`TooManyAttempts`/`Failed` errors, retry after an
   error, `cancelPairing`, the stored-TV start, `updateBaseUrl` on a re-resolved address, no update
   for an unchanged address or another TV, and `forgetTv`.
+- `send/MagnetSenderTest` (#198): JVM, `runTest`, `FakeTvApi` and `InMemoryPairedTvStore`: an
+  accepted magnet posted with the stored base URL and token, a magnet pulled out of surrounding
+  shared text, and every outcome mapped -- `AlreadyExists`, `InvalidMagnet`,
+  `Failed(Unauthorized)` clearing the store, network and HTTP failures leaving it stored. Text
+  without a usable magnet -- null, empty, blanks, an `https` link, a magnet with no `xt`, and a
+  magnet whose `xt` is neither `urn:btih:` nor `urn:btmh:` -- is `NoMagnet` and never reaches the
+  API, not even when the store is empty, so `NoMagnet` is checked before `NotPaired`; an empty store
+  with a valid magnet is `NotPaired` and does not call it either. One test outside `runTest` checks
+  the Spanish `message` of all seven outcomes.
+- `downloads/DownloadFormatTest` (#198): plain JVM assertions on the `object`, no coroutine and no
+  fake: the seven state labels, a state outside that set (`seeding`) and the empty one echoed as
+  they came, progress with the Spanish comma and its rounding (`72,44` -> `72,4 %`, `17,45` ->
+  `17,5 %`, `0,05` -> `0,1 %`, `0.0` -> `0,0 %`, `100.0` -> `100,0 %`, `-3.0` clamped to `0,0 %`),
+  speed in MB/s (`8_300_000` -> `8,3 MB/s`, `999_999` -> `1,0 MB/s`, `12_456_789` -> `12,5 MB/s`,
+  `0` and `-1` clamped to `0,0 MB/s`) and downloaded / total in GB (`18,4 / 25,6 GB`,
+  `0,0 / 1,5 GB`, a still-unknown total reading `1,5 / 0,0 GB`).
+- `downloads/DownloadsViewModelTest` (#198): JVM, `runTest` with virtual time,
+  `Dispatchers.setMain(UnconfinedTestDispatcher())` reset in `@After`, `FakeTvApi`,
+  `InMemoryPairedTvStore`, and a `TestScope.subscribe(vm)` helper that collects `uiState` in
+  `backgroundScope` -- which is how the subscription-gated polling is tested. Covers: no poll before
+  a screen subscribes, the first poll's list, the second one at `pollIntervalMs` and not 1 ms
+  before, a failed poll keeping the list and setting `offline` until the TV answers again, a first
+  poll that fails giving an offline empty list, `Unauthorized` clearing the store and stopping the
+  polling, no stored TV not polled until one is saved, unsubscribing stopping the polling and
+  re-subscribing polling at once, `Sent` refreshing the list immediately, a rejected magnet shown
+  once (`noticeShown`) without a refresh, magnet-less text and a send with no TV reported through
+  the notice and never sent, and a notice set while `Loading` surviving the first poll.

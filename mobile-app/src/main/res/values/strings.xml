@@ -10,7 +10,11 @@
     <string name="pin_label">PIN</string>
     <string name="pair">EMPAREJAR</string>
     <string name="cancel">CANCELAR</string>
-    <!-- Connected placeholder (#197). -->
+    <!-- Downloads screen (#198); the paired-TV texts are the connected placeholder's (#197). -->
     <string name="tv_connected">%1$s ● conectada</string>
+    <string name="tv_offline">%1$s ● sin conexión</string>
+    <string name="magnet_label">Pega aquí el enlace magnet</string>
+    <string name="send_to_tv">ENVIAR A LA TV</string>
+    <string name="downloads_header">DESCARGANDO</string>
     <string name="forget_tv">OLVIDAR ESTA TV</string>
 </resources>
