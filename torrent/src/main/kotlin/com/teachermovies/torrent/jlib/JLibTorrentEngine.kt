@@ -31,6 +31,7 @@ import com.teachermovies.core.model.TorrentId
 import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.EngineStatus
+import com.teachermovies.torrent.api.FileByteRange
 import com.teachermovies.torrent.api.FilePriority
 import com.teachermovies.torrent.api.MagnetUri
 import com.teachermovies.torrent.api.PieceRange
@@ -127,8 +128,11 @@ class JLibTorrentEngine(
     private var ticker: Job? = null
     private var resumeTicker: Job? = null
 
-    /** The read-ahead window last applied per torrent by [prioritizeWindow]. */
-    private val windows = HashMap<TorrentId, PieceRange>()
+    /**
+     * The pieces of the window last applied per torrent by [prioritizeWindow] or
+     * [prioritizeRanges], in deadline order.
+     */
+    private val windows = HashMap<TorrentId, List<Int>>()
 
     /** Torrents re-added from resume data whose `add_torrent_alert` has not arrived yet. */
     private val restored = HashSet<TorrentId>()
@@ -426,10 +430,23 @@ class JLibTorrentEngine(
         fileIndex: Int,
         byteOffset: Long,
         windowBytes: Long,
+    ): EngineResult<Unit> = prioritizeRanges(id, fileIndex, listOf(FileByteRange(byteOffset, windowBytes)))
+
+    /**
+     * Replaces torrent [id]'s window with the pieces covering every range of [ranges] in file
+     * [fileIndex] ([WindowDeadlinePlanner.piecesOf]), applying the same delta as [prioritizeWindow];
+     * deadlines follow the order of [ranges]. An empty [ranges] leaves an empty window (every piece
+     * of the old one reset). [EngineError.NotReady] as for [prioritizeWindow].
+     */
+    override suspend fun prioritizeRanges(
+        id: TorrentId,
+        fileIndex: Int,
+        ranges: List<FileByteRange>,
     ): EngineResult<Unit> =
         onHandle(id, needsMetadata = true) { handle ->
             val layout = layoutOf(handle, fileIndex) ?: return@onHandle failure(EngineError.NotReady)
-            val current = layout.piecesFor(byteOffset, windowBytes)
+            val current =
+                WindowDeadlinePlanner.piecesOf(ranges.map { layout.piecesFor(it.offsetBytes, it.lengthBytes) })
             val plan = WindowDeadlinePlanner.plan(windows[id], current, deadlineStepMs)
             for (piece in plan.reset) {
                 handle.resetPieceDeadline(piece)
@@ -451,7 +468,7 @@ class JLibTorrentEngine(
         onHandle(id, needsMetadata = true) { handle ->
             handle.clearPieceDeadlines()
             windows[id]?.let { window ->
-                for (piece in window.firstPiece..window.lastPiece) {
+                for (piece in window) {
                     handle.piecePriority(piece, Priority.fromSwig(DEFAULT_PIECE_PRIORITY))
                 }
             }

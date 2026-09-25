@@ -5,6 +5,7 @@ import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.fake.FakePlayer
 import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
+import com.teachermovies.torrent.api.FileByteRange
 import com.teachermovies.torrent.api.RangeReadiness
 import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.fake.FakeTorrentEngine
@@ -169,13 +170,62 @@ class StreamingPlaybackControllerTest {
         }
 
     @Test
-    fun theFirstOpenRangeIsPrioritisedBeforeWaiting() =
+    fun aStartAtZeroPrioritisesTheHeadAndTheTailBeforeWaiting() =
         runTest {
             addTorrent()
             val controller = controller(backgroundScope)
             startAsync(controller)
             runCurrent()
-            assertEquals(Triple(0, 0L, 4L * piece), fakeEngine.lastWindow(id))
+
+            // Head + start buffer merged (pieces 0-3) and the tail (piece 99), in one call (#245).
+            assertEquals(
+                0 to listOf(FileByteRange(0L, 4L * piece), FileByteRange(99L * piece, 1L * piece)),
+                fakeEngine.lastRanges(id),
+            )
+            assertEquals(
+                listOf("prioritizeRanges(${id.value},0,0+${4 * piece};${99 * piece}+$piece)"),
+                fakeEngine.recordedCalls.filter { it.startsWith("prioritize") },
+            )
+            assertTrue(controller.state.value is StreamState.Preparing)
+        }
+
+    @Test
+    fun aStartMidFilePrioritisesTheHeadTheStartBufferAndTheTail() =
+        runTest {
+            addTorrent()
+            val controller = controller(backgroundScope)
+            startAsync(controller, startPositionMs = 50_000L)
+            runCurrent()
+
+            assertEquals(
+                0 to
+                    listOf(
+                        FileByteRange(0L, 2L * piece),
+                        FileByteRange(50L * piece, 4L * piece),
+                        FileByteRange(99L * piece, 1L * piece),
+                    ),
+                fakeEngine.lastRanges(id),
+            )
+        }
+
+    @Test
+    fun theOpenRangesArePrioritisedOnceWhileWaiting() =
+        runTest {
+            addTorrent()
+            val controller = controller(backgroundScope)
+            startAsync(controller)
+            advanceTimeBy(5 * poll)
+            runCurrent()
+
+            assertEquals(1, fakeEngine.recordedCalls.count { it.startsWith("prioritize") })
+            assertTrue(controller.state.value is StreamState.Preparing)
+        }
+
+    @Test
+    fun theSlidingWindowReplacesTheOpenRangesOncePlaybackRuns() =
+        runTest {
+            openFully()
+            assertEquals(0 to listOf(FileByteRange(0L, 8L * piece)), fakeEngine.lastRanges(id))
         }
 
     @Test

@@ -30,25 +30,46 @@ internal object WindowDeadlinePlanner {
         previous: PieceRange?,
         current: PieceRange,
         deadlineStepMs: Int,
+    ): WindowDeadlinePlan = plan(previous?.pieces(), current.pieces(), deadlineStepMs)
+
+    /**
+     * The same delta for windows made of any pieces (#245: the playback gate's head, tail and start
+     * buffer are not contiguous). [current] is the new window's pieces in the order their deadlines
+     * should follow ([piecesOf]); [previous] is the window set last, null when none is. Pieces of
+     * [current] not in [previous] get deadlines [deadlineStepMs], 2 x [deadlineStepMs], ... in
+     * [current]'s order; pieces of [previous] not in [current] are reset, ascending.
+     */
+    fun plan(
+        previous: List<Int>?,
+        current: List<Int>,
+        deadlineStepMs: Int,
     ): WindowDeadlinePlan {
+        val before = previous?.toHashSet() ?: emptySet()
+        val after = current.toHashSet()
         val deadlines = LinkedHashMap<Int, Int>()
         var step = 0
-        for (piece in current.firstPiece..current.lastPiece) {
-            if (previous != null && previous.covers(piece)) continue
+        for (piece in current) {
+            if (piece in before || piece in deadlines) continue
             step += 1
             deadlines[piece] = deadlineStepMs * step
         }
-        val reset =
-            if (previous ==
-                null
-            ) {
-                emptyList()
-            } else {
-                (previous.firstPiece..previous.lastPiece).filterNot { current.covers(it) }
-            }
+        val reset = before.filterNot { it in after }.sorted()
         return WindowDeadlinePlan(deadlines, reset)
     }
+
+    /**
+     * The pieces of [ranges] as one window: each range's pieces ascending, ranges in the order
+     * given, a piece shared by two ranges listed once (where it first appears).
+     */
+    fun piecesOf(ranges: List<PieceRange>): List<Int> {
+        val pieces = LinkedHashSet<Int>()
+        for (range in ranges) pieces.addAll(range.pieces())
+        return pieces.toList()
+    }
 }
+
+/** Every piece of this inclusive range, ascending. */
+internal fun PieceRange.pieces(): List<Int> = (firstPiece..lastPiece).toList()
 
 /** Whether [piece] lies inside this inclusive range. */
 internal fun PieceRange.covers(piece: Int): Boolean = piece in firstPiece..lastPiece

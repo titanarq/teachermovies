@@ -5,6 +5,7 @@ import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
+import com.teachermovies.torrent.api.FileByteRange
 import com.teachermovies.torrent.api.TorrentEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -26,7 +27,8 @@ import kotlin.math.abs
  * Supervises playback of a file that is still downloading (ADR-0001 §4), between a [Player] and a
  * [TorrentEngine]:
  *
- * - [start] holds the file closed until the head, tail and start buffer are on disk, then opens
+ * - [start] asks the engine to prioritise the head, tail and start buffer together
+ *   ([TorrentEngine.prioritizeRanges]), holds the file closed until they are on disk, then opens
  *   and plays it.
  * - While it plays, the playback position is fed to the engine as a sliding read-ahead window
  *   ([StreamWindowCalculator.windowFor]), re-sent only once it has moved at least
@@ -81,7 +83,9 @@ class StreamingPlaybackController(
     /**
      * Opens [file] (file [fileIndex] of torrent [id], [fileSizeBytes] long, lasting [durationMs] or
      * `0` when unknown) at [startPositionMs] once every range of [StreamWindowCalculator.openRanges]
-     * is on disk, publishing [StreamState.Preparing] while it waits, and then supervises it.
+     * is on disk, publishing [StreamState.Preparing] while it waits, and then supervises it. All of
+     * those ranges are prioritised in one [TorrentEngine.prioritizeRanges] call before the wait;
+     * the sliding read-ahead window replaces them once playback runs.
      *
      * `UnknownTorrent` and `Unsupported` engine failures answer at once, `Io` answers [StreamResult.Failed],
      * and `NotReady` (metadata still arriving) keeps polling. The file is never opened before every
@@ -98,13 +102,15 @@ class StreamingPlaybackController(
         stop()
         val ranges = StreamWindowCalculator.openRanges(fileSizeBytes, startPositionMs, durationMs, policy)
         val requiredBytes = ranges.sumOf { it.lengthBytes }
-        var openRangePrioritised = ranges.isEmpty()
+        var openRangesPrioritised = ranges.isEmpty()
 
         while (true) {
-            if (!openRangePrioritised) {
-                val first = ranges.first()
-                when (val result = engine.prioritizeWindow(id, fileIndex, first.offsetBytes, first.lengthBytes)) {
-                    is EngineResult.Ok -> openRangePrioritised = true
+            if (!openRangesPrioritised) {
+                // Every open range at once (#245): the tail and a mid-file start buffer are as
+                // required as the head, and one window per torrent means one call.
+                val wanted = ranges.map { FileByteRange(it.offsetBytes, it.lengthBytes) }
+                when (val result = engine.prioritizeRanges(id, fileIndex, wanted)) {
+                    is EngineResult.Ok -> openRangesPrioritised = true
 
                     // Metadata may still be arriving: ask again on the next tick.
                     is EngineResult.Failure -> gateFailure(result.error)?.let { return it }

@@ -78,7 +78,27 @@ interface TorrentEngine {
         windowBytes: Long,
     ): EngineResult<Unit>
 
-    /** Clears any window set by [prioritizeWindow] for torrent [id], returning to normal ordering. */
+    /**
+     * The multi-range form of [prioritizeWindow] (#245): replaces torrent [id]'s window with the
+     * pieces covering every range of [ranges] in file [fileIndex] at once -- what the playback gate
+     * needs before opening an incomplete file (head, tail and start buffer, which are not
+     * contiguous). Deadlines follow the order of [ranges], ascending piece order within each one.
+     *
+     * One window per torrent still holds: a later [prioritizeWindow] or [prioritizeRanges] call
+     * replaces this one, and [clearWindow] clears it. `prioritizeRanges(id, i, listOf(r))` is the
+     * same as `prioritizeWindow(id, i, r.offsetBytes, r.lengthBytes)`; an empty [ranges] clears the
+     * window. Failures as for [prioritizeWindow].
+     */
+    suspend fun prioritizeRanges(
+        id: TorrentId,
+        fileIndex: Int,
+        ranges: List<FileByteRange>,
+    ): EngineResult<Unit>
+
+    /**
+     * Clears any window set by [prioritizeWindow] or [prioritizeRanges] for torrent [id], returning
+     * to normal ordering.
+     */
     suspend fun clearWindow(id: TorrentId): EngineResult<Unit>
 
     /**
