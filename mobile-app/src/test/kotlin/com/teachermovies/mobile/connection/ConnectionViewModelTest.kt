@@ -33,6 +33,7 @@ import org.junit.Test
 class ConnectionViewModelTest {
     private val livingRoom = DiscoveredTv("Movie Assistant (Salón)", "192.168.1.20", 8787)
     private val bedroom = DiscoveredTv("Movie Assistant (Dormitorio)", "192.168.1.30", 8787)
+    private val printer = DiscoveredTv("HP LaserJet", "192.168.1.40", 80)
 
     private val discoverer = FakeServiceDiscoverer()
     private val api = FakeTvApi()
@@ -306,6 +307,67 @@ class ConnectionViewModelTest {
             assertTrue(vm.uiState.value is Connected)
 
             store.clear()
+
+            assertEquals(Searching(listOf(bedroom)), vm.uiState.value)
+        }
+
+    @Test
+    fun `a service that is not a Movie Assistant TV is never listed`() =
+        runTest {
+            val vm = viewModel()
+
+            discoverer.add(printer)
+            assertEquals(Searching(emptyList()), vm.uiState.value)
+
+            discoverer.add(livingRoom)
+            assertEquals(Searching(listOf(livingRoom)), vm.uiState.value)
+
+            vm.selectTv(livingRoom)
+            discoverer.add(bedroom)
+            vm.cancelPairing()
+            assertEquals(Searching(listOf(bedroom, livingRoom)), vm.uiState.value)
+        }
+
+    @Test
+    fun `a conflict-renamed TV is listed`() =
+        runTest {
+            val renamed = DiscoveredTv("Movie Assistant (2)", "192.168.1.21", 8787)
+            val vm = viewModel()
+
+            discoverer.add(renamed)
+            discoverer.add(printer)
+
+            assertEquals(Searching(listOf(renamed)), vm.uiState.value)
+        }
+
+    @Test
+    fun `a TV paired by typed address is never rewritten by another service with its name`() =
+        runTest {
+            val paired = PairedTv("192.168.1.50:8787", "http://192.168.1.50:8787", "t")
+            var updates = 0
+            val store =
+                object : PairedTvStore by InMemoryPairedTvStore(paired) {
+                    override suspend fun updateBaseUrl(baseUrl: String) {
+                        updates++
+                    }
+                }
+            val vm = viewModel(store)
+
+            discoverer.add(DiscoveredTv("192.168.1.50:8787", "192.168.1.99", 8787))
+
+            assertEquals(0, updates)
+            assertEquals(Connected(paired), vm.uiState.value)
+        }
+
+    @Test
+    fun `forgetting the TV returns to a list without other services`() =
+        runTest {
+            val store = InMemoryPairedTvStore(PairedTv(livingRoom.instanceName, livingRoom.baseUrl, "t"))
+            discoverer.add(printer)
+            discoverer.add(bedroom)
+            val vm = viewModel(store)
+
+            vm.forgetTv()
 
             assertEquals(Searching(listOf(bedroom)), vm.uiState.value)
         }
