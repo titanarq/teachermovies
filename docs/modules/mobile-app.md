@@ -11,13 +11,56 @@
   `kotlin.android`, `kotlin.compose`), `namespace`/`applicationId` `com.teachermovies.mobile`,
   `compileSdk`/`targetSdk` 35, `minSdk` 26, Java 17 and `jvmToolchain(17)`, no `ndk.abiFilters`
   (no native library). UI is Jetpack Compose Material 3 (`androidx.compose.material3:material3`,
-  versioned by the Compose BOM, ADR-0004); `androidx.tv:tv-material` is not used. It depends on no
-  other project module. `kotlin.serialization` plugin; runtime deps (#196): `ktor-client-core`,
-  `ktor-client-cio`, `ktor-client-content-negotiation`, `ktor-serialization-kotlinx-json`,
-  `kotlinx-coroutines-core`, `androidx-datastore-preferences`.
-- Manifest: `android.permission.INTERNET` and one launcher `MainActivity` (`ComponentActivity` +
-  `setContent`) showing a placeholder Material 3 screen titled `Movie Assistant` with
-  `Buscando la TV...`; later sub-issues of #35 replace it.
+  versioned by the Compose BOM, ADR-0004); `androidx.tv:tv-material` is not used. Its only
+  project dependency is `:discovery` (#197), whose client contract it reuses unchanged.
+  `kotlin.serialization` plugin; runtime deps (#196): `ktor-client-core`, `ktor-client-cio`,
+  `ktor-client-content-negotiation`, `ktor-serialization-kotlinx-json`, `kotlinx-coroutines-core`,
+  `androidx-datastore-preferences`; (#197) `androidx-lifecycle-viewmodel-ktx`,
+  `androidx-lifecycle-runtime-compose`.
+- Manifest: `android.permission.INTERNET`, `application android:name=".MobileApp"` and one
+  launcher `MainActivity` (`ComponentActivity` + `setContent`) hosting the connection screens
+  (#197) under a Material 3 top bar titled `Movie Assistant`.
+- DI (#197, ADR-0003): `di.MobileContainer(application)` is built once in `MobileApp.onCreate`
+  (`MobileApp.container`). It exposes, typed as interfaces: `serviceDiscoverer: ServiceDiscoverer`
+  = `NsdServiceDiscoverer(AndroidNsdBrowser(application))`; `tvApi: TvApi` = `KtorTvApi` over one
+  `HttpClient(CIO)` (private); `pairedTvStore: PairedTvStore` = `DataStorePairedTvStore` over the
+  `preferencesDataStore` named `paired_tv`; and `deviceName: String` = `android.os.Build.MODEL`
+  (the only place it is read; `Android` if the platform reports none). No fake is wired.
+- Connection flow (#197), package `connection`:
+  - `ConnectionViewModel(discoverer: ServiceDiscoverer, api: TvApi, store: PairedTvStore,
+    deviceName: String)` exposes `uiState: StateFlow<ConnectionUiState>`; `ConnectionViewModel.Factory`
+    (a `ViewModelProvider.Factory` over the same four arguments) is what `MainActivity` builds from
+    the container (`by viewModels`), collecting the state with `collectAsStateWithLifecycle`.
+  - `ConnectionUiState` = `Loading` | `Searching(tvs: List<DiscoveredTv>, addressError: String? = null)`
+    | `Pairing(instanceName, baseUrl, error: String? = null, busy = false)` | `Connected(pairedTv)`.
+  - `Loading` until `store.pairedTv` gives its first value: a stored TV -> `Connected(it)`,
+    otherwise `Searching(<last discovered list>)`. Then `discoverer.discover()` (`_http._tcp`) is
+    collected for the ViewModel's whole life: while `Searching` each emission replaces `tvs`; while
+    `Connected`, a TV with the paired `instanceName` whose `baseUrl` differs from the stored one
+    triggers `store.updateBaseUrl(newBaseUrl)` and `Connected` with the new URL (DHCP moved the
+    TV); an unchanged address or another TV does nothing.
+  - `selectTv(tv)` (from `Searching`) -> `Pairing(tv.instanceName, tv.baseUrl)`.
+  - `enterAddress(text)` (from `Searching`): trimmed `host` or `host:port`, host made of letters,
+    digits, `.` and `-` (no scheme, path or IPv6), port digits in `1..65535`, default 8787 ->
+    `Pairing(instanceName = "host:port", baseUrl = "http://host:port")`. Anything else leaves the
+    state and sets `addressError = "Dirección no válida"`.
+  - `submitPin(pin)` (from a non-busy `Pairing`): anything but exactly 6 ASCII digits sets
+    `error = "El PIN tiene 6 cifras"` and never calls the API. Otherwise `busy = true, error = null`
+    and `api.pair(baseUrl, pin, deviceName)`: `Paired(token)` -> `store.save(PairedTv(instanceName,
+    baseUrl, token))` -> `Connected`; `WrongPin` -> `PIN incorrecto`; `TooManyAttempts` ->
+    `Demasiados intentos; espera un minuto`; `Failed` -> `No se puede conectar con la TV` (each
+    with `busy = false`). An answer arriving after `cancelPairing` is dropped.
+  - `cancelPairing()` (from `Pairing`, also the system back) cancels an in-flight pair request and
+    returns to `Searching` with the last discovered list.
+  - `forgetTv()` (from `Connected`) -> `store.clear()` -> `Searching`.
+  - Screens (Compose Material 3, Spanish, strings in `res/values/strings.xml`): `TvListScreen`
+    (one `ListItem` per TV: `instanceName` and `host:port`; `Buscando la TV...` while the list is
+    empty; an `Introducir dirección` field with a `CONECTAR` button and the address error),
+    `PairingScreen` (the TV name, `Escribe el PIN que muestra la TV`, a numeric PIN field that keeps
+    at most 6 digits, `EMPAREJAR`, `CANCELAR`, the error text and a progress indicator while busy)
+    and `ConnectedScreen` (`<instanceName> ● conectada`, `OLVIDAR ESTA TV`; a placeholder until the
+    downloads list lands). `Loading` shows a progress indicator. The PIN lives only in the pairing
+    screen's field and the one `pair` call; nothing logs it or the token.
 - `share.SharedLinkParser.extractMagnet(text: String?): String?` -- pure Kotlin, no Android type:
   - finds the first `magnet:?` in `text` (scheme matched case-insensitively), cut at the first
     whitespace character, so a magnet inside surrounding shared text or followed by a newline works;
@@ -85,3 +128,11 @@ JVM tests for link parsing and API client with a fake server.
 - `data/DataStorePairedTvStoreTest` (#196): JVM, `PreferenceDataStoreFactory.create` over a file in
   a `TemporaryFolder`: empty -> `null`, save then read, save replaces, `updateBaseUrl` with and
   without a stored TV, `clear`, token redacted from `toString`.
+- `connection/ConnectionViewModelTest` (#197): JVM, `runTest` with `Dispatchers.setMain`
+  (`UnconfinedTestDispatcher`), `FakeServiceDiscoverer`, `FakeTvApi`, `InMemoryPairedTvStore`:
+  `Loading` until the store answers, the list following discovery, `selectTv`, typed host (default
+  port), `host:port`, invalid addresses (empty, bad/out-of-range port, scheme, spaces), malformed
+  PINs never reaching the API, `Paired` stored and connected with `Build.MODEL`'s stand-in as the
+  device name, `busy` in flight, `WrongPin`/`TooManyAttempts`/`Failed` errors, retry after an
+  error, `cancelPairing`, the stored-TV start, `updateBaseUrl` on a re-resolved address, no update
+  for an unchanged address or another TV, and `forgetTv`.
