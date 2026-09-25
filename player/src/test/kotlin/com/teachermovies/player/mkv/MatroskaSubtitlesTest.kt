@@ -359,6 +359,60 @@ class MatroskaSubtitlesTest {
     }
 
     @Test
+    fun ffmpegWebVttCodecIdsAreTextTracksExtractedLikeSWebVtt() {
+        // ffmpeg muxes `-c:s webvtt` into .mkv as D_WEBVTT/SUBTITLES (#228); the payload is the cue text.
+        val file =
+            write(
+                mkv(
+                    listOf(
+                        video,
+                        trackEntry(3, TYPE_SUBTITLE, "D_WEBVTT/SUBTITLES", language = "eng"),
+                        trackEntry(4, TYPE_SUBTITLE, "D_WEBVTT/CAPTIONS", language = "eng"),
+                    ),
+                    cluster(
+                        0,
+                        blockGroup(3, 1_250, "<v Bob>Hello, <c.yellow>world</c></v>!", duration = 1_000),
+                        blockGroup(4, 1_500, "<i>[door slams]</i>", duration = 500),
+                        videoFrame(2_000),
+                        blockGroup(3, 3_000, "<b.loud>Tom &amp; Jerry</b> <00:00:03.500>later", duration = 2_000),
+                    ),
+                ),
+            )
+
+        assertEquals(
+            MkvTracksResult.Tracks(
+                listOf(
+                    MkvTextTrack(3, "D_WEBVTT/SUBTITLES", "eng", null, null, null),
+                    MkvTextTrack(4, "D_WEBVTT/CAPTIONS", "eng", null, null, null),
+                ),
+            ),
+            MatroskaSubtitles.textTracks(file),
+        )
+        val out = destination
+        assertEquals(SubtitleExtraction.Extracted(out, SubtitleFormat.SRT), MatroskaSubtitles.extract(file, 3, out))
+        assertEquals(
+            """
+            1
+            00:00:01,250 --> 00:00:02,250
+            Hello, world!
+
+            2
+            00:00:03,000 --> 00:00:05,000
+            <b>Tom & Jerry</b> later
+
+
+            """.trimIndent(),
+            out.readText(),
+        )
+        val captions = tmp.root.resolve("captions.srt")
+        assertEquals(
+            SubtitleExtraction.Extracted(captions, SubtitleFormat.SRT),
+            MatroskaSubtitles.extract(file, 4, captions),
+        )
+        assertEquals("1\n00:00:01,500 --> 00:00:02,000\n<i>[door slams]</i>\n\n", captions.readText())
+    }
+
+    @Test
     fun anotherTextCodecIsUnsupported() {
         val file = write(mkv(listOf(trackEntry(3, TYPE_SUBTITLE, "S_TEXT/USF")), cluster(0, simpleBlock(3, 0, "Hi"))))
 

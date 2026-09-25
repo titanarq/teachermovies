@@ -42,8 +42,8 @@ internal object MatroskaSubtitles {
 
     /**
      * Writes the subtitle track [trackNumber] of [file] to [destination]: SRT for `S_TEXT/UTF8` and
-     * `S_TEXT/WEBVTT` (cue text only, through [WebVttText]), ASS
-     * for `S_TEXT/ASS`/`S_TEXT/SSA`. [destination] only appears once every cue is collected.
+     * WebVTT (`S_TEXT/WEBVTT`, or `D_WEBVTT/SUBTITLES`/`D_WEBVTT/CAPTIONS` as ffmpeg writes it; cue
+     * text only, through [WebVttText]), ASS for `S_TEXT/ASS`/`S_TEXT/SSA`. [destination] only appears once every cue is collected.
      */
     fun extract(
         file: File,
@@ -67,7 +67,7 @@ internal object MatroskaSubtitles {
                     collected.scale,
                 )
             val cues =
-                if (collected.track.codecId == CODEC_WEBVTT) {
+                if (collected.track.codecId in WEBVTT_CODECS) {
                     timed.map { SubtitleWriter.TimedCue(it.startMs, it.endMs, WebVttText.toSrt(it.text)) }
                 } else {
                     timed
@@ -431,7 +431,7 @@ internal object MatroskaSubtitles {
     private fun classify(track: TrackInfo): SubtitleExtraction? {
         val codec = track.codecId
         return when {
-            codec == CODEC_UTF8 || codec == CODEC_WEBVTT || codec == CODEC_ASS || codec == CODEC_SSA -> {
+            codec == CODEC_UTF8 || codec in WEBVTT_CODECS || codec == CODEC_ASS || codec == CODEC_SSA -> {
                 when {
                     track.encodings.any { it.encrypted } -> {
                         SubtitleExtraction.Failed("encrypted subtitle track")
@@ -460,7 +460,7 @@ internal object MatroskaSubtitles {
     }
 
     private fun formatOf(codecId: String): SubtitleFormat =
-        if (codecId == CODEC_UTF8 || codecId == CODEC_WEBVTT) SubtitleFormat.SRT else SubtitleFormat.ASS
+        if (codecId == CODEC_UTF8 || codecId in WEBVTT_CODECS) SubtitleFormat.SRT else SubtitleFormat.ASS
 
     private fun decodeBlock(
         block: RawBlock,
@@ -580,7 +580,14 @@ internal object MatroskaSubtitles {
     private const val COMP_ALGO_HEADER_STRIPPING = 3L
 
     private const val CODEC_UTF8 = "S_TEXT/UTF8"
-    private const val CODEC_WEBVTT = "S_TEXT/WEBVTT"
+
+    /**
+     * WebVTT's Matroska codec id, plus the WebM-mapping ids ffmpeg writes by default (`-c:s webvtt`
+     * into `.mkv` gives `D_WEBVTT/SUBTITLES`). In all of them the block payload is the cue text;
+     * the WebM mapping's cue id/settings in `BlockAdditions` are never read.
+     */
+    private val WEBVTT_CODECS = setOf("S_TEXT/WEBVTT", "D_WEBVTT/SUBTITLES", "D_WEBVTT/CAPTIONS")
+
     private const val CODEC_ASS = "S_TEXT/ASS"
     private const val CODEC_SSA = "S_TEXT/SSA"
     private val IMAGE_CODECS = setOf("S_HDMV/PGS", "S_VOBSUB", "S_DVBSUB")
