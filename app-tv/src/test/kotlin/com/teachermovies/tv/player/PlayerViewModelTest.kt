@@ -422,6 +422,31 @@ class PlayerViewModelTest {
         }
 
     @Test
+    fun reopeningWithoutARestartKeepsTheStoredSubtitleWhenThePlayerReportsItsDefaultTrackAfterIt() =
+        runTest(dispatcher) {
+            // #248 (emulator, BACK then reopen in the same process): hidden mode is already
+            // reverting selections when the tracks appear, and libVLC reads back its own default
+            // subtitle right after the session re-applied the stored one.
+            seed(movieWithEnglishSubtitles())
+            repo.updatePlayback(id, positionMs = 90_000L, audioTrackId = "a1", subtitleTrackId = "s2")
+            val vm = openedViewModel()
+            assertTrue(hidden.active.value)
+            player.play()
+            player.emitTracks(audio = listOf(english, spanish), subs = listOf(subEn, subEs))
+            runCurrent()
+            assertEquals("s2", player.selectedSubtitleId.value)
+
+            player.selectSubtitle("s1")
+            runCurrent()
+
+            assertEquals("s2", player.selectedSubtitleId.value)
+            assertEquals("s2", repo.getLibraryItem(id)?.subtitleTrackId)
+            vm.onAction(PlayerAction.Exit)
+            runCurrent()
+            assertEquals("s2", repo.getLibraryItem(id)?.subtitleTrackId)
+        }
+
+    @Test
     fun reopeningAMovieWithoutAStoredSubtitleKeepsSubtitlesOff() =
         runTest(dispatcher) {
             seed(movieWithEnglishSubtitles())
