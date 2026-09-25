@@ -142,7 +142,10 @@
   are the track name, `name (lang)` when the name does not mention the language, else a fallback.
 - `PlayerViewModel`: `ShowTracks` opens it; `selectAudio(id)` / `selectSubtitle(id?)` call `Player`
   and close it (the `PlaybackSession` persists the change); `back()` (BACK, and `Exit`) closes an
-  open panel without changes, otherwise exits; `closeTracks()`.
+  open panel without changes, otherwise exits; `closeTracks()`. `selectSubtitle` goes through
+  `HiddenSubtitleController.selectByViewer` (#227): while hidden EN mode is active the viewer's
+  pick is shown (hidden mode stops forcing subtitles off for the rest of this movie and keeps
+  capturing lines), instead of being silently reverted.
 - `ui.player.TracksPanel`: right-side panel with `Audio` and `Subtítulos` columns of tv `ListItem`s
   (radio mark on the active one). Opening focuses the marked audio row (marked subtitle row when
   there is no audio); LEFT/RIGHT switch columns (restoring onto the marked row); focus cannot leave

@@ -333,6 +333,33 @@ class PlayerViewModelTest {
         }
 
     @Test
+    fun aSubtitleChosenInThePanelIsKeptWhileHiddenModeIsActive() =
+        runTest(dispatcher) {
+            // #227: hidden EN mode is on (English sidecar), which forces policy selections off.
+            seed(movieWithEnglishSubtitles())
+            val vm = openedWithTracks()
+            assertTrue(vm.uiState.value.assistantAvailable)
+            assertNull(player.selectedSubtitleId.value)
+            vm.onAction(PlayerAction.ShowTracks)
+            runCurrent()
+
+            vm.selectSubtitle("s2")
+            runCurrent()
+
+            assertEquals("s2", player.selectedSubtitleId.value)
+            assertTrue(hidden.active.value)
+            vm.onAction(PlayerAction.ShowTracks)
+            runCurrent()
+            assertEquals(
+                "s2",
+                vm.uiState.value.tracksPanel
+                    ?.subtitles
+                    ?.single { it.selected }
+                    ?.id,
+            )
+        }
+
+    @Test
     fun selectingDesactivadosTurnsSubtitlesOffAndIsPersisted() =
         runTest(dispatcher) {
             seed(movieFile())

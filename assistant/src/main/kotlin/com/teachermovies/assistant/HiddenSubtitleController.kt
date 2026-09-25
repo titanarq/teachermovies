@@ -58,6 +58,11 @@ sealed interface HiddenModeResult {
  * off, so a default-track policy selecting a subtitle track cannot re-enable them behind the
  * assistant's back.
  *
+ * The viewer's own choice wins (#227): a subtitle track picked in the player's tracks panel goes
+ * through [selectByViewer], which stops forcing subtitles off for the rest of this movie and applies
+ * the choice. Hidden mode stays [active] and [engine] keeps its cues, so the assistant still reads
+ * and captures lines; the next [start] (the next movie) forces subtitles off again.
+ *
  * Embedded tracks are extracted under `<cacheDir>/subtitles` and reused by later sessions for the
  * same movie; nothing here deletes them.
  */
@@ -135,6 +140,19 @@ class HiddenSubtitleController(
             }
 
         return HiddenModeResult.Started(source)
+    }
+
+    /**
+     * The viewer chose subtitle track [id] (null = `Desactivados`) in the tracks panel (#227). While
+     * [active], it stops turning selections back off until the next [start], then selects [id] on
+     * [player]; hidden mode itself (the cues in [engine]) is untouched. Outside hidden mode it only
+     * selects [id]. Selections that do not come through here -- a default-track policy -- are still
+     * reverted.
+     */
+    fun selectByViewer(id: String?) {
+        reassertJob?.cancel()
+        reassertJob = null
+        player.selectSubtitle(id)
     }
 
     /**
