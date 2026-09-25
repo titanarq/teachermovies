@@ -3,4 +3,11 @@
     <!-- The window is a Compose Material 3 surface, so the platform theme only has to stay out of
          the way: no action bar. -->
     <style name="Theme.MovieAssistant" parent="@android:style/Theme.Material.Light.NoActionBar" />
+
+    <!-- The share activity (#199) is a dialog over the app the magnet was shared from: the window
+         wraps its content and stays out of the way, since the Material 3 `Card` of `ShareScreen` is
+         the surface the user sees. -->
+    <style name="Theme.MovieAssistant.Share" parent="@android:style/Theme.Material.Light.Dialog.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
 </resources>
