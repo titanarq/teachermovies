@@ -19,8 +19,11 @@ const val TEST_REMOTE_HEADER = "X-Test-Remote"
  * Refuses every request whose remote address is not on the LAN (#59): 403
  * `{"error":"not_lan"}`, and no route handler ever runs for it.
  *
- * The remote address is `call.request.origin.remoteHost`, the actual socket peer, so a port
- * forward or a spoofed header cannot fake it. The only exception is [allowTestRemoteHeader]: when
+ * The remote address is `call.request.origin.remoteAddress`: the socket peer's IP literal, so a
+ * spoofed header cannot fake it. Never `remoteHost` (#221): Ktor fills that with the peer's
+ * reverse-resolved host name when one exists (`127.0.0.1` arrives as `localhost`, a DHCP client as
+ * e.g. `android-phone.lan`), and [LanAddressPolicy.isAllowed] refuses every host name by design,
+ * so a LAN peer with a reverse-DNS name would be refused. The only exception is [allowTestRemoteHeader]: when
  * a test opts in via that (production-false) [com.teachermovies.http.ServerDeps] flag,
  * [TEST_REMOTE_HEADER] overrides the remote address for that call.
  */
@@ -30,7 +33,7 @@ fun Application.installLanAddressGuard(allowTestRemoteHeader: Boolean) {
             onCall { call ->
                 val remote =
                     (if (allowTestRemoteHeader) call.request.header(TEST_REMOTE_HEADER) else null)
-                        ?: call.request.origin.remoteHost
+                        ?: call.request.origin.remoteAddress
                 if (!LanAddressPolicy.isAllowed(remote)) {
                     call.respond(HttpStatusCode.Forbidden, ApiError("not_lan", "Not a LAN address"))
                 }
