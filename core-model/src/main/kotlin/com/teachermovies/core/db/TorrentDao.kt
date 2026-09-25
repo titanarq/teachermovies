@@ -23,6 +23,17 @@ interface TorrentDao {
     @Query("SELECT * FROM torrents WHERE state = :state ORDER BY addedAtEpochMs DESC")
     fun observeByState(state: String): Flow<List<TorrentEntity>>
 
+    /**
+     * The library (#247): every row that has completed once (`completedAtEpochMs` set) and has a main
+     * file path, whatever its current `state` -- paused, re-checking or seeding rows stay listed;
+     * only [delete] removes one. Newest completed first.
+     */
+    @Query(
+        "SELECT * FROM torrents WHERE completedAtEpochMs IS NOT NULL AND mainFilePath IS NOT NULL " +
+            "ORDER BY completedAtEpochMs DESC",
+    )
+    fun observeLibrary(): Flow<List<TorrentEntity>>
+
     /** Updates the download progress columns; a missing info-hash is a no-op. */
     @Query(
         "UPDATE torrents SET state = :state, progressPercent = :progressPercent, " +

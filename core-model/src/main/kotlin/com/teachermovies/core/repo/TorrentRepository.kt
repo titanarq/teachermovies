@@ -14,15 +14,20 @@ import kotlinx.coroutines.flow.Flow
  * of the torrent engine in sync -- that mapping is #68, out of scope here.
  */
 interface TorrentRepository {
-    /** Every torrent not yet [com.teachermovies.core.model.DownloadState.Completed]. */
+    /** Every torrent whose current state is not [com.teachermovies.core.model.DownloadState.Completed]. */
     fun observeDownloads(): Flow<List<Torrent>>
 
-    /** Completed torrents with a known main file, newest completed first. */
+    /**
+     * Torrents that have completed once (`completedAtEpochMs` set) and have a known main file,
+     * newest completed first -- whatever their current state: a completed movie that is later
+     * paused, re-checked, seeding or even re-fetching pieces stays listed; only [delete] removes it
+     * (#247). Such a row may therefore appear in [observeDownloads] too.
+     */
     fun observeLibrary(): Flow<List<LibraryItem>>
 
     suspend fun get(id: TorrentId): Torrent?
 
-    /** Same as [get], but only when [id] is completed with a known main file. */
+    /** [id] as a library item, under the same rule as [observeLibrary]; null otherwise. */
     suspend fun getLibraryItem(id: TorrentId): LibraryItem?
 
     /**

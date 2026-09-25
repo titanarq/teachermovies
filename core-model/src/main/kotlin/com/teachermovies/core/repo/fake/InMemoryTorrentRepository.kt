@@ -39,7 +39,7 @@ class InMemoryTorrentRepository : TorrentRepository {
     override fun observeLibrary(): Flow<List<LibraryItem>> =
         rows.map { byId ->
             byId.values
-                .filter { it.torrent.state == DownloadState.Completed && it.mainFilePath != null }
+                .filter { it.isInLibrary() }
                 .sortedByDescending { it.completedAtEpochMs ?: 0L }
                 .map { it.toLibraryItem() }
         }
@@ -48,7 +48,7 @@ class InMemoryTorrentRepository : TorrentRepository {
 
     override suspend fun getLibraryItem(id: TorrentId): LibraryItem? =
         rows.value[id]
-            ?.takeIf { it.torrent.state == DownloadState.Completed && it.mainFilePath != null }
+            ?.takeIf { it.isInLibrary() }
             ?.toLibraryItem()
 
     override suspend fun getPlaybackItem(id: TorrentId): LibraryItem? =
@@ -102,6 +102,9 @@ class InMemoryTorrentRepository : TorrentRepository {
     override suspend fun delete(id: TorrentId) {
         rows.update { byId -> byId - id }
     }
+
+    /** Completed once and a main file is known, whatever the current state (#247). */
+    private fun Row.isInLibrary(): Boolean = completedAtEpochMs != null && mainFilePath != null
 
     private fun Row?.completedAtEpochMsOr(
         now: Long,

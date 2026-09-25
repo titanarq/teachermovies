@@ -120,6 +120,43 @@ abstract class TorrentRepositoryContractTest {
         }
 
     @Test
+    fun aCompletedTorrentStaysInTheLibraryWhilePausedRecheckingOrSeeding() =
+        runTest {
+            repository.upsert(torrent('a', state = DownloadState.Downloading), mainFilePath = "a.mkv", now = 1L)
+            repository.upsert(torrent('a', state = DownloadState.Completed), mainFilePath = "a.mkv", now = 2L)
+
+            for (state in listOf(DownloadState.Paused, DownloadState.Verifying, DownloadState.Downloading)) {
+                repository.upsert(torrent('a', state = state), mainFilePath = "a.mkv", now = 3L)
+
+                assertEquals(state.name, listOf(id('a')), repository.observeLibrary().first().map { it.id })
+                val item = repository.getLibraryItem(id('a'))
+                assertEquals(state.name, "a.mkv", item?.mainFilePath)
+                assertEquals(state.name, 2L, item?.completedAtEpochMs)
+            }
+        }
+
+    @Test
+    fun aNeverCompletedPausedTorrentIsNotInTheLibrary() =
+        runTest {
+            repository.upsert(torrent('a', state = DownloadState.Paused), mainFilePath = "a.mkv", now = 1L)
+
+            assertEquals(emptyList<TorrentId>(), repository.observeLibrary().first().map { it.id })
+            assertNull(repository.getLibraryItem(id('a')))
+        }
+
+    @Test
+    fun deletingACompletedPausedTorrentRemovesItFromTheLibrary() =
+        runTest {
+            repository.upsert(torrent('a', state = DownloadState.Completed), mainFilePath = "a.mkv", now = 1L)
+            repository.upsert(torrent('a', state = DownloadState.Paused), mainFilePath = "a.mkv", now = 2L)
+
+            repository.delete(id('a'))
+
+            assertEquals(emptyList<TorrentId>(), repository.observeLibrary().first().map { it.id })
+            assertNull(repository.getLibraryItem(id('a')))
+        }
+
+    @Test
     fun getPlaybackItemIncludesADownloadInProgressWithMainFile() =
         runTest {
             repository.upsert(torrent('a', state = DownloadState.Downloading), mainFilePath = "a.mkv", now = 1L)
