@@ -8,9 +8,13 @@
 
     <!-- TorrentService is a foreground service; since Android 14 (targetSdk 34+) its type must be
          declared both here and in `startForeground`, and the matching per-type permission held.
-         `dataSync` is the type for transferring data over the network. -->
+         Two types are declared because the service runs a different one per API level (#129):
+         `dataSync` (transferring data over the network) on API 29..33, and `specialUse` on API
+         34+, where Android 15 caps `dataSync` at 6 h per 24 h and refuses to start a `dataSync`
+         service from `BOOT_COMPLETED`. `ForegroundServiceTypes` picks between them. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Runtime permission on Android 13+; the app requests it (#55). Without it the service still
          runs, only its notification is hidden. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -19,6 +23,13 @@
         <service
             android:name=".service.TorrentService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync|specialUse">
+            <!-- The justification the system reads for a `specialUse` foreground service (#129).
+                 The same wording goes into the Play Console declaration; see
+                 docs/modules/torrent.md. -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-initiated peer-to-peer downloads of media the user is authorised to download, which must continue while the TV plays other content." />
+        </service>
     </application>
 </manifest>

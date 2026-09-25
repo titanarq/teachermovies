@@ -4,7 +4,6 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationChannelCompat
@@ -28,14 +27,17 @@ import kotlinx.coroutines.launch
  * initialises before calling [start] (#55).
  *
  * Android 14+ / targetSdk 35 rules it follows:
- * - its type, `dataSync`, is declared in the manifest, passed to `startForeground`, and backed by
- *   the `FOREGROUND_SERVICE_DATA_SYNC` permission;
+ * - its type comes from [ForegroundServiceTypes.forSdk], is declared in the manifest, is passed to
+ *   `startForeground`, and is backed by the matching per-type permission: `specialUse` on API 34+,
+ *   `dataSync` on API 29..33, no type below 29 (#129);
  * - `startForeground` is the first thing `onCreate` does, well inside the window the system gives
  *   a service started with `startForegroundService`;
- * - a `dataSync` service must be started while the app is visible (not from `BOOT_COMPLETED` on
- *   Android 15), so [start] belongs to the UI's startup path;
- * - Android 15 limits `dataSync` to 6 h per 24 h and then calls [onTimeout]; the service stops
- *   itself there (saving resume data) instead of being killed with an ANR.
+ * - `specialUse` is what keeps downloads alive on Android 15, which caps `dataSync` at 6 h per
+ *   24 h and refuses to start a `dataSync` service from `BOOT_COMPLETED` (#126); the justification
+ *   the system and Play ask for is the manifest's `android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE`;
+ * - on API 29..33, where the service still runs as `dataSync`, Android 15's cap can be reached and
+ *   then calls [onTimeout]: the service stops itself there (saving resume data) instead of being
+ *   killed with an ANR.
  */
 class TorrentService : LifecycleService() {
     private var engine: TorrentEngine? = null
@@ -54,11 +56,7 @@ class TorrentService : LifecycleService() {
             this,
             NOTIFICATION_ID,
             notification(NotificationText.NO_ACTIVE_DOWNLOADS),
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            } else {
-                0
-            },
+            ForegroundServiceTypes.forSdk(Build.VERSION.SDK_INT),
         )
 
         if (!TorrentEngineHolder.isInitialized) {
@@ -98,7 +96,12 @@ class TorrentService : LifecycleService() {
         return START_STICKY
     }
 
-    /** Android 15's `dataSync` time limit (6 h per 24 h) was reached: stop cleanly. */
+    /**
+     * The system's foreground-service time limit was reached: stop cleanly, saving resume data in
+     * [onDestroy]. It still fires for the `dataSync` type on the API 29..33 devices that hit
+     * Android 15's 6 h per 24 h cap -- on API 34+ [ForegroundServiceTypes] runs the service as
+     * `specialUse`, which that cap does not apply to -- and for any future limit on either type.
+     */
     override fun onTimeout(
         startId: Int,
         fgsType: Int,
