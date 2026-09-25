@@ -17,4 +17,8 @@
     <string name="send_to_tv">ENVIAR A LA TV</string>
     <string name="downloads_header">DESCARGANDO</string>
     <string name="forget_tv">OLVIDAR ESTA TV</string>
+    <!-- Share dialog (#199); the outcome texts are `SendOutcome.message`, not strings here. -->
+    <string name="share_sending">Enviando a la TV...</string>
+    <string name="share_close">CERRAR</string>
+    <string name="share_open_app">ABRIR MOVIE ASSISTANT</string>
 </resources>

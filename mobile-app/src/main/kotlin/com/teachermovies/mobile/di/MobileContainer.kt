@@ -40,7 +40,10 @@ class MobileContainer(
     /** The one paired TV and its token, in the `paired_tv` Preferences DataStore. */
     val pairedTvStore: PairedTvStore = DataStorePairedTvStore(application.pairedTvDataStore)
 
-    /** Sends a magnet to the paired TV (#198): what the downloads screen's field calls. */
+    /**
+     * Sends a magnet to the paired TV (#198): what the downloads screen's field calls and, through
+     * `ShareViewModel`, what `ShareActivity` sends one shared magnet with (#199).
+     */
     val magnetSender: MagnetSender = MagnetSender(tvApi, pairedTvStore)
 
     /** Sent as `deviceName` to `POST /api/pair`; this is the only place `Build.MODEL` is read. */
