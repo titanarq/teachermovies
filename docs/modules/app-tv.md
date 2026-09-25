@@ -14,8 +14,9 @@
   and `changePort(Int)` (1024..65535, otherwise `portError` and nothing saved), `selectVolume(id)`,
   `refreshVolumes()`. The selected volume comes from `VolumeSelector`; while the persisted one is
   missing it is the fallback and `volumeMissing` is true (the persisted id is not overwritten).
-- `SettingsScreen`: port field on the left (UP/DOWN +/-1, OK opens a numeric text field, BACK
-  cancels it), radio-style volume list on the right (`X,Y GB libres de Z GB`). RIGHT/LEFT move
+- `SettingsScreen`: port field on the left (UP/DOWN move focus like on any row -- UP to the tab
+  row -- and never change the port; OK opens a numeric text field whose OK/Done saves and BACK
+  cancels without saving, #224), radio-style volume list on the right (`X,Y GB libres de Z GB`). RIGHT/LEFT move
   between them; entry focus is the port field; BACK returns to the tab row.
 - Text-field editors (port, translation key; #222): OK opens the editor *inside* the focused row's
   `Surface` instead of swapping the row out, so the row keeps focus until the editor is attached;
@@ -26,6 +27,8 @@
   emulator: Configuración -> OK on the port row -> focused node is the text field and the
   Configuración tab stays selected; BACK -> focus back on the port row; same for the key row
   (`adb shell input keyevent DPAD_CENTER` / `BACK`, then `uiautomator dump` for the focused bounds).
+- Shell focus (#224): UP from a section's content enters the tab row on the *selected* tab
+  (`focusRestorer` on the `TabRow`), never on the nearest neighbour, which would switch sections.
 - The shell takes the section as a slot; `MainActivity` builds the ViewModel from `AppContainer`.
 
 ## First run (#46)

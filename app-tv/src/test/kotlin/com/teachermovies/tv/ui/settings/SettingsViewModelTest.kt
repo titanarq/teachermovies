@@ -179,6 +179,25 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun confirmedEditorEntryIsTheOnlyPortWrite() {
+        // #224: nothing but the editor's confirm reaches changePort; a rejected entry writes nothing.
+        val settings = InMemorySettingsRepository(AppSettings(httpPort = 8787))
+        val viewModel =
+            SettingsViewModel(settings, FakeVolumeProvider(listOf(internal)), space, pin = {
+                pin
+            }, serverState = serverState, pinTicks = pinTicks)
+
+        viewModel.changePort(portFromEditor("abc"))
+        assertEquals(0, settings.setHttpPortCalls)
+        assertTrue(viewModel.uiState.value.portError)
+
+        viewModel.changePort(portFromEditor("8790"))
+        assertEquals(1, settings.setHttpPortCalls)
+        assertEquals(8790, viewModel.uiState.value.httpPort)
+        assertFalse(viewModel.uiState.value.portError)
+    }
+
+    @Test
     fun rangeBoundsAreValid() {
         val settings = InMemorySettingsRepository(AppSettings())
         val viewModel =

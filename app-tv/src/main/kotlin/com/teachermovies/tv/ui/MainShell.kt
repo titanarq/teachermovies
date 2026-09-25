@@ -1,6 +1,7 @@
 package com.teachermovies.tv.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
 import androidx.tv.material3.Tab
@@ -26,7 +28,8 @@ import androidx.tv.material3.Text
  * Focus, which is part of "done" for a TV screen (AGENTS.md): launch focuses the tab of the
  * selected section (Biblioteca, on a fresh launch), LEFT and RIGHT walk the tabs (Compose's own
  * focus search between them -- `TabRow` adds no key handling), BACK from a section's content
- * returns focus to that section's tab, and BACK from the tab row has nothing left to intercept and
+ * returns focus to that section's tab, UP from a section's content enters the tab row on the
+ * selected tab (never on a neighbour, which would switch sections), and BACK from the tab row has nothing left to intercept and
  * so reaches the activity, which finishes.
  *
  * A section that needs a ViewModel arrives as a slot ([libraryContent], [downloadsContent],
@@ -50,7 +53,12 @@ fun MainShell(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = destinations.indexOf(uiState.selected)) {
+        // Entering the row from a section (UP) lands on the selected tab, not on the geometrically
+        // nearest one -- which, as tabs select on focus, would switch sections (#224).
+        TabRow(
+            selectedTabIndex = destinations.indexOf(uiState.selected),
+            modifier = Modifier.focusRestorer(tabFocusRequesters.getValue(uiState.selected)).focusGroup(),
+        ) {
             destinations.forEach { destination ->
                 Tab(
                     selected = destination == uiState.selected,
