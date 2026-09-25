@@ -22,6 +22,8 @@ import com.frostwire.jlibtorrent.alerts.AlertType
 import com.frostwire.jlibtorrent.alerts.MetadataReceivedAlert
 import com.frostwire.jlibtorrent.alerts.SaveResumeDataAlert
 import com.frostwire.jlibtorrent.alerts.SaveResumeDataFailedAlert
+import com.frostwire.jlibtorrent.alerts.TorrentDeleteFailedAlert
+import com.frostwire.jlibtorrent.alerts.TorrentDeletedAlert
 import com.frostwire.jlibtorrent.swig.error_code
 import com.frostwire.jlibtorrent.swig.libtorrent
 import com.teachermovies.core.model.TorrentId
@@ -135,6 +137,9 @@ class JLibTorrentEngine(
     /** Resume-data failures (native or store writes) since the last [saveResumeData] began. */
     private val resumeFailures = ArrayList<String>()
 
+    /** Save directories to remove once libtorrent confirms a delete with files (#229). */
+    private val dirCleanup = TorrentDirCleanup()
+
     private val listener =
         object : AlertListener {
             override fun types(): IntArray =
@@ -143,6 +148,8 @@ class JLibTorrentEngine(
                     AlertType.METADATA_RECEIVED.swig(),
                     AlertType.SAVE_RESUME_DATA.swig(),
                     AlertType.SAVE_RESUME_DATA_FAILED.swig(),
+                    AlertType.TORRENT_DELETED.swig(),
+                    AlertType.TORRENT_DELETE_FAILED.swig(),
                 )
 
             override fun alert(alert: Alert<*>) {
@@ -157,6 +164,10 @@ class JLibTorrentEngine(
                         // libtorrent also answers this way when there was nothing to save or the
                         // torrent is gone; it only settles the pending request.
                         is SaveResumeDataFailedAlert -> SessionEvent.ResumeDataFailed(handleIdOf(alert.handle()))
+
+                        is TorrentDeletedAlert -> idOf(alert.getInfoHashes())?.let(SessionEvent::FilesDeleted)
+
+                        is TorrentDeleteFailedAlert -> deleteFailedEvent(alert)
 
                         else -> null
                     }
@@ -342,6 +353,8 @@ class JLibTorrentEngine(
     /**
      * Removes the torrent from the session (with `SessionHandle.DELETE_FILES` when [deleteFiles]) and
      * from [torrents]. A torrent the session never accepted (its add failed) is simply forgotten.
+     * With [deleteFiles], once libtorrent confirms the files are gone its save directory
+     * (`<volume>/Movies/<id>/`) is removed too, only if empty ([TorrentDirCleanup], #229).
      */
     override suspend fun remove(
         id: TorrentId,
@@ -352,6 +365,8 @@ class JLibTorrentEngine(
             val manager = session ?: return@withContext failure(EngineError.NotReady)
             val handle = handleOf(id)
             if (handle != null) {
+                // Recorded before the remove: the deleted alert is applied on [serial] after this block.
+                dirCleanup.removeRequested(id, saveDirOf(handle), deleteFiles)
                 try {
                     if (deleteFiles) manager.remove(handle, SessionHandle.DELETE_FILES) else manager.remove(handle)
                 } catch (e: RuntimeException) {
@@ -490,6 +505,18 @@ class JLibTorrentEngine(
         }
     }
 
+    /** Only a v1 hash is carried; a v2-only torrent's cleanup entry is then simply never used. */
+    private fun deleteFailedEvent(alert: TorrentDeleteFailedAlert): SessionEvent? =
+        JlibMappers.torrentIdOf(v1Hex = alert.getInfoHash().toHex(), v2Hex = null)?.let(SessionEvent::FilesDeleteFailed)
+
+    /** [handle]'s save path, or null when libtorrent cannot report it (the dir is then kept). */
+    private fun saveDirOf(handle: TorrentHandle): File? =
+        try {
+            handle.savePath()?.takeIf { it.isNotBlank() }?.let(::File)
+        } catch (e: RuntimeException) {
+            null
+        }
+
     /** The id of [handle]'s torrent, or null when the handle is no longer valid (it was removed). */
     private fun handleIdOf(handle: TorrentHandle): TorrentId? =
         try {
@@ -557,6 +584,14 @@ class JLibTorrentEngine(
             is SessionEvent.ResumeDataFailed -> {
                 resumeSaveAnswered()
                 if (event.message != null) resumeFailures += event.message
+            }
+
+            is SessionEvent.FilesDeleted -> {
+                dirCleanup.filesDeleted(event.id)
+            }
+
+            is SessionEvent.FilesDeleteFailed -> {
+                dirCleanup.deleteFailed(event.id)
             }
         }
     }
@@ -936,5 +971,15 @@ internal sealed interface SessionEvent {
     data class ResumeDataFailed(
         override val id: TorrentId?,
         val message: String? = null,
+    ) : SessionEvent
+
+    /** A `torrent_deleted_alert`: libtorrent finished deleting the files of a removed torrent. */
+    data class FilesDeleted(
+        override val id: TorrentId,
+    ) : SessionEvent
+
+    /** A `torrent_delete_failed_alert`: some of a removed torrent's files could not be deleted. */
+    data class FilesDeleteFailed(
+        override val id: TorrentId,
     ) : SessionEvent
 }
