@@ -27,6 +27,12 @@
   emulator: Configuración -> OK on the port row -> focused node is the text field and the
   Configuración tab stays selected; BACK -> focus back on the port row; same for the key row
   (`adb shell input keyevent DPAD_CENTER` / `BACK`, then `uiautomator dump` for the focused bounds).
+- Theme (#225): `com.teachermovies.tv.ui.TeacherMoviesTheme` wraps everything `MainActivity` shows:
+  tv-material `MaterialTheme(colorScheme = TeacherMoviesColorScheme)` (`darkColorScheme()`), its
+  `background` painted edge to edge and `onBackground` as the default `LocalContentColor`, so text
+  outside a `Surface` is light on dark. Screens use `MaterialTheme.colorScheme`; only the player
+  overlays (over video) use fixed white-on-black. The shell's `TabRow` keeps the TV overscan-safe
+  margin: 48 dp horizontal, 27 dp vertical.
 - Shell focus (#224): UP from a section's content enters the tab row on the *selected* tab
   (`focusRestorer` on the `TabRow`), never on the nearest neighbour, which would switch sections.
 - The shell takes the section as a slot; `MainActivity` builds the ViewModel from `AppContainer`.

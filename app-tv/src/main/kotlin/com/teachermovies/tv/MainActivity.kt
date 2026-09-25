@@ -15,7 +15,6 @@ import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.tv.material3.MaterialTheme
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.torrent.service.TorrentService
 import com.teachermovies.tv.di.AppContainer
@@ -23,6 +22,7 @@ import com.teachermovies.tv.player.PlayerViewModel
 import com.teachermovies.tv.ui.AppRoute
 import com.teachermovies.tv.ui.MainShell
 import com.teachermovies.tv.ui.MainViewModel
+import com.teachermovies.tv.ui.TeacherMoviesTheme
 import com.teachermovies.tv.ui.downloads.DownloadsScreen
 import com.teachermovies.tv.ui.downloads.DownloadsViewModel
 import com.teachermovies.tv.ui.downloads.FileSelectionViewModel
@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
         TorrentService.start(this)
         requestNotificationPermissionOnce()
         setContent {
-            MaterialTheme {
+            TeacherMoviesTheme {
                 val firstRunCompleted by firstRunViewModel.firstRunCompleted.collectAsStateWithLifecycle()
                 when (firstRunCompleted) {
                     null -> {
