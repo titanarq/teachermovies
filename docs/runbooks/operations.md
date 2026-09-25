@@ -173,7 +173,6 @@ gh api -X PUT repos/titanarq/teachermovies/interaction-limits -f limit=collabora
 
 ## Refiner
 
-`planner.refiner_unattended` is `false`: the refiner runs only by hand, attended:
-`bash agent_os/bin/agent_task.sh refiner N --no-wake` (detached; log in `.cache/refiner/`).
-`--dry-run` only prints the resolved prompt. First attended run: feature #29 -> #81-#83
-(2026-09-23), reviewed as good.
+`config/agents.yaml`'s `refiner_unattended` is `true`: the refiner runs unattended. First
+attended run: feature #29 -> #81-#83 (2026-09-23), reviewed as good; per the 2026-09-24 review of
+that dry run, `refiner_unattended` was flipped to `true` and the refiner has run unattended since.
