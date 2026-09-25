@@ -9,7 +9,7 @@
 
     <!-- Configuración (#45). -->
     <string name="settings_port_title">Puerto HTTP</string>
-    <string name="settings_port_hint">▲ ▼ cambia el puerto · OK para escribirlo</string>
+    <string name="settings_port_hint">OK para cambiar el puerto</string>
     <string name="settings_port_error">Puerto no válido: debe estar entre %1$d y %2$d</string>
     <string name="settings_volume_title">Volumen de descarga</string>
     <string name="settings_volume_missing">El volumen elegido no está conectado; las descargas irán al volumen marcado.</string>

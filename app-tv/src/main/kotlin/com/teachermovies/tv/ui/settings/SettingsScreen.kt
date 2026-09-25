@@ -73,8 +73,9 @@ fun SettingsRoute(
  * encender la TV" switch (#126) and the "Clave API de traducción (Anthropic)" field (#212) under it.
  *
  * Focus: DOWN from the tab row enters on the port field (then on whatever last had focus in the
- * section). On the port field UP/DOWN change the port by one -- so they do not move focus -- OK
- * opens a numeric text field, and RIGHT moves to the volume list. In the list UP/DOWN walk the
+ * section). On the port field UP returns to the tab row and DOWN/RIGHT move on, like any row; the
+ * port changes only through OK, which opens a numeric text field, and is saved only when that
+ * field is confirmed with OK/Done (#224). RIGHT moves to the volume list. In the list UP/DOWN walk the
  * volumes, OK selects one, LEFT returns to the port field and UP from the first volume reaches the
  * tab row. DOWN from the last volume reaches the autostart switch (RIGHT from the port field lands
  * on it directly when there is no volume); OK toggles it, UP goes back to the list and LEFT to the
@@ -178,27 +179,9 @@ private fun PortField(
     // which would drop it to the first focusable on screen (the Biblioteca tab).
     Surface(
         onClick = { editing = true },
-        modifier =
-            Modifier
-                .focusRequester(focusRequester)
-                .onPreviewKeyEvent { event ->
-                    if (editing || event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    when (event.key) {
-                        Key.DirectionUp -> {
-                            onPortChange(port + 1)
-                            true
-                        }
-
-                        Key.DirectionDown -> {
-                            onPortChange(port - 1)
-                            true
-                        }
-
-                        else -> {
-                            false
-                        }
-                    }
-                },
+        // No UP/DOWN handling (#224): they move focus like on every other row, so walking the screen
+        // with the D-pad never changes -- and restarts the server on -- another port.
+        modifier = Modifier.focusRequester(focusRequester),
     ) {
         if (!editing) {
             Text(
@@ -210,9 +193,7 @@ private fun PortField(
             PortTextField(
                 initial = port,
                 onFinish = { typed, focusLeft ->
-                    // Anything that is not a number is as invalid as an out-of-range one: 0 is
-                    // outside the valid range, so the ViewModel rejects it and flags the error.
-                    if (typed != null) onPortChange(typed.toIntOrNull() ?: 0)
+                    if (typed != null) onPortChange(portFromEditor(typed))
                     if (!focusLeft) focusRequester.requestFocus()
                     editing = false
                 },
@@ -432,6 +413,13 @@ private fun TranslationKeyTextField(
 }
 
 private const val MAX_PORT_DIGITS = 5
+
+/**
+ * The port confirmed in the port editor. Anything that is not a number is as invalid as an
+ * out-of-range one: 0 is outside [VALID_HTTP_PORTS], so [SettingsViewModel.changePort] rejects it
+ * and flags the error.
+ */
+internal fun portFromEditor(typed: String): Int = typed.trim().toIntOrNull() ?: 0
 
 /** Far longer than any Anthropic key; only bounds what a stray paste can put in the field. */
 private const val MAX_API_KEY_LENGTH = 256
