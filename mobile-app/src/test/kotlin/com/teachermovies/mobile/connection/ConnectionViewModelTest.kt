@@ -296,4 +296,17 @@ class ConnectionViewModelTest {
             assertEquals(null, store.pairedTv.first())
             assertEquals(Searching(listOf(bedroom)), vm.uiState.value)
         }
+
+    @Test
+    fun `the store cleared from elsewhere while connected returns to searching`() =
+        runTest {
+            val store = InMemoryPairedTvStore(PairedTv(livingRoom.instanceName, livingRoom.baseUrl, "t"))
+            discoverer.add(bedroom)
+            val vm = viewModel(store)
+            assertTrue(vm.uiState.value is Connected)
+
+            store.clear()
+
+            assertEquals(Searching(listOf(bedroom)), vm.uiState.value)
+        }
 }

@@ -44,7 +44,11 @@
     collected for the ViewModel's whole life: while `Searching` each emission replaces `tvs`; while
     `Connected`, a TV with the paired `instanceName` whose `baseUrl` differs from the stored one
     triggers `store.updateBaseUrl(newBaseUrl)` and `Connected` with the new URL (DHCP moved the
-    TV); an unchanged address or another TV does nothing.
+    TV); an unchanged address or another TV does nothing. `store.pairedTv` is also collected for
+    the ViewModel's whole life (#198): when it turns `null` while `Connected` -- a revoked token
+    cleared by `DownloadsViewModel` or `MagnetSender` on `Unauthorized` -- the state goes to
+    `Searching(<last discovered list>)` at once, so the app returns to pairing instead of showing a
+    list that no longer polls. Any other store emission leaves the state as it is.
   - `selectTv(tv)` (from `Searching`) -> `Pairing(tv.instanceName, tv.baseUrl)`.
   - `enterAddress(text)` (from `Searching`): trimmed `host` or `host:port`, host made of letters,
     digits, `.` and `-` (no scheme, path or IPv6), port digits in `1..65535`, default 8787 ->
@@ -116,13 +120,8 @@
     cut it short while a second, nobody-waiting-for refresh is dropped.
   - A failed poll keeps the last `items` and sets `offline = true` (`TV sin conexión`); the next
     successful one clears it. `Unauthorized` also calls `store.clear()`, so the flat-mapped
-    `store.pairedTv` turns `null` and the polling stops with the revoked token dropped.
-  - Known gap (#198): `ConnectionViewModel` reads the store once in its `init` and does not collect
-    it afterwards, so a `clear()` made from here does not by itself move that screen off
-    `ConnectionUiState.Connected`. The user sees the `Vuelve a emparejar la TV` notice and a list
-    that no longer polls, and the app reaches pairing when its ViewModel is next created (a new
-    process) or when `OLVIDAR ESTA TV` is tapped. Making the revocation switch screens at once is a
-    change in `connection`, outside this package.
+    `store.pairedTv` turns `null`, the polling stops with the revoked token dropped, and
+    `ConnectionViewModel`, which observes the same store, returns the app to pairing.
   - `send(text)` posts with `MagnetSender` and puts `outcome.message` in `notice`; `Sent` also emits
     a refresh, so an accepted torrent appears at once instead of at the next interval. Every state
     update carries `notice` over, so a poll does not wipe it, and `noticeShown()` drops it: the
