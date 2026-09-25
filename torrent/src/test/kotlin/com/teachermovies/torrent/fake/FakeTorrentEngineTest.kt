@@ -5,6 +5,7 @@ import com.teachermovies.core.model.TorrentId
 import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.EngineStatus
+import com.teachermovies.torrent.api.FileByteRange
 import com.teachermovies.torrent.api.FilePriority
 import com.teachermovies.torrent.api.RangeReadiness
 import com.teachermovies.torrent.api.TorrentEngineContractTest
@@ -237,6 +238,26 @@ class FakeTorrentEngineTest : TorrentEngineContractTest() {
                 listOf("prioritizeWindow(${id.value},0,100,200)", "clearWindow(${id.value})"),
                 engine.recordedCalls,
             )
+        }
+
+    @Test
+    fun prioritizeRangesReplacesTheWindowWithEveryRangeUntilCleared() =
+        runTest {
+            val engine = FakeTorrentEngine()
+            val id = (engine.addMagnet(validMagnet) as EngineResult.Ok).value
+            engine.prioritizeWindow(id, fileIndex = 0, byteOffset = 100L, windowBytes = 200L)
+            assertEquals(0 to listOf(FileByteRange(100L, 200L)), engine.lastRanges(id))
+
+            val ranges = listOf(FileByteRange(0L, 100L), FileByteRange(900L, 100L))
+            val result = engine.prioritizeRanges(id, fileIndex = 1, ranges = ranges)
+
+            assertEquals(EngineResult.Ok(Unit), result)
+            assertEquals(1 to ranges, engine.lastRanges(id))
+            assertNull(engine.lastWindow(id))
+            assertEquals("prioritizeRanges(${id.value},1,0+100;900+100)", engine.recordedCalls.last())
+
+            engine.clearWindow(id)
+            assertNull(engine.lastRanges(id))
         }
 
     @Test

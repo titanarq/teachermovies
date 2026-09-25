@@ -5,6 +5,7 @@ import com.teachermovies.core.model.TorrentId
 import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.EngineStatus
+import com.teachermovies.torrent.api.FileByteRange
 import com.teachermovies.torrent.api.FilePriority
 import com.teachermovies.torrent.api.MagnetUri
 import com.teachermovies.torrent.api.PieceWindowCalculator
@@ -23,7 +24,7 @@ import java.security.MessageDigest
  * A deterministic, in-memory [TorrentEngine] (ADR-0003): every other module's tests drive it
  * through metadata, progress, completion and errors without a real jlibtorrent session, real
  * time, or sleeps. State lives in [MutableStateFlow]s; the test-only control methods below
- * ([emitMetadata], [advance], [complete], [fail], [setEngineStatus], [setPieces], [lastWindow])
+ * ([emitMetadata], [advance], [complete], [fail], [setEngineStatus], [setPieces], [lastWindow], [lastRanges])
  * are not part of [TorrentEngine] and exist only to drive this fake from a test.
  */
 class FakeTorrentEngine : TorrentEngine {
@@ -44,13 +45,15 @@ class FakeTorrentEngine : TorrentEngine {
     private val piecesByTorrent = mutableMapOf<TorrentId, PieceModel>()
 
     private val windows = mutableMapOf<TorrentId, Triple<Int, Long, Long>>()
+    private val windowRanges = mutableMapOf<TorrentId, Pair<Int, List<FileByteRange>>>()
 
     private val _recordedCalls = mutableListOf<String>()
 
     /**
-     * Every [setFilePriorities], [pause], [resume], [remove], [prioritizeWindow] and [clearWindow]
-     * call, in order and whether or not it succeeded, for assertions (e.g. `"remove(<id>,true)"`,
-     * `"setFilePriorities(<id>,{0=Skip})"`).
+     * Every [setFilePriorities], [pause], [resume], [remove], [prioritizeWindow], [prioritizeRanges]
+     * and [clearWindow] call, in order and whether or not it succeeded, for assertions (e.g.
+     * `"remove(<id>,true)"`, `"setFilePriorities(<id>,{0=Skip})"`,
+     * `"prioritizeRanges(<id>,0,0+100;900+100)"`).
      */
     val recordedCalls: List<String> get() = _recordedCalls.toList()
 
@@ -127,6 +130,7 @@ class FakeTorrentEngine : TorrentEngine {
         filesByTorrent.remove(id)
         piecesByTorrent.remove(id)
         windows.remove(id)
+        windowRanges.remove(id)
         return EngineResult.Ok(Unit)
     }
 
@@ -140,12 +144,28 @@ class FakeTorrentEngine : TorrentEngine {
     ): EngineResult<Unit> {
         _recordedCalls += "prioritizeWindow(${id.value},$fileIndex,$byteOffset,$windowBytes)"
         windows[id] = Triple(fileIndex, byteOffset, windowBytes)
+        windowRanges[id] = fileIndex to listOf(FileByteRange(byteOffset, windowBytes))
+        return EngineResult.Ok(Unit)
+    }
+
+    override suspend fun prioritizeRanges(
+        id: TorrentId,
+        fileIndex: Int,
+        ranges: List<FileByteRange>,
+    ): EngineResult<Unit> {
+        _recordedCalls +=
+            "prioritizeRanges(${id.value},$fileIndex,${ranges.joinToString(
+                ";",
+            ) { "${it.offsetBytes}+${it.lengthBytes}" }})"
+        windows.remove(id)
+        windowRanges[id] = fileIndex to ranges.toList()
         return EngineResult.Ok(Unit)
     }
 
     override suspend fun clearWindow(id: TorrentId): EngineResult<Unit> {
         _recordedCalls += "clearWindow(${id.value})"
         windows.remove(id)
+        windowRanges.remove(id)
         return EngineResult.Ok(Unit)
     }
 
@@ -299,6 +319,13 @@ class FakeTorrentEngine : TorrentEngine {
      * windowBytes), or null if none was set or [clearWindow] cleared it.
      */
     fun lastWindow(id: TorrentId): Triple<Int, Long, Long>? = windows[id]
+
+    /**
+     * The window currently set for torrent [id] as (fileIndex, ranges) -- by [prioritizeRanges], or
+     * by [prioritizeWindow] as a single range -- or null if none was set or [clearWindow] cleared
+     * it. [lastWindow] answers null after a [prioritizeRanges] call.
+     */
+    fun lastRanges(id: TorrentId): Pair<Int, List<FileByteRange>>? = windowRanges[id]
 
     /** Sets [engineStatus] directly, independent of any one torrent. */
     fun setEngineStatus(status: EngineStatus) {

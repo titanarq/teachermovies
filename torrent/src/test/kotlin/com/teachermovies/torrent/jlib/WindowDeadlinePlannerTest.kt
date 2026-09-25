@@ -68,6 +68,38 @@ class WindowDeadlinePlannerTest {
     }
 
     @Test
+    fun piecesOfListsEachRangeInOrderWithSharedPiecesOnce() {
+        val pieces = WindowDeadlinePlanner.piecesOf(listOf(PieceRange(0, 2), PieceRange(9, 9), PieceRange(2, 3)))
+
+        assertEquals(listOf(0, 1, 2, 9, 3), pieces)
+    }
+
+    @Test
+    fun disjointRangesGetDeadlinesInTheOrderGiven() {
+        val current = WindowDeadlinePlanner.piecesOf(listOf(PieceRange(0, 1), PieceRange(9, 9)))
+
+        val plan = WindowDeadlinePlanner.plan(previous = null, current = current, deadlineStepMs = step)
+
+        assertEquals(mapOf(0 to 100, 1 to 200, 9 to 300), plan.deadlines)
+        assertEquals(emptyList<Int>(), plan.reset)
+    }
+
+    @Test
+    fun aSlidingWindowAfterTheOpenRangesResetsOnlyThePiecesItDoesNotCover() {
+        val open = WindowDeadlinePlanner.piecesOf(listOf(PieceRange(0, 1), PieceRange(9, 9)))
+
+        val plan =
+            WindowDeadlinePlanner.plan(
+                previous = open,
+                current = PieceRange(1, 3).pieces(),
+                deadlineStepMs = step,
+            )
+
+        assertEquals(mapOf(2 to 100, 3 to 200), plan.deadlines)
+        assertEquals(listOf(0, 9), plan.reset)
+    }
+
+    @Test
     fun readinessWithEveryPiecePresentIsReadyForTheWholeLength() {
         val readiness =
             readinessFor(
