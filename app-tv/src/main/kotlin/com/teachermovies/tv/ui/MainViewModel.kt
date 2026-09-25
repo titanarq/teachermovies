@@ -32,10 +32,15 @@ sealed interface AppRoute {
 /**
  * The shell's whole state: which section the tab row has selected, and whether the player route
  * ([AppRoute.Player]) has replaced the shell.
+ *
+ * [restoreFocusTo] is the Biblioteca card that should take D-pad focus the next time the shell is
+ * shown (#249): set when BACK leaves the player that was opened on the Biblioteca section, cleared
+ * once the screen has asked for that focus ([MainViewModel.focusRestored]) or the section changes.
  */
 data class MainUiState(
     val selected: Destination = Destination.Library,
     val route: AppRoute = AppRoute.Shell,
+    val restoreFocusTo: TorrentId? = null,
 )
 
 /**
@@ -49,7 +54,9 @@ class MainViewModel : ViewModel() {
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     fun select(destination: Destination) {
-        _uiState.update { it.copy(selected = destination) }
+        _uiState.update { state ->
+            if (state.selected == destination) state else state.copy(selected = destination, restoreFocusTo = null)
+        }
     }
 
     /** Navigates to `player/{id}` (#72); the selected section is kept for the way back. */
@@ -57,8 +64,23 @@ class MainViewModel : ViewModel() {
         _uiState.update { it.copy(route = AppRoute.Player(id)) }
     }
 
-    /** Leaves the player route, back to the shell on the section it was left from. */
+    /**
+     * Leaves the player route, back to the shell on the section it was left from. From Biblioteca
+     * the played movie's card is remembered in [MainUiState.restoreFocusTo] so focus returns to it
+     * rather than to the tab row (#249).
+     */
     fun closePlayer() {
-        _uiState.update { it.copy(route = AppRoute.Shell) }
+        _uiState.update { state ->
+            val played = (state.route as? AppRoute.Player)?.id
+            state.copy(
+                route = AppRoute.Shell,
+                restoreFocusTo = played?.takeIf { state.selected == Destination.Library },
+            )
+        }
+    }
+
+    /** The screen has asked for focus on [MainUiState.restoreFocusTo] (or given up on it): forget it. */
+    fun focusRestored() {
+        _uiState.update { it.copy(restoreFocusTo = null) }
     }
 }
