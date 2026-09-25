@@ -31,7 +31,9 @@ jlibtorrent and libVLC).
 | Room | 2.7.2 (KSP) | Verified with KSP 2.1.21-2.0.2. |
 | DataStore Preferences | 1.1.7 | Verified with SDK 35. |
 | Ktor server (CIO, test-host, SSE) | 3.1.3 | ADR-0002; 3.1 is built with Kotlin 2.1. |
-| Ktor client (core, CIO; test-only) | 3.1.3 (`version.ref = ktor`) | `EventsRouteTest` drives a real loopback server, since the in-process test host never streams SSE; introduced by #62 (PR #143). |
+| Ktor client (core, CIO; test-only in `:http-server`) | 3.1.3 (`version.ref = ktor`) | `EventsRouteTest` drives a real loopback server, since the in-process test host never streams SSE; introduced by #62 (PR #143). |
+| Ktor client in `:mobile-app` (core, CIO, content-negotiation; runtime) | 3.1.3 (`version.ref = ktor`) | The phone app's HTTP client to the TV API (#35, decided by the human 2026-09-25, option A; #196), with `ktor-serialization-kotlinx-json` for JSON. Same library and version as the rows above, no new version. `:mobile-app` never depends on `:http-server` (that would pack the Ktor server into the phone APK); Ktor server artifacts are test-only there, for the loopback fake TV. |
+| Compose Material 3 (`androidx.compose.material3:material3`) | from the Compose BOM above (no own `version.ref`) | Phone UI of `:mobile-app` only (#35, decided 2026-09-25; #195). `:app-tv` keeps `androidx.tv:tv-material`. Falls under the AndroidX AAR rule of the activity-compose row; `:mobile-app:assembleDebug` in #195 is its verification. |
 | jlibtorrent | 2.0.12.9 | Latest release whose jars actually resolve on `https://dl.frostwire.com/maven` (`com.frostwire:jlibtorrent` + `jlibtorrent-android-{arm,arm64,x86,x86_64}`). Metadata lists 2.0.12.15/README mentions 2.0.13.6, but their jars 404. |
 | libVLC (`org.videolan.android:libvlc-all`) | 3.7.2 | Latest 3.x usable with compileSdk 35: 3.7.3 declares `minCompileSdk=37`, 3.7.4-3.7.6 `minCompileSdk=36`. |
 | kotlinx-coroutines | 1.10.2 | Required by Room, DataStore and Ktor; version compatible with Kotlin 2.1.21. |

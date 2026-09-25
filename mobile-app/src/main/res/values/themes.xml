@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The window is a Compose Material 3 surface, so the platform theme only has to stay out of
+         the way: no action bar. -->
+    <style name="Theme.MovieAssistant" parent="@android:style/Theme.Material.Light.NoActionBar" />
+</resources>
