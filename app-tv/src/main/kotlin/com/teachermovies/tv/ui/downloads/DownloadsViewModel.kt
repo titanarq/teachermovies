@@ -10,6 +10,7 @@ import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.api.TorrentSnapshot
 import com.teachermovies.torrent.sync.EngineRepositorySync
 import com.teachermovies.tv.format.Formatters
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -27,6 +29,8 @@ import kotlinx.coroutines.launch
  * the state machine allows moving to [DownloadState.Paused] (which includes a completed torrent,
  * so seeding can be stopped) and the torrent is not paused already; resuming is offered only while
  * paused. [progress] (0..1) only sizes the progress bar; the figure shown is [percent].
+ * [canPlay] (#226): the row is downloading or paused and its main (movie) file is known, so it can
+ * be played while it downloads.
  */
 data class DownloadRow(
     val id: TorrentId,
@@ -41,10 +45,14 @@ data class DownloadRow(
     val ratio: String,
     val canPause: Boolean,
     val canResume: Boolean,
+    val canPlay: Boolean = false,
 )
 
 /** What the action dialog of a row (#70) offers, in the order it lists them. */
 enum class DownloadAction {
+    /** `Reproducir` (#226): plays the download while it is still in progress; only on a [DownloadRow.canPlay] row. */
+    Play,
+
     /** `Pausar` or `Reanudar`, depending on the row -- see [DownloadsDialog.Actions.pauseResumeLabel]. */
     PauseResume,
     ChooseFiles,
@@ -61,8 +69,9 @@ data class DownloadActionItem(
 /** The dialog open over the Descargas list, always about [DownloadsUiState.selectedRowId]. */
 sealed interface DownloadsDialog {
     /**
-     * OK on a row: `Pausar`/`Reanudar`, `Elegir archivos`, `Borrar`, `Cancelar`. [focused] is the
-     * first enabled item, which the dialog focuses when it opens.
+     * OK on a row: `Reproducir` (only on a [DownloadRow.canPlay] row, #226), `Pausar`/`Reanudar`,
+     * `Elegir archivos`, `Borrar`, `Cancelar`. [focused] is the first enabled item, which the
+     * dialog focuses when it opens.
      */
     data class Actions(
         val items: List<DownloadActionItem>,
@@ -106,7 +115,8 @@ data class DownloadsUiState(
  *
  * The screen's dialogs (#70) are state here too: [openActions] on OK, [onAction] for the action
  * dialog, [confirmDelete] for `¿Borrar también los archivos?`, [dismissDialog] for Cancelar/BACK.
- * [serverUrl] (`http://ip:port`) feeds the empty-state hint.
+ * [serverUrl] (`http://ip:port`) feeds the empty-state hint. `Reproducir` (#226) closes the dialog
+ * and emits the row's id on [playRequests], which the screen turns into opening the player.
  */
 class DownloadsViewModel(
     private val engine: TorrentEngine,
@@ -123,6 +133,11 @@ class DownloadsViewModel(
     private enum class DialogKind { Actions, ConfirmDelete, ChooseFiles }
 
     private val dialogState = MutableStateFlow(DialogState())
+
+    private val playChannel = Channel<TorrentId>(Channel.BUFFERED)
+
+    /** Ids the viewer asked to play from the action dialog (#226); each is delivered once. */
+    val playRequests: Flow<TorrentId> = playChannel.receiveAsFlow()
 
     private val listState =
         engine.torrents.map { snapshots ->
@@ -161,6 +176,11 @@ class DownloadsViewModel(
         if (dialog.items.none { it.action == action && it.enabled }) return
         val row = state.rows.first { it.id == id }
         when (action) {
+            DownloadAction.Play -> {
+                dismissDialog()
+                playChannel.trySend(id)
+            }
+
             DownloadAction.PauseResume -> {
                 if (row.canResume) resume(id) else pause(id)
                 dismissDialog()
@@ -226,7 +246,8 @@ class DownloadsViewModel(
     private fun actionsFor(row: DownloadRow): DownloadsDialog.Actions =
         DownloadsDialog.Actions(
             items =
-                listOf(
+                listOfNotNull(
+                    DownloadActionItem(DownloadAction.Play, enabled = true).takeIf { row.canPlay },
                     DownloadActionItem(DownloadAction.PauseResume, enabled = row.canPause || row.canResume),
                     DownloadActionItem(
                         DownloadAction.ChooseFiles,
@@ -252,6 +273,7 @@ class DownloadsViewModel(
             ratio = Formatters.ratio(ratio),
             canPause = state != DownloadState.Paused && state.canTransitionTo(DownloadState.Paused),
             canResume = state == DownloadState.Paused,
+            canPlay = mainFileIndex != null && state in PLAYABLE_WHILE_DOWNLOADING,
         )
 
     /** Builds the ViewModel from `AppContainer`'s bindings (ADR-0003 rule 1). */
@@ -268,5 +290,10 @@ class DownloadsViewModel(
             }
             return DownloadsViewModel(engine, sync, serverUrl, space) as T
         }
+    }
+
+    private companion object {
+        /** States in which `Reproducir` streams the download (#226); a completed one plays from Biblioteca. */
+        val PLAYABLE_WHILE_DOWNLOADING = setOf(DownloadState.Downloading, DownloadState.Paused)
     }
 }

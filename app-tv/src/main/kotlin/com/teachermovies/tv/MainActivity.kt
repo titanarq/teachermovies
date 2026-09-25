@@ -148,6 +148,7 @@ class MainActivity : ComponentActivity() {
                                         DownloadsScreen(
                                             viewModel = downloadsViewModel,
                                             fileSelectionFactory = ::fileSelectionFactory,
+                                            onPlay = mainViewModel::openPlayer,
                                             modifier = modifier,
                                         )
                                     },
@@ -176,6 +177,7 @@ class MainActivity : ComponentActivity() {
             hidden = container.hiddenSubtitleController,
             capture = container.lineCaptureController,
             speech = container.assistantSpeechController,
+            streamingController = container.streamingPlaybackController,
         )
     }
 

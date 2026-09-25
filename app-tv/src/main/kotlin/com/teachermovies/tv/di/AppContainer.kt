@@ -31,6 +31,7 @@ import com.teachermovies.http.ServerDeps
 import com.teachermovies.http.auth.PairingManager
 import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.VideoSurfaceHost
+import com.teachermovies.player.streaming.StreamingPlaybackController
 import com.teachermovies.player.vlc.VlcPlayer
 import com.teachermovies.storage.AndroidStorageVolumeProvider
 import com.teachermovies.storage.FileSpaceProvider
@@ -167,6 +168,18 @@ class AppContainer(
     val player: Player = vlcPlayer
 
     val videoSurfaceHost: VideoSurfaceHost = vlcPlayer
+
+    /**
+     * Supervises playing a download that is still in progress (#226, ADR-0001 §4) over the app's
+     * [torrentEngine] and [player]: the player screen hands it to `PlaybackSession.openStreaming`
+     * for any item that is not completed yet. Runs on the main thread, like the player it drives.
+     */
+    val streamingPlaybackController: StreamingPlaybackController =
+        StreamingPlaybackController(
+            player = player,
+            engine = torrentEngine,
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        )
 
     // The English-learning assistant (#86) follows the one [player] on the main thread, where the
     // player screen drives it; built once, started and stopped per movie by the player screen.

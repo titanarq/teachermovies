@@ -211,6 +211,24 @@
   while `speaking`, `Repitiendo…` while replaying, and the hint
   `OK Repetir · DERECHA Escuchar · IZQUIERDA Traducir · ATRÁS Cerrar`. Focus behaviour is that of #86.
 
+## Reproducir mientras descarga (#226)
+- Entry point: Descargas, OK on a row -> the action dialog starts with `Reproducir` (focused) when
+  the row is `Downloading`/`Paused` and its main file is known (`DownloadRow.canPlay`); a completed
+  row plays from Biblioteca and offers no `Reproducir`. `DownloadsViewModel.onAction(Play)` closes
+  the dialog and emits the id on `playRequests`; `DownloadsScreen(..., onPlay)` collects it and
+  `MainActivity` passes `MainViewModel::openPlayer`, the same `player/{id}` route as Biblioteca.
+  BACK from the player returns to Descargas on that row.
+- `AppContainer.streamingPlaybackController: StreamingPlaybackController` over `torrentEngine` and
+  `player`, on a main-thread scope; `PlayerViewModel.Factory(..., streamingController)` passes it
+  with the repository. `PlayerViewModel(..., streamingController = null, repo = null)`: `open(id)`
+  of an item whose repository state is not `Completed` calls `PlaybackSession.openStreaming(id,
+  controller)`; a completed (or unknown) item, or no controller, uses `open(id)`.
+  `SessionResult.StreamingFailed` shows `No se puede reproducir mientras se descarga`.
+- `PlayerUiState.streamStatus`: the controller's `Preparing` (`Preparando la reproducción… N %` of
+  the ranges it waits for) or `Buffering` (`Cargando… N %` of the bytes needed to resume) as text,
+  drawn centred over the picture; null otherwise. An Exit while still preparing cancels the wait,
+  stops the controller and releases the player.
+
 ## HTTP server hosting and pairing PIN (#66)
 - `AppContainer.pairingManager: PairingManager` (`SecureRandom`, wall clock) and
   `AppContainer.httpServerController: HttpServerController` over `LocalHttpServer`, on the

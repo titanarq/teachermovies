@@ -51,15 +51,18 @@ import com.teachermovies.tv.format.Formatters
 
 /**
  * The Descargas section bound to its [DownloadsViewModel] (#70); `Elegir archivos` opens a
- * [FileSelectionRoute] whose ViewModel [fileSelectionFactory] builds for the selected torrent (#71).
+ * [FileSelectionRoute] whose ViewModel [fileSelectionFactory] builds for the selected torrent (#71);
+ * `Reproducir` calls [onPlay] with the torrent to play while it downloads (#226).
  */
 @Composable
 fun DownloadsScreen(
     viewModel: DownloadsViewModel,
     fileSelectionFactory: (TorrentId) -> ViewModelProvider.Factory,
+    onPlay: (TorrentId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(viewModel) { viewModel.playRequests.collect(onPlay) }
     DownloadsContent(
         uiState = uiState,
         onOpenActions = viewModel::openActions,
@@ -307,6 +310,7 @@ private fun ActionsDialog(
             DialogButton(
                 text =
                     when (item.action) {
+                        DownloadAction.Play -> stringResource(R.string.downloads_action_play)
                         DownloadAction.PauseResume -> dialog.pauseResumeLabel
                         DownloadAction.ChooseFiles -> stringResource(R.string.downloads_action_choose_files)
                         DownloadAction.Delete -> stringResource(R.string.downloads_action_delete)

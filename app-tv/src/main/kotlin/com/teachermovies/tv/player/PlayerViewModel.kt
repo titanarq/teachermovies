@@ -9,23 +9,28 @@ import com.teachermovies.assistant.HiddenModeResult
 import com.teachermovies.assistant.HiddenSubtitleController
 import com.teachermovies.assistant.LineCaptureController
 import com.teachermovies.assistant.TranslationUiState
+import com.teachermovies.core.model.DownloadState
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.TorrentRepository
 import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.session.PlaybackSession
 import com.teachermovies.player.session.SessionResult
+import com.teachermovies.player.streaming.StreamState
+import com.teachermovies.player.streaming.StreamingPlaybackController
 import com.teachermovies.tv.format.Formatters
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -41,6 +46,9 @@ import java.io.File
  * [assistant] is the captured-line overlay (#86), null while no line is captured;
  * [assistantAvailable] says whether hidden English subtitles were found for this movie, and
  * [message] is a short notice shown in the transport overlay (e.g. no line to capture).
+ *
+ * [streamStatus] (#226) is the streaming controller's `Preparing`/`Buffering` state as text while
+ * an in-progress download is being played, null otherwise.
  */
 data class PlayerUiState(
     val title: String = "",
@@ -55,6 +63,7 @@ data class PlayerUiState(
     val assistant: AssistantOverlayState? = null,
     val assistantAvailable: Boolean = false,
     val message: String? = null,
+    val streamStatus: String? = null,
 )
 
 /**
@@ -90,6 +99,12 @@ data class AssistantOverlayState(
  * them touches the player, so the movie stays paused until [AssistantAction.DismissOverlay], which
  * also resets [speech].
  *
+ * Playing an in-progress download (#226): when [streamingController] and [repo] are given, [open]
+ * of an item that is not [DownloadState.Completed] goes through [PlaybackSession.openStreaming]
+ * with [streamingController], and its `Preparing`/`Buffering` states show as
+ * [PlayerUiState.streamStatus]; a completed item (or no controller) uses [PlaybackSession.open].
+ * An Exit while the controller is still waiting for the first ranges cancels that wait.
+ *
  * [closeScope] is where the session is closed if the ViewModel is cleared without an Exit (the
  * route left some other way): `viewModelScope` is already cancelled by then. It is the scope the
  * session itself runs in.
@@ -102,6 +117,8 @@ class PlayerViewModel(
     private val speech: AssistantSpeechController,
     private val closeScope: CoroutineScope? = null,
     private val prepareDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val streamingController: StreamingPlaybackController? = null,
+    private val repo: TorrentRepository? = null,
 ) : ViewModel() {
     private data class Local(
         val title: String = "",
@@ -112,6 +129,7 @@ class PlayerViewModel(
         val assistantAvailable: Boolean = false,
         val message: String? = null,
         val assistantMessage: String? = null,
+        val streaming: Boolean = false,
     )
 
     private val local = MutableStateFlow(Local())
@@ -138,7 +156,9 @@ class PlayerViewModel(
             }
         }
 
-    private val panels = combine(tracks, assistant, ::Pair)
+    private val streamState = streamingController?.state ?: flowOf(StreamState.Idle)
+
+    private val panels = combine(tracks, assistant, streamState, ::Triple)
 
     val uiState: StateFlow<PlayerUiState> =
         combine(
@@ -148,7 +168,7 @@ class PlayerViewModel(
             player.durationMs,
             panels,
         ) { local, state, position, duration, panels ->
-            val (tracks, assistant) = panels
+            val (tracks, assistant, stream) = panels
             val error = errorOf(local, state)
             // An error replaces the picture, assistant overlay included.
             val overlay = assistant.takeIf { error == null }
@@ -167,6 +187,7 @@ class PlayerViewModel(
                 assistant = overlay,
                 assistantAvailable = local.assistantAvailable,
                 message = local.message,
+                streamStatus = if (local.streaming && error == null) streamStatusOf(stream) else null,
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, PlayerUiState())
 
@@ -184,7 +205,10 @@ class PlayerViewModel(
         viewModelScope.launch { withContext(prepareDispatcher) { speech.prepare() } }
         openJob =
             viewModelScope.launch {
-                when (val result = session.open(id)) {
+                val controller = streamingController?.takeIf { repo != null && !isCompleted(id) }
+                if (controller != null) local.update { it.copy(streaming = true) }
+                val result = if (controller != null) session.openStreaming(id, controller) else session.open(id)
+                when (result) {
                     is SessionResult.Opened -> {
                         local.update { it.copy(title = result.item.title) }
                         val available = hidden.start(File(result.item.mainFilePath)) is HiddenModeResult.Started
@@ -199,7 +223,7 @@ class PlayerViewModel(
                         local.update { it.copy(error = FILE_MISSING) }
                     }
 
-                    // Only `openStreaming` answers this; the screen does not stream yet (#78).
+                    // Only `openStreaming` answers this (#226).
                     is SessionResult.StreamingFailed -> {
                         local.update { it.copy(error = STREAMING_FAILED) }
                     }
@@ -207,6 +231,10 @@ class PlayerViewModel(
             }
         showOverlay()
     }
+
+    /** Whether [id] is a finished download; unknown to [repo] counts as finished (plain `open`). */
+    private suspend fun isCompleted(id: TorrentId): Boolean =
+        (repo?.get(id)?.state ?: DownloadState.Completed) == DownloadState.Completed
 
     /**
      * A remote key was pressed: any key (even one that maps to null) shows the overlay; the action,
@@ -333,13 +361,34 @@ class PlayerViewModel(
         closeTracks()
         stopAssistant()
         viewModelScope.launch {
-            // Let a pending open finish so close() sees the item it has to save.
-            openJob?.join()
+            if (local.value.streaming && openJob?.isCompleted == false) {
+                // Still waiting for the first ranges (#226), which may take long: stop waiting.
+                // Nothing was opened for close() to save; stop the controller and the player in
+                // case the wait was cancelled just after opening the file.
+                openJob?.cancelAndJoin()
+                streamingController?.stop()
+                player.release()
+            } else {
+                // Let a pending open finish so close() sees the item it has to save.
+                openJob?.join()
+            }
             session.close()
             closed = true
             local.update { it.copy(exited = true) }
         }
     }
+
+    private fun streamStatusOf(state: StreamState): String? =
+        when (state) {
+            is StreamState.Preparing -> "$PREPARING_PREFIX${percentOf(state.readyBytes, state.requiredBytes)}"
+            is StreamState.Buffering -> "$BUFFERING_PREFIX${percentOf(state.readyBytes, state.resumeAtBytes)}"
+            StreamState.Idle, StreamState.Streaming, is StreamState.Failed -> null
+        }
+
+    private fun percentOf(
+        part: Long,
+        whole: Long,
+    ): String = Formatters.percent(if (whole > 0) (part.coerceIn(0L, whole) * 100.0 / whole) else 0.0)
 
     private fun errorOf(
         local: Local,
@@ -376,7 +425,18 @@ class PlayerViewModel(
 
     override fun onCleared() {
         if (!exiting) stopAssistant()
-        if (!closed) closeScope?.launch { session.close() }
+        // viewModelScope is cancelled now, and with it a streaming open still waiting for ranges
+        // (#226): stop the controller and the player it may just have opened.
+        val streamingOpenCut = local.value.streaming && openJob?.isCompleted == false
+        if (!closed) {
+            closeScope?.launch {
+                if (streamingOpenCut) {
+                    streamingController?.stop()
+                    player.release()
+                }
+                session.close()
+            }
+        }
     }
 
     /**
@@ -389,6 +449,7 @@ class PlayerViewModel(
         private val hidden: HiddenSubtitleController,
         private val capture: LineCaptureController,
         private val speech: AssistantSpeechController,
+        private val streamingController: StreamingPlaybackController? = null,
         private val clock: () -> Long = System::currentTimeMillis,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -404,6 +465,8 @@ class PlayerViewModel(
                 capture,
                 speech,
                 scope,
+                streamingController = streamingController,
+                repo = repo,
             ) as T
         }
     }
@@ -416,6 +479,10 @@ class PlayerViewModel(
         const val NOT_FOUND = "Esta película ya no está en la biblioteca"
         const val STREAMING_FAILED = "No se puede reproducir mientras se descarga"
         const val PLAYBACK_ERROR_PREFIX = "No se puede reproducir: "
+
+        /** Streaming status (#226), followed by how much of what it waits for is on disk. */
+        const val PREPARING_PREFIX = "Preparando la reproducción… "
+        const val BUFFERING_PREFIX = "Cargando… "
 
         /** How long an assistant message stays in the transport overlay. */
         const val MESSAGE_TIMEOUT_MS = 3_000L
