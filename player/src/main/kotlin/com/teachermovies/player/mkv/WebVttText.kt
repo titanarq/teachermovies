@@ -1,12 +1,12 @@
 package com.teachermovies.player.mkv
 
 /**
- * WebVTT cue text to SubRip cue text, for `S_TEXT/WEBVTT` blocks. In Matroska a WebVTT block
- * holds only the cue payload -- the cue settings (position, line, align) live in `BlockAdditions`
- * and the `STYLE`/`REGION` blocks in `CodecPrivate`, neither of which is read -- so all that is
- * left is the markup inside the text: `<i>`, `<b>` and `<u>` are kept (SRT has them, minus any
- * `.class`), every other tag (`<v Speaker>`, `<c.yellow>`, `<ruby>`, `<lang>`, timestamps) is
- * dropped with its text kept, and the character references are decoded.
+ * WebVTT cue text to SubRip cue text, for `S_TEXT/WEBVTT` and `D_WEBVTT/SUBTITLES`/`CAPTIONS`
+ * blocks. In Matroska a WebVTT block holds only the cue payload -- the cue settings (position,
+ * line, align) live in `BlockAdditions` and the `STYLE`/`REGION` blocks in `CodecPrivate`, neither
+ * of which is read -- so all that is left is the markup inside the text: `<i>`, `<b>` and `<u>` are
+ * kept (SRT has them, minus any `.class`), every other tag (`<v Speaker>`, `<c.yellow>`, `<ruby>`,
+ * `<lang>`, timestamps) is dropped with its text kept, and the character references are decoded.
  */
 internal object WebVttText {
     fun toSrt(cueText: String): String {
