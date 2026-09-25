@@ -23,6 +23,16 @@
   `Movie Assistant`. Both ViewModels come from the one container through `by viewModels` factories,
   and `DownloadsViewModel.uiState` is collected only while `ConnectionUiState.Connected` is shown --
   that collection is what decides whether the TV is polled at all.
+- Manifest, share target (#199): `.share.ShareActivity`, `exported="true"` because it is the
+  platform that starts it, and `label="@string/app_name"`, so every app's share sheet offers it as
+  `Movie Assistant`. Its theme is `Theme.MovieAssistant.Share` (a
+  `Theme.Material.Light.Dialog.NoActionBar` with a transparent `android:windowBackground`), which is
+  what makes the dialog sit over the app the magnet was shared from instead of replacing it. Two
+  intent filters, and only these two: `android.intent.action.SEND` with category `DEFAULT` and
+  `mimeType="text/plain"`, and `android.intent.action.VIEW` with categories `DEFAULT` and
+  `BROWSABLE` and `scheme="magnet"`. Sharing a `.torrent` file (`ACTION_SEND` of
+  `application/x-bittorrent`) is not a target yet; an `http(s)` link that is shared arrives as
+  ordinary text and the dialog reports `No hay ningún enlace magnet`.
 - DI (#197, ADR-0003): `di.MobileContainer(application)` is built once in `MobileApp.onCreate`
   (`MobileApp.container`). Each collaborator is exposed as its interface where it has one, so no
   caller reaches an implementation: `serviceDiscoverer: ServiceDiscoverer`
@@ -31,7 +41,8 @@
   `preferencesDataStore` named `paired_tv`; `deviceName: String` = `android.os.Build.MODEL`
   (the only place it is read; `Android` if the platform reports none); and (#198)
   `magnetSender: MagnetSender` = `MagnetSender(tvApi, pairedTvStore)`, a concrete class because it
-  has no interface of its own. No fake is wired.
+  has no interface of its own, and the one instance the downloads screen's field (#198) and
+  `ShareViewModel` (#199) both send through. No fake is wired.
 - Connection flow (#197), package `connection`:
   - `ConnectionViewModel(discoverer: ServiceDiscoverer, api: TvApi, store: PairedTvStore,
     deviceName: String)` exposes `uiState: StateFlow<ConnectionUiState>`; `ConnectionViewModel.Factory`
@@ -72,8 +83,8 @@
     lives only in the pairing screen's field and the one `pair` call; nothing logs it or the token.
     The #197 placeholder for `Connected` is deleted (`connection/ConnectedScreen.kt`):
     `downloads/DownloadsScreen` (#198) took its place, and `OLVIDAR ESTA TV` is still `forgetTv`.
-- Sending a magnet (#198), package `send` -- the one path the downloads screen's field uses and the
-  share intent filter will reuse:
+- Sending a magnet (#198), package `send` -- the one path both the downloads screen's field and the
+  share dialog (#199) send through:
   - `MagnetSender(api: TvApi, store: PairedTvStore)` has one method, `suspend fun send(text:
     String?): SendOutcome`. It never throws (`TvApi` answers with sealed results) and never calls
     the API when there is no magnet to send or no TV to send it to.
@@ -133,6 +144,44 @@
     its name, a `LinearProgressIndicator` over `progress / 100` and the four `DownloadFormat` texts
     joined by `  ·  ` -- a progress indicator while `Loading`, and `OLVIDAR ESTA TV`. The typed
     magnet stays in this screen's field.
+- The share dialog (#199), package `share` -- where `Share -> Movie Assistant` and an opened
+  `magnet:` link land. It sends one magnet and reports what came of it; it never pairs a TV and
+  never polls one:
+  - `SharedText` is an `object` of pure Kotlin -- no `Intent` in its signature -- that turns the
+    three strings a share intent carries into the text to send. `from(action, extraText,
+    dataString)` returns `extraText` for `ACTION_SEND`, `dataString` for `ACTION_VIEW` and `null`
+    for any other action, a null one included. Both actions are its own constants
+    (`"android.intent.action.SEND"`, `"android.intent.action.VIEW"`), spelled out instead of read
+    off `android.content.Intent` so this stays a JVM test. The text comes back exactly as it was
+    shared, with no trimming and no filtering: whether it holds a magnet the TV can take is
+    `SharedLinkParser`'s call, made inside `MagnetSender`.
+  - `ShareUiState` = `Sending` | `Done(outcome: SendOutcome)`, produced only by `ShareViewModel`,
+    with `offersOpenApp` on the interface: false for `Sending`, and for `Done` true only when the
+    outcome is `NotPaired` or `NeedsPairing` -- the one case opening the app can fix. The Spanish
+    texts are not here either: `Enviando a la TV...` belongs to `Sending` and `SendOutcome.message`
+    to `Done`, so no screen builds a string of its own.
+  - `ShareViewModel(magnetSender: MagnetSender, text: String?)` exposes
+    `uiState: StateFlow<ShareUiState>`, `Sending` until the one send is over and then
+    `Done(outcome)`; `ShareViewModel.Factory(magnetSender, text)` is what `ShareActivity` builds
+    from the container. The send runs in `init` and is not gated on anybody collecting `uiState`, so
+    a dialog that arrives late still finds the outcome. A ViewModel is created once per activity
+    instance and survives a configuration change, and the activity has no `send` of its own to call
+    twice, which is what makes rotating the phone send the magnet exactly once. Nothing here logs
+    the token.
+  - `ShareActivity` (`ComponentActivity`) is the only place in the app that reads a share `Intent`:
+    `sharedText` is read off `intent` lazily as the three strings above (`intent?.action`,
+    `getStringExtra(Intent.EXTRA_TEXT)`, `intent?.dataString`) and handed to the factory, so no
+    Android type reaches `SharedText` or the ViewModel. `setContent` wraps `ShareScreen` in a plain
+    `MaterialTheme` and collects with `collectAsStateWithLifecycle`. `CERRAR` is `finish()`;
+    `ABRIR MOVIE ASSISTANT` starts `MainActivity` -- the launcher app, where a TV can be paired --
+    and then finishes this dialog.
+  - `ShareScreen(state, onClose, onOpenApp, modifier)` (Compose Material 3, Spanish, strings in
+    `res/values/strings.xml`: `share_sending`, `share_close`, `share_open_app`) is one `Card` that
+    sizes to its content, which is what the activity's dialog window wraps: a
+    `CircularProgressIndicator` beside `Enviando a la TV...` while `Sending`, then
+    `SendOutcome.message`. `CERRAR` is there in both states, because a dialog that cannot be
+    dismissed traps the user over an unreachable TV, and `ABRIR MOVIE ASSISTANT` only while
+    `offersOpenApp`.
 - `share.SharedLinkParser.extractMagnet(text: String?): String?` -- pure Kotlin, no Android type:
   - finds the first `magnet:?` in `text` (scheme matched case-insensitively), cut at the first
     whitespace character, so a magnet inside surrounding shared text or followed by a newline works;
@@ -235,3 +284,26 @@ JVM tests for link parsing and API client with a fake server.
   re-subscribing polling at once, `Sent` refreshing the list immediately, a rejected magnet shown
   once (`noticeShown`) without a refresh, magnet-less text and a send with no TV reported through
   the notice and never sent, and a notice set while `Loading` surviving the first poll.
+- `share/SharedTextTest` (#199): plain JVM assertions, no coroutine and no fake -- `EXTRA_TEXT` for
+  `ACTION_SEND` with a data string ignored, `dataString` for `ACTION_VIEW` with an extra text
+  ignored, a foreign action (`MAIN`, the empty one) and a null action carrying nothing, a missing
+  extra carrying nothing for either action, text handed over untrimmed and unfiltered, and the two
+  constants being the platform's own action strings.
+- `share/ShareViewModelTest` (#199): JVM, `runTest` with `Dispatchers.setMain` over a
+  `StandardTestDispatcher` -- not the `UnconfinedTestDispatcher` the other ViewModel tests use,
+  because queueing the send instead of running it inside the constructor is the only way to see
+  `Sending` before `Done` -- with `FakeTvApi`, `InMemoryPairedTvStore` and a real `MagnetSender`.
+  Covers: `Sending` with no API call yet, then the magnet posted with the stored base URL and token
+  and `Done(Sent)`; the send completing with nobody collecting the state; a second collection seeing
+  `Done` again without a second send; shared text without a magnet and a share that carried no text
+  at all both `NoMagnet` and never reaching the TV; no stored TV `NotPaired` and
+  `Failed(Unauthorized)` `NeedsPairing` with the store cleared, both offering to open the app; and
+  `Failed(Network)` `Unreachable`, offering nothing, with the TV left stored.
+- Manual check, the human's (#199): the share flow itself is not automated here -- no `adb`, no
+  instrumented test. With the TV running and paired in the phone app, both on the same LAN, open a
+  `magnet:` link in the phone's browser, or select one on a page or in a chat and
+  `Share -> Movie Assistant`: the `Movie Assistant` dialog appears over the app it was shared from,
+  reads `Enviando a la TV...` and then `Enviado a <tvName>`, `CERRAR` returns to that app, and the
+  torrent is in the TV's `Descargas`. Rotating the phone while it sends shows the same dialog and
+  adds the torrent once, not twice. With no TV paired the dialog reads `Empareja primero la TV` and
+  offers `ABRIR MOVIE ASSISTANT`, which opens the app where a TV can be paired.
