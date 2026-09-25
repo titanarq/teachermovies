@@ -71,6 +71,9 @@ ktor-server-test-host = { group = "io.ktor", name = "ktor-server-test-host", ver
 # test drives a real `embeddedServer` on a loopback port with a real client engine instead.
 ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
 ktor-client-cio = { group = "io.ktor", name = "ktor-client-cio", version.ref = "ktor" }
+# :mobile-app (#196, ADR-0004 "Ktor client in `:mobile-app`"): the phone app's TV API client decodes
+# JSON through the client-side ContentNegotiation plugin (with `ktor-serialization-kotlinx-json`).
+ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
 
 # Native libraries (ADR-0001): :torrent -- #51, :player -- #75
 jlibtorrent = { group = "com.frostwire", name = "jlibtorrent", version.ref = "jlibtorrent" }
