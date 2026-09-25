@@ -84,7 +84,7 @@ gh api -X PUT repos/titanarq/teachermovies/interaction-limits -f limit=collabora
 
 ## Known mechanism issues
 
-Fixed upstream and pulled with the agent-os subtree at 36985fc, or 4319091 / 5a2da21 where noted
+Fixed upstream and pulled with the agent-os subtree at 36985fc, or 4319091 / 5a2da21 / d837886 where noted
 (`agent_os/docs/CHANGELOG.md`); their host workarounds are gone:
 
 - agent-os#14 board item resolution -- fixed (PR #26); `board_sync.py` kept for the reasons above.
@@ -124,6 +124,14 @@ Fixed upstream and pulled with the agent-os subtree at 36985fc, or 4319091 / 5a2
   idle worker worktree is read by the guard: that backend's ready issues leave the dispatchable set
   and the human is paged once with `project.messages.backend_worktree_dirty`. The `scratchpad/`
   entry in the shared `.git/info/exclude` is gone.
+
+- agent-os#88 the rendered control-plane Duty 4 merged with `gh pr merge --merge`, not the
+  human's squash-via-REST rule, so PR #242 hand-edited `.claude/agents/control-plane.md` and any
+  `agent-os-install --force` would have reverted it -- fixed (PR #89; pulled at d837886). The
+  method is now `project.merge_method` in `config/agents.yaml`, set to `squash`, and Duty 4 is
+  rendered as `gh api -X PUT .../pulls/N/merge -f merge_method=squash -f sha=<verified head>`;
+  `.claude/agents/control-plane.md` is again exactly what `agent-os-install --force` renders.
+  Subtree-pull PRs themselves are the exception: merge those with a merge commit, never squash.
 
 `project.install_host_ci` is `false` in `config/agents.yaml`: `ci.yml` already runs
 `scripts/test.sh` on every pull request (GitHub-hosted), so `agent-os-install` must not add the

@@ -25,6 +25,9 @@ project:
   # ci.yml already runs scripts/test.sh (with the JDK/Android SDK it needs) on every pull request,
   # GitHub-hosted; the generic ci-host.yml template would only duplicate it without the toolchain.
   install_host_ci: false
+  # The human's merge rule: squash merge via REST (agent-os#88), rendered into Duty 4 of the
+  # installed .claude/agents/control-plane.md.
+  merge_method: squash
   prompt_extras:
     worker: config/agent_prompts/worker.md
     refiner: config/agent_prompts/refiner.md
