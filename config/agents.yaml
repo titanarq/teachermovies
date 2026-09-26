@@ -148,6 +148,23 @@ classes:
     commit_warn_turns: 25
     commit_cut_turns: 90
     qwen_fallback_eligible: false
+  # Complex worker tasks on Claude Opus (the human's decision of 2026-09-26: simple work on Qwen,
+  # complex work on Opus). This is the reversal agent_os's 2026-09-16 "workers run on Qwen and
+  # Claude only reviews" ADR prices at one class here plus the refiner's class rule
+  # (config/agent_prompts/refiner.md). max_context 400k keeps a stage process under the human's
+  # 500k-per-agent cap; the dollar ceiling is the notional API-equivalent Claude Code reports
+  # (the runs are paid by the subscription window the roles share). Turn cadence as the Qwen
+  # worker classes. qwen_fallback_eligible: true -- a Claude quota wall redispatches the issue on
+  # Qwen (as complex-qwen used to run it) instead of paging and waiting for the window to reset.
+  complex-claude:
+    backend: claude
+    model: claude-opus-5-5
+    max_context: 400000
+    max_cost_usd: 25.0
+    max_total_tokens: 40000000
+    commit_warn_turns: 25
+    commit_cut_turns: 90
+    qwen_fallback_eligible: true
   planner:
     role: planner
     backend: claude
