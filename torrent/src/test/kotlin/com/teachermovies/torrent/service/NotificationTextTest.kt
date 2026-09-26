@@ -4,6 +4,9 @@ import com.teachermovies.core.model.DownloadState
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.torrent.api.TorrentSnapshot
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NotificationTextTest {
@@ -70,6 +73,34 @@ class NotificationTextTest {
     fun `only completed torrents shows no active downloads`() {
         val done = snapshot("a", state = DownloadState.Completed, downloaded = 100, total = 100)
         assertEquals("Sin descargas activas", NotificationText.format(listOf(done)))
+    }
+
+    @Test
+    fun `nothing downloading means the idle title and the idle text, never a contradiction`() {
+        val idle =
+            listOf(
+                emptyList(),
+                listOf(snapshot("a", state = DownloadState.Completed, downloaded = 100, total = 100)),
+                listOf(snapshot("b", state = DownloadState.Error, downloaded = 10, total = 100)),
+                listOf(
+                    snapshot("c", state = DownloadState.Completed, downloaded = 100, total = 100),
+                    snapshot("d", state = DownloadState.Error),
+                ),
+            )
+        idle.forEach { snapshots ->
+            assertFalse(NotificationText.hasActiveDownloads(snapshots))
+            assertEquals("Sin descargas activas", NotificationText.format(snapshots))
+        }
+    }
+
+    @Test
+    fun `every unfinished state means the downloading title and a text that is not the idle one`() {
+        val unfinished = DownloadState.entries.filter { it != DownloadState.Completed && it != DownloadState.Error }
+        unfinished.forEach { state ->
+            val snapshots = listOf(snapshot("a", state = state))
+            assertTrue("$state should download", NotificationText.hasActiveDownloads(snapshots))
+            assertNotEquals("Sin descargas activas", NotificationText.format(snapshots))
+        }
     }
 
     @Test

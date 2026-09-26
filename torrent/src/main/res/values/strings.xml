@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- TorrentService's foreground notification (#54). -->
+    <!-- TorrentService's foreground notification (#54). The title follows the state the text
+         reports (#250): `Descargando` only while something downloads, a neutral label otherwise, so
+         the two halves never contradict each other. -->
     <string name="torrent_notification_channel_name">Descargas</string>
-    <string name="torrent_notification_title">Descargando</string>
+    <string name="torrent_notification_title_downloading">Descargando</string>
+    <string name="torrent_notification_title_idle">Descargas</string>
 </resources>
