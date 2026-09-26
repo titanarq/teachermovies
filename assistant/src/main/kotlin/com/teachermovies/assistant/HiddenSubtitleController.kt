@@ -65,7 +65,9 @@ sealed interface HiddenModeResult {
  *
  * A choice the viewer made in an earlier session and persisted for the movie (#248) counts as a
  * viewer choice too: passed to [start] as `viewerSubtitleId`, that track is never turned off, so
- * the playback session can re-apply it on reopen while hidden mode keeps reading the cues.
+ * the playback session can re-apply it on reopen while hidden mode keeps reading the cues; any other
+ * track selected meanwhile (libVLC's own default while it starts the media) is reverted to that
+ * track instead of to off.
  *
  * Embedded tracks are extracted under `<cacheDir>/subtitles` and reused by later sessions for the
  * same movie; nothing here deletes them.
@@ -102,7 +104,8 @@ class HiddenSubtitleController(
      *
      * [viewerSubtitleId] is the subtitle track the viewer chose for this movie in an earlier session
      * (the persisted id, null = none): selecting it is left alone -- at start and while [active] --
-     * so it survives a reopen (#248); any other track is still turned off. Whether it actually gets
+     * so it survives a reopen (#248); any other track is reverted to it (or turned off when the
+     * player does not list it). Whether it actually gets
      * selected is up to whoever re-applies the persisted choice (the playback session's track
      * policy), before or after this call.
      *
@@ -141,15 +144,11 @@ class HiddenSubtitleController(
         engine.load(track)
         // The viewer's persisted choice may already be applied: selecting null here would both hide
         // it and let the session persist that null over it (#248).
-        if (player.selectedSubtitleId.value != viewerSubtitleId) player.selectSubtitle(null)
+        revertUnlessViewerChoice(player.selectedSubtitleId.value, viewerSubtitleId)
         mutableActive.value = true
         reassertJob =
             scope.launch {
-                player.selectedSubtitleId.collect { id ->
-                    if (id != null && id != viewerSubtitleId) {
-                        player.selectSubtitle(null)
-                    }
-                }
+                player.selectedSubtitleId.collect { id -> revertUnlessViewerChoice(id, viewerSubtitleId) }
             }
 
         return HiddenModeResult.Started(source)
@@ -181,6 +180,29 @@ class HiddenSubtitleController(
         reassertJob = null
         engine.load(null)
         mutableActive.value = false
+    }
+
+    /**
+     * Undoes a subtitle selection [selected] that is neither off nor [viewerSubtitleId]: back to the
+     * viewer's track when there is one and the player lists it, otherwise off.
+     *
+     * Going back to the viewer's track rather than off matters on reopen (#248): while libVLC starts
+     * the media it briefly reports its own default subtitle -- after the session has already asked
+     * for the stored one -- and turning that off would also cancel the stored track, since libVLC
+     * applies the last request. A viewer track the player refuses falls back to off, so hidden mode
+     * never leaves a track on screen that nobody chose.
+     */
+    private fun revertUnlessViewerChoice(
+        selected: String?,
+        viewerSubtitleId: String?,
+    ) {
+        if (selected == null || selected == viewerSubtitleId) return
+        val restorable = viewerSubtitleId != null && player.subtitleTracks.value.any { it.id == viewerSubtitleId }
+        if (restorable) {
+            player.selectSubtitle(viewerSubtitleId)
+            if (player.selectedSubtitleId.value == viewerSubtitleId) return
+        }
+        player.selectSubtitle(null)
     }
 
     /**
