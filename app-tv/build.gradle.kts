@@ -12,6 +12,11 @@ android {
         applicationId = "com.teachermovies.tv"
         minSdk = 26
         targetSdk = 35
+        // `AppContainer.appVersion` reads `PackageInfo.versionName`, and `GET /api/status` reports
+        // that; with no `versionName` here it is null on every build and the route answers
+        // "unknown" (#251). A fixed value until a release scheme exists.
+        versionCode = 1
+        versionName = "1.0.0"
 
         // Native ABIs packaged for jlibtorrent/libVLC (docs/modules/infra.md); x86 is left out.
         ndk {
