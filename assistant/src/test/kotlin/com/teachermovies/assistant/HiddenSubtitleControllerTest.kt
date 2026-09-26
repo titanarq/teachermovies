@@ -175,6 +175,48 @@ class HiddenSubtitleControllerTest {
         }
 
     @Test
+    fun `a default track the player reports after the persisted choice goes back to that choice, not off`() =
+        runTest {
+            // #248 (emulator, reopen without a restart): libVLC briefly reads back its own default
+            // subtitle after the session asked for the stored one; turning it off would cancel both.
+            writeSubtitle("movie.en.srt")
+            val player = FakePlayer()
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            controller.start(mediaFile, viewerSubtitleId = "sub-2")
+            runCurrent()
+            player.emitTracks(
+                audio = emptyList(),
+                subs = listOf(Track("sub-1", "English", "en"), Track("sub-2", "", "es")),
+            )
+            player.selectSubtitle("sub-2")
+            runCurrent()
+
+            player.selectSubtitle("sub-1")
+            runCurrent()
+
+            assertEquals("sub-2", player.selectedSubtitleId.value)
+            assertTrue(controller.active.value)
+        }
+
+    @Test
+    fun `a default track is turned off when the persisted choice is not one of the player's tracks`() =
+        runTest {
+            writeSubtitle("movie.en.srt")
+            val player = FakePlayer()
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-1", "English", "en")))
+            controller.start(mediaFile, viewerSubtitleId = "sub-9")
+            runCurrent()
+
+            player.selectSubtitle("sub-1")
+            runCurrent()
+
+            assertNull(player.selectedSubtitleId.value)
+        }
+
+    @Test
     fun `after a viewer choice the assistant still reads and captures lines`() =
         runTest {
             writeSubtitle("movie.en.srt")
