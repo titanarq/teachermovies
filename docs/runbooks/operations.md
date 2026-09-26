@@ -137,6 +137,28 @@ Fixed upstream and pulled with the agent-os subtree at 36985fc, or 4319091 / 5a2
 `scripts/test.sh` on every pull request (GitHub-hosted), so `agent-os-install` must not add the
 generic `ci-host.yml` (agent-os#50).
 
+## To report upstream (titanarq/agent-os)
+
+- **Worker-class fallback Qwen -> Claude on Qwen quota exhaustion.** The human's rule
+  (2026-09-26): a task on a Qwen worker class (`mechanical-qwen`, `complex-qwen`) may move to
+  Opus (`claude` / `claude-opus-5-5`) when Qwen's quota is exhausted; an Opus task
+  (`complex-claude`) must never fall back to Qwen. agent_os cannot express the first half today:
+  `TaskClass.fallback:` parses on any class, but only the one-shot role drivers
+  (`agent_os/bin/agent_task.sh`, `planner_task.sh`, through `agent_os.lib role-backend`) read it
+  at launch; `worker_task.sh` never does, and `qwen_fallback_eligible` only authorises the
+  planner's Claude -> Qwen redispatch. Declaring `fallback:` on a Qwen worker class would be
+  inert for the launch and would also make `allows_backend_fallback` true, silencing the guard's
+  `quota_exhausted_no_fallback` page for a run nothing can reroute. So the Qwen classes stay
+  without a fallback until agent_os supports a worker launch gate (or a planner redispatch in the
+  Qwen -> Claude direction).
+- **The control plane's prompt forbids Claude worker classes.** `agent_os/agents/control-plane.md`
+  (rendered to `.claude/agents/control-plane.md`) says never to assign a worker task to a Claude
+  backend, although this project now defines a Claude worker class (`complex-claude`), so every
+  issue the control plane writes gets a Qwen class. Neither file is edited here. Workaround until
+  upstream fixes it: the control plane keeps writing Qwen classes; the refiner (whose class rule
+  in `config/agent_prompts/refiner.md` lists `complex-claude`) or an explicit human decision may
+  assign `complex-claude`.
+
 ## Refiner
 
 `config/agents.yaml`'s `refiner_unattended` is `true`: the refiner runs unattended. First
