@@ -16,9 +16,27 @@ import androidx.lifecycle.lifecycleScope
 import com.teachermovies.torrent.R
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.TorrentEngine
+import com.teachermovies.torrent.api.TorrentSnapshot
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+
+/**
+ * The notification's two halves (#250), both read from the same snapshot list: [downloading] picks
+ * which title string is rendered and [text] is [NotificationText.format]'s line, so the title can
+ * never claim a download the text denies. The service re-posts only when this value changes.
+ */
+private data class NotificationContent(
+    val downloading: Boolean,
+    val text: String,
+)
+
+/** Both halves out of one [snapshots] value, so they describe the same instant of the engine. */
+private fun notificationContent(snapshots: List<TorrentSnapshot>): NotificationContent =
+    NotificationContent(
+        downloading = NotificationText.hasActiveDownloads(snapshots),
+        text = NotificationText.format(snapshots),
+    )
 
 /**
  * The foreground service that keeps downloads running while the player or another app is in
@@ -55,7 +73,7 @@ class TorrentService : LifecycleService() {
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
-            notification(NotificationText.NO_ACTIVE_DOWNLOADS),
+            notification(NotificationContent(downloading = false, text = NotificationText.NO_ACTIVE_DOWNLOADS)),
             ForegroundServiceTypes.forSdk(Build.VERSION.SDK_INT),
         )
 
@@ -74,14 +92,14 @@ class TorrentService : LifecycleService() {
         }
         lifecycleScope.launch {
             engine.torrents
-                .map(NotificationText::format)
+                .map(::notificationContent)
                 .distinctUntilChanged()
                 .throttleLatest(NOTIFICATION_PERIOD_MILLIS)
-                .collect { text ->
+                .collect { content ->
                     // Without POST_NOTIFICATIONS (Android 13+) the notification is simply hidden.
                     if (notifications.areNotificationsEnabled()) {
                         @Suppress("MissingPermission")
-                        notifications.notify(NOTIFICATION_ID, notification(text))
+                        notifications.notify(NOTIFICATION_ID, notification(content))
                     }
                 }
         }
@@ -124,7 +142,13 @@ class TorrentService : LifecycleService() {
         super.onDestroy()
     }
 
-    private fun notification(text: String): Notification {
+    private fun notification(content: NotificationContent): Notification {
+        val title =
+            if (content.downloading) {
+                R.string.torrent_notification_title_downloading
+            } else {
+                R.string.torrent_notification_title_idle
+            }
         val launch =
             packageManager.getLeanbackLaunchIntentForPackage(packageName)
                 ?: packageManager.getLaunchIntentForPackage(packageName)
@@ -135,8 +159,8 @@ class TorrentService : LifecycleService() {
         return NotificationCompat
             .Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle(getString(R.string.torrent_notification_title))
-            .setContentText(text)
+            .setContentTitle(getString(title))
+            .setContentText(content.text)
             .setContentIntent(contentIntent)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setOngoing(true)

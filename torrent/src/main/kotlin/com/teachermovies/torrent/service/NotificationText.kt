@@ -10,7 +10,9 @@ import java.util.Locale
 
 /**
  * The text of the foreground download notification, e.g. `2 descargas · 45 % · 8,3 MB/s` or
- * `Sin descargas activas`. Pure, so it is covered by a JVM test; [TorrentService] only renders it.
+ * `Sin descargas activas`, plus [hasActiveDownloads], which picks its title (#250). Pure, so both
+ * are covered by a JVM test; [TorrentService] only renders them, and asks for both from the same
+ * snapshot list so the title can never claim a download the text denies.
  *
  * A torrent is *active* unless it is [DownloadState.Completed] or [DownloadState.Error]. The
  * percentage is the active torrents' combined progress (downloaded over total bytes, rounded down
@@ -27,6 +29,13 @@ object NotificationText {
     private val INACTIVE = setOf(DownloadState.Completed, DownloadState.Error)
     private val UNITS = listOf("B/s", "kB/s", "MB/s", "GB/s")
     private val THOUSAND = BigDecimal(1_000)
+
+    /**
+     * Whether anything is still downloading, which is what picks the notification's title (#250).
+     * False exactly when [format] returns [NO_ACTIVE_DOWNLOADS], since both apply [INACTIVE], so no
+     * state renders a title that claims a download next to a text that denies one.
+     */
+    fun hasActiveDownloads(snapshots: List<TorrentSnapshot>): Boolean = snapshots.any { it.state !in INACTIVE }
 
     fun format(snapshots: List<TorrentSnapshot>): String {
         val active = snapshots.filter { it.state !in INACTIVE }
