@@ -10,6 +10,12 @@
   **Every `/api/*` endpoint requires `Authorization: Bearer <token>` except `GET /api/status` and
   `POST /api/pair`** -- reads (`/api/torrents*`, `/api/library`) included. Missing/invalid token ->
   401 `{"error":"unauthorized"}` + `WWW-Authenticate: Bearer`.
+- Token scopes (#270, ADR-0005 §4): a token is issued for `phone` (the default, and what the phone
+  and the bundled web UI use) or for `bridge` (a laptop bridge). Its hash is stored in that scope's
+  own set (`AppSettings.authTokenHashes` / `AppSettings.bridgeTokenHashes`), and every protected
+  route names the scopes it accepts: a bridge token reaches only `/api/bridge/*` (#275) and
+  `/api/logs*` (#269, ADR-0006 §4), and is 401 on every phone route, just as a phone token is 401
+  on `/api/bridge/*`. Clearing the phone hashes revokes the phones only ("Olvidar portátil" is #289).
 - `GET /api/events` (SSE) also requires the token; because `EventSource` cannot set headers, this
   route alone also accepts `?token=<token>`. Every other route ignores/rejects a query-param token.
   Logs redact both the header and the `token` query parameter.
@@ -39,16 +45,25 @@
   Ktor fills with a reverse-resolved name when one exists (`127.0.0.1` arrives as `localhost`, a
   DHCP client as e.g. `android-phone.lan`) and so would be refused (#221); only when `ServerDeps.allowTestRemoteHeader` is `true` does an
   `X-Test-Remote` request header override that address, for route tests.
+- `com.teachermovies.http.auth.TokenScope`: `PHONE` | `BRIDGE`, with the `wireValue` (`phone`,
+  `bridge`) that `POST /api/pair` accepts in its `scope` field and echoes back, and
+  `TokenScope.fromWireValue(scope)` returning null for anything else (#270).
 - `com.teachermovies.http.auth.PairingManager(settings: SettingsRepository, random: SecureRandom,
   clock: () -> Long)`: `currentPin()` (6 digits, zero-padded; new every 10 min and after each
-  successful pairing), `suspend pair(pin): PairResult` (`Paired(token)` | `WrongPin` |
-  `TooManyAttempts` once 5 wrong PINs fall within 60 s), `suspend isValid(token)`. Tokens are 32
-  random bytes, base64url without padding; only their SHA-256 hex is persisted
-  (`SettingsRepository.addAuthTokenHash`), so they survive restarts.
-- `POST /api/pair` (public) body `{"pin":"482916","deviceName":"..."}` -> 200 `{"token":"..."}` |
-  400 `bad_request` | 401 `wrong_pin` | 429 `too_many_attempts`.
-- `fun Route.requireBearer(pairing, allowQueryToken = false) { ... }` wraps every protected route:
-  missing/invalid token -> 401 `unauthorized` + `WWW-Authenticate: Bearer`, handler not run. Only
+  successful pairing), `suspend pair(pin, scope = PHONE): PairResult` (`Paired(token)` | `WrongPin` |
+  `TooManyAttempts` once 5 wrong PINs fall within 60 s), `suspend scopeOf(token): TokenScope?` --
+  the scope a pairing issued the token with, or null for a token none issued. Tokens are 32
+  random bytes, base64url without padding; only their SHA-256 hex is persisted, in
+  `SettingsRepository.addAuthTokenHash` for a phone token and `addBridgeTokenHash` for a bridge
+  one, so they survive restarts and each scope's set can be cleared on its own.
+- `POST /api/pair` (public) body `{"pin":"482916","deviceName":"...","scope":"phone"}` -> 200
+  `{"token":"...","scope":"phone"}` | 400 `bad_request` (also for a `scope` that is not `phone` or
+  `bridge`, which pairs nothing and leaves the PIN usable) | 401 `wrong_pin` | 429
+  `too_many_attempts`. `scope` may be omitted, which means `phone`.
+- `fun Route.requireBearer(pairing, scopes, allowQueryToken = false) { ... }` wraps every protected
+  route: a missing/invalid token, or one whose scope is not in `scopes`, -> 401 `unauthorized` +
+  `WWW-Authenticate: Bearer`, handler not run. Phone routes pass `setOf(TokenScope.PHONE)`;
+  `/api/bridge/*` will pass `setOf(TokenScope.BRIDGE)` (#275) and `/api/logs*` both (#269). Only
   `/api/events` passes `allowQueryToken = true`. `redactTokenQuery(uri)` is what any request
   logging must apply (and it must never log the `Authorization` header).
 - `GET /api/status` (public) -> 200
@@ -127,9 +142,10 @@
 - Phone web UI (#63, `WebUiRoutes.kt`), public: `GET /` -> 200 `text/html` (`web/index.html`),
   `GET /static/<file>` -> any file under `src/main/resources/web/` (`app.js`, `app.css`) via
   `staticResources`; vanilla JS, no build step, no external resources. The page pairs with
-  `POST /api/pair` when `localStorage` holds no token, sends `Authorization: Bearer` on every
-  protected call (a 401 clears the token and shows the PIN form), follows `/api/events?token=` and
-  falls back to polling `GET /api/torrents` every 3 s when the stream fails. Each download row
+  `POST /api/pair` when `localStorage` holds no token (it sends no `scope`, so its token is
+  `phone`-scoped), sends `Authorization: Bearer` on every protected call (a 401 clears the token
+  and shows the PIN form), follows `/api/events?token=` and falls back to polling
+  `GET /api/torrents` every 3 s when the stream fails. Each download row
   (#64) also has `SUBIR SUBTÍTULO` (file input `.srt,.ass,.ssa,.vtt` -> multipart
   `POST /api/subtitles` with `torrentId` + `file`) and `BORRAR` (a `<dialog>` with the checkbox
   `Borrar también los archivos` -> `DELETE /api/torrents/{id}?deleteFiles=true|false`); results

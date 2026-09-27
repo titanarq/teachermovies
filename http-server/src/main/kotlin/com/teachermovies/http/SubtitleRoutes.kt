@@ -1,6 +1,7 @@
 package com.teachermovies.http
 
 import com.teachermovies.core.model.TorrentId
+import com.teachermovies.http.auth.TokenScope
 import com.teachermovies.http.auth.requireBearer
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
@@ -40,7 +41,7 @@ data class SubtitleUploadResponse(
  * [ServerDeps.subtitles] so the player can later load it (#77).
  */
 internal fun Route.subtitleRoutes(deps: ServerDeps) {
-    requireBearer(deps.pairing) {
+    requireBearer(deps.pairing, setOf(TokenScope.PHONE)) {
         post("/api/subtitles") {
             when (val upload = call.receiveSubtitleUpload()) {
                 SubtitleUpload.Missing -> {

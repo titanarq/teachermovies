@@ -4,6 +4,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -14,7 +15,8 @@ class PairingManagerTest {
 
     private fun wrongPin(): String = ((manager.currentPin().toInt() + 1) % 1_000_000).toString().padStart(6, '0')
 
-    private suspend fun pairedToken(): String = (manager.pair(manager.currentPin()) as PairResult.Paired).token
+    private suspend fun pairedToken(scope: TokenScope = TokenScope.PHONE): String =
+        (manager.pair(manager.currentPin(), scope) as PairResult.Paired).token
 
     @Test
     fun `pin is six zero-padded digits and stable within its lifetime`() {
@@ -112,10 +114,10 @@ class PairingManagerTest {
         runTest {
             val token = pairedToken()
 
-            assertTrue(manager.isValid(token))
-            assertFalse(manager.isValid(token + "x"))
-            assertFalse(manager.isValid(""))
-            assertFalse(manager.isValid(PairingManager.sha256Hex(token)))
+            assertEquals(TokenScope.PHONE, manager.scopeOf(token))
+            assertNull(manager.scopeOf(token + "x"))
+            assertNull(manager.scopeOf(""))
+            assertNull(manager.scopeOf(PairingManager.sha256Hex(token)))
         }
 
     @Test
@@ -127,8 +129,8 @@ class PairingManagerTest {
 
             val restarted = PairingManager(settings, CountingSecureRandom(), FakeClock())
 
-            assertTrue(restarted.isValid(first))
-            assertTrue(restarted.isValid(second))
+            assertEquals(TokenScope.PHONE, restarted.scopeOf(first))
+            assertEquals(TokenScope.PHONE, restarted.scopeOf(second))
         }
 
     @Test
@@ -137,6 +139,59 @@ class PairingManagerTest {
             val token = pairedToken()
             settings.clearAuthTokenHashes()
 
-            assertFalse(manager.isValid(token))
+            assertNull(manager.scopeOf(token))
+        }
+
+    @Test
+    fun `pairing without a scope issues a phone token`() =
+        runTest {
+            val result = manager.pair(manager.currentPin())
+
+            val token = (result as PairResult.Paired).token
+            assertEquals(setOf(PairingManager.sha256Hex(token)), settings.current.authTokenHashes)
+            assertTrue(settings.current.bridgeTokenHashes.isEmpty())
+            assertEquals(TokenScope.PHONE, manager.scopeOf(token))
+        }
+
+    @Test
+    fun `bridge pairing stores its hash apart from the phone hashes`() =
+        runTest {
+            val bridgeToken = pairedToken(TokenScope.BRIDGE)
+            val phoneToken = pairedToken(TokenScope.PHONE)
+            assertNotEquals(bridgeToken, phoneToken)
+
+            assertEquals(setOf(PairingManager.sha256Hex(bridgeToken)), settings.current.bridgeTokenHashes)
+            assertEquals(setOf(PairingManager.sha256Hex(phoneToken)), settings.current.authTokenHashes)
+            assertEquals(TokenScope.BRIDGE, manager.scopeOf(bridgeToken))
+            assertEquals(TokenScope.PHONE, manager.scopeOf(phoneToken))
+        }
+
+    @Test
+    fun `a bridge token survives a restart in its own scope`() =
+        runTest {
+            val bridgeToken = pairedToken(TokenScope.BRIDGE)
+
+            val restarted = PairingManager(settings, CountingSecureRandom(), FakeClock())
+
+            assertEquals(TokenScope.BRIDGE, restarted.scopeOf(bridgeToken))
+        }
+
+    @Test
+    fun `clearing the phone hashes leaves a bridge token alone`() =
+        runTest {
+            val bridgeToken = pairedToken(TokenScope.BRIDGE)
+            pairedToken(TokenScope.PHONE)
+            settings.clearAuthTokenHashes()
+
+            assertEquals(TokenScope.BRIDGE, manager.scopeOf(bridgeToken))
+        }
+
+    @Test
+    fun `a wrong pin pairs no bridge token`() =
+        runTest {
+            assertEquals(PairResult.WrongPin, manager.pair(wrongPin(), TokenScope.BRIDGE))
+
+            assertTrue(settings.current.bridgeTokenHashes.isEmpty())
+            assertTrue(manager.pair(manager.currentPin(), TokenScope.BRIDGE) is PairResult.Paired)
         }
 }

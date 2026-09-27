@@ -1,5 +1,6 @@
 package com.teachermovies.http
 
+import com.teachermovies.http.auth.TokenScope
 import com.teachermovies.http.auth.requireBearer
 import com.teachermovies.http.dto.toDto
 import io.ktor.server.response.respond
@@ -13,7 +14,7 @@ import kotlinx.coroutines.flow.first
  * (ADR-0002).
  */
 internal fun Route.libraryRoutes(deps: ServerDeps) {
-    requireBearer(deps.pairing) {
+    requireBearer(deps.pairing, setOf(TokenScope.PHONE)) {
         get("/api/library") {
             call.respond(
                 deps.library

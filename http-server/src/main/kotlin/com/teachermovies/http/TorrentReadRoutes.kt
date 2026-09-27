@@ -1,6 +1,7 @@
 package com.teachermovies.http
 
 import com.teachermovies.core.model.TorrentId
+import com.teachermovies.http.auth.TokenScope
 import com.teachermovies.http.auth.requireBearer
 import com.teachermovies.http.dto.toDto
 import com.teachermovies.torrent.api.EngineResult
@@ -16,7 +17,7 @@ import io.ktor.server.routing.get
  * three require a bearer token (ADR-0002); mutating routes (`POST`/`PUT`/`DELETE`) are #60.
  */
 internal fun Route.torrentReadRoutes(deps: ServerDeps) {
-    requireBearer(deps.pairing) {
+    requireBearer(deps.pairing, setOf(TokenScope.PHONE)) {
         get("/api/torrents") {
             call.respond(
                 deps.engine.torrents.value
