@@ -174,6 +174,20 @@ generic `ci-host.yml` (agent-os#50).
   the next planner pass launches it as ordinary pending work with the review as context;
   or, files a follow-up task on the PR's branch; or fixes it directly on the PR.
 
+- **A stage whose deliverable is a merge commit can never be closed.** Found on #267 / PR #298
+  (2026-09-27, 18:31 UTC): stage 3/3 asked the worker to merge `origin/main` into the PR branch
+  and resolve a conflict, "one commit (the merge commit)". The worker did exactly that (merge
+  commit `stage 3/3: ...`, tests green), but `agent_os/bin/worker_task.sh`
+  (`resolve_stage_context`) counts stages with `git log --first-parent --no-merges`, so the merge
+  commit is invisible to the counter; `stage-exit` saw 2/3, wrote
+  `CUT_BY_GUARD reason=no_stage_commit` and nothing was pushed. A regular commit carrying the
+  resolved text instead of the merge does not help either: `open-pr` merges the base before
+  pushing and conflicts again on the same hunk. Workaround until agent_os counts a merge commit
+  whose subject is `stage N/M: ...` (or offers a "merge the base" stage kind): word such a stage as
+  "merge the base if `git merge-base --is-ancestor origin/<base> HEAD` fails, resolving as
+  quoted; then close the stage with `git commit --allow-empty` and the `stage N/M:` subject; no
+  rebase, reset or force push" (as #267's stage 3/3 now reads).
+
 - **The validator can approve a PR having run only the module test named in the Definition
   of done, not the full `scripts/test.sh`.** Found on #294 / PR #307 (2026-09-27): the
   validator approved with only `:assistant:test` green; the new `spokenOutput` setting
