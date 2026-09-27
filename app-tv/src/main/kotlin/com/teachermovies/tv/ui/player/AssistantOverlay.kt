@@ -72,13 +72,13 @@ fun translationLine(translation: TranslationUiState): String? =
 /**
  * The captured-line overlay (#86): a dimmed band at the bottom of the video with the English
  * [AssistantOverlayState.text] in a large size, the hint line and a replaying indicator. Under the
- * English line (#92) it draws the Spanish translation or its status ([translationLine]), a
- * transient [AssistantOverlayState.message] and a discreet indicator while
+ * English line (#92) it draws the Spanish translation or its status ([translationLine]) with its
+ * [AssistantOverlayState.spanishLabel] ("subtítulo" or "IA", #288), a transient [AssistantOverlayState.message] and a discreet indicator while
  * [AssistantOverlayState.speaking].
  *
  * It takes focus as soon as it appears and maps every key-down through
  * [AssistantKeyMapper.map] with the overlay open, so OK/ENTER/PLAY_PAUSE replay, RIGHT speaks the
- * line, LEFT translates it, BACK/DOWN/CAPTIONS dismiss, and every other key is swallowed ([AssistantAction.Consumed]) -- key-ups included -- so
+ * line, LEFT shows it in Spanish, BACK/DOWN/CAPTIONS dismiss, and every other key is swallowed ([AssistantAction.Consumed]) -- key-ups included -- so
  * nothing behind it reacts. When it leaves composition the player screen takes focus back.
  */
 @Composable
@@ -122,6 +122,16 @@ fun AssistantOverlay(
                         MaterialTheme.typography.titleLarge
                     },
                 color = if (ready) Color(0xFFFFE082) else Color.White.copy(alpha = 0.85f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        // Where the Spanish line came from (#288): the aligned subtitle or the AI.
+        state.spanishLabel?.let { label ->
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = Color.White.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
