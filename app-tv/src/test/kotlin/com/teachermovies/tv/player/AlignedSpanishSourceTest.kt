@@ -50,7 +50,13 @@ class AlignedSpanishSourceTest {
     private fun srt(track: SubtitleTrack): String =
         track.cues.joinToString("\n") { "${it.index}\n${time(it.startMs)} --> ${time(it.endMs)}\n${it.text}\n" }
 
-    private fun time(ms: Long) = "%02d:%02d:%02d,%03d".format(ms / 3_600_000, ms / 60_000 % 60, ms / 1_000 % 60, ms % 1_000)
+    private fun time(ms: Long) =
+        "%02d:%02d:%02d,%03d".format(
+            ms / 3_600_000,
+            ms / 60_000 % 60,
+            ms / 1_000 % 60,
+            ms % 1_000,
+        )
 
     private fun movie(): File = tmp.newFolder("Movies", id.value).resolve("Film.mkv").apply { writeText("x") }
 
@@ -116,7 +122,11 @@ class AlignedSpanishSourceTest {
             val movie = movie()
             movie.resolveSibling("Film.en.srt").writeText(srt(english))
             movie.resolveSibling("Film.es.srt").writeText(srt(track("es")))
-            val downloadedFile = File(tmp.newFolder("downloads"), "film.os.es.srt").apply { writeText(srt(track("dl"))) }
+            val downloadedFile =
+                File(
+                    tmp.newFolder("downloads"),
+                    "film.os.es.srt",
+                ).apply { writeText(srt(track("dl"))) }
             downloaded(downloadedFile, variant = "latino")
             val embeddedFile = tmp.newFile("Film.3.srt")
 
@@ -127,7 +137,13 @@ class AlignedSpanishSourceTest {
                 found.map { it.candidate.source },
             )
             assertEquals(movie.resolveSibling("Film.es.srt").absolutePath, found[0].candidate.path)
-            assertEquals("es-0", found[0].candidate.track.cues.first().text)
+            assertEquals(
+                "es-0",
+                found[0]
+                    .candidate.track.cues
+                    .first()
+                    .text,
+            )
             assertEquals(listOf(false, false, true), found.map { it.latino })
         }
 
@@ -136,7 +152,11 @@ class AlignedSpanishSourceTest {
         runTest {
             val movie = movie()
 
-            val found = finder(EmbeddedSubtitle(tmp.newFile("Film.2.srt"), track("emb")), embeddedLanguage = "spa").find(id, movie)
+            val found =
+                finder(
+                    EmbeddedSubtitle(tmp.newFile("Film.2.srt"), track("emb")),
+                    embeddedLanguage = "spa",
+                ).find(id, movie)
 
             assertEquals(listOf(SpanishSubtitleSource.EMBEDDED), found.map { it.candidate.source })
             assertEquals(listOf("es", "spa"), embeddedAsked)
@@ -170,7 +190,8 @@ class AlignedSpanishSourceTest {
     @Test
     fun `a well aligned Spanish track answers the captured cue`() =
         runTest {
-            val es = FoundSpanishSubtitle(candidate(SpanishSubtitleSource.SIDECAR, "/es.srt", track("es", shiftMs = 2_500)))
+            val es =
+                FoundSpanishSubtitle(candidate(SpanishSubtitleSource.SIDECAR, "/es.srt", track("es", shiftMs = 2_500)))
 
             val line = source(listOf(es)).lineFor(id, File("/m.mkv"), english.cues[30])
 
@@ -180,16 +201,32 @@ class AlignedSpanishSourceTest {
     @Test
     fun `the Latin-American download is flagged latino`() =
         runTest {
-            val es = FoundSpanishSubtitle(candidate(SpanishSubtitleSource.DOWNLOADED, "/lat.srt", track("lat")), latino = true)
+            val es =
+                FoundSpanishSubtitle(
+                    candidate(SpanishSubtitleSource.DOWNLOADED, "/lat.srt", track("lat")),
+                    latino = true,
+                )
 
-            assertEquals(AlignedSpanishLine("lat-12", latino = true), source(listOf(es)).lineFor(id, File("/m.mkv"), english.cues[12]))
+            assertEquals(
+                AlignedSpanishLine("lat-12", latino = true),
+                source(listOf(es)).lineFor(id, File("/m.mkv"), english.cues[12]),
+            )
         }
 
     @Test
     fun `no trustworthy alignment, no Spanish track or no hidden mode answer null`() =
         runTest {
             val unrelated =
-                SubtitleTrack((0 until 60).map { i -> SubtitleCue(i + 1, i * 9_100L + 300L * (i % 7), i * 9_100L + 300L * (i % 7) + 800L, "x-$i") })
+                SubtitleTrack(
+                    (0 until 60).map { i ->
+                        SubtitleCue(
+                            i + 1,
+                            i * 9_100L + 300L * (i % 7),
+                            i * 9_100L + 300L * (i % 7) + 800L,
+                            "x-$i",
+                        )
+                    },
+                )
             val bad = FoundSpanishSubtitle(candidate(SpanishSubtitleSource.SIDECAR, "/bad.srt", unrelated))
             val good = FoundSpanishSubtitle(candidate(SpanishSubtitleSource.SIDECAR, "/es.srt", track("es")))
 
@@ -217,5 +254,6 @@ class AlignedSpanishSourceTest {
         source: SpanishSubtitleSource,
         path: String,
         track: SubtitleTrack,
-    ) = com.teachermovies.assistant.alignment.SpanishSubtitleCandidate(source, path, track)
+    ) = com.teachermovies.assistant.alignment
+        .SpanishSubtitleCandidate(source, path, track)
 }

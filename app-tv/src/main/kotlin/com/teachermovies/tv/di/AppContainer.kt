@@ -9,9 +9,9 @@ import com.teachermovies.assistant.AssistantSpeechController
 import com.teachermovies.assistant.HiddenSubtitleController
 import com.teachermovies.assistant.LineCaptureController
 import com.teachermovies.assistant.SubtitleEngine
+import com.teachermovies.assistant.alignment.SpanishLineLookup
 import com.teachermovies.assistant.speech.AndroidTextToSpeechSpeaker
 import com.teachermovies.assistant.speech.Speaker
-import com.teachermovies.assistant.alignment.SpanishLineLookup
 import com.teachermovies.assistant.translation.BridgeTranslationProvider
 import com.teachermovies.assistant.translation.PersistentCachingTranslationProvider
 import com.teachermovies.assistant.translation.TranslationProvider
@@ -220,10 +220,12 @@ class AppContainer(
     private val speaker: Speaker = AndroidTextToSpeechSpeaker(application)
 
     /**
-     * The laptop bridge's job hub (#275, ADR-0005 §2): the one instance behind `/api/bridge/jobs`
-     * (passed to every server restart through [serverDeps]) and the one the assistant submits to.
+     * The laptop bridge's job hub (#275, ADR-0005 §2), one for the process: the instance behind
+     * `/api/bridge/jobs` (passed to every server restart through [serverDeps], so Configuración's
+     * "Portátil (Claude)" state (#289) does not reset with the server) and the one the assistant
+     * submits to.
      */
-    private val bridgeJobHub: BridgeJobHub = BridgeJobHub()
+    val bridgeJobHub: BridgeJobHub = BridgeJobHub()
 
     // LEFT's fallback when no Spanish subtitle aligns (#288): Claude on the laptop through the
     // bridge (#287), its real answers kept in Room. Without a bridge it answers `Unavailable` and
@@ -262,12 +264,6 @@ class AppContainer(
      */
     val pairingManager: PairingManager =
         PairingManager(settings = settingsRepository, random = SecureRandom(), clock = System::currentTimeMillis)
-
-    /**
-     * The laptop bridge's job hub (#275), one for the process: every server restart gets this same
-     * instance, so Configuración's "Portátil (Claude)" state (#289) does not reset with the server.
-     */
-    val bridgeJobHub: BridgeJobHub = BridgeJobHub()
 
     private val appVersion: String =
         runCatching { application.packageManager.getPackageInfo(application.packageName, 0).versionName }

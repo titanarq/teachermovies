@@ -26,8 +26,14 @@ class HubBridgeTranslateGatewayTest {
             assertEquals(BridgeTranslateOutcome.TimedOut, answer(BridgeOutcome.TimedOut))
             assertEquals(BridgeTranslateOutcome.Disconnected, answer(BridgeOutcome.Disconnected))
             assertEquals(BridgeTranslateOutcome.Disconnected, answer(BridgeOutcome.Replaced))
-            assertEquals(BridgeTranslateOutcome.BridgeError("daily_cap"), answer(BridgeOutcome.BridgeError("daily_cap", "cap reached")))
-            assertEquals(BridgeTranslateOutcome.BridgeError("line too long"), answer(BridgeOutcome.Rejected("line too long")))
+            assertEquals(
+                BridgeTranslateOutcome.BridgeError("daily_cap"),
+                answer(BridgeOutcome.BridgeError("daily_cap", "cap reached")),
+            )
+            assertEquals(
+                BridgeTranslateOutcome.BridgeError("line too long"),
+                answer(BridgeOutcome.Rejected("line too long")),
+            )
             assertEquals(BridgeJob.Translate("Hi."), bridge.submitted.first())
         }
 

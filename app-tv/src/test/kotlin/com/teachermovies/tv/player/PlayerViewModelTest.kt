@@ -817,7 +817,10 @@ class PlayerViewModelTest {
                 vm.uiState.value.assistant!!
                     .translation,
             )
-            assertNull(vm.uiState.value.assistant!!.spanishLabel)
+            assertNull(
+                vm.uiState.value.assistant!!
+                    .spanishLabel,
+            )
 
             advanceTimeBy(501)
             runCurrent()
@@ -863,7 +866,11 @@ class PlayerViewModelTest {
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
             runCurrent()
 
-            assertEquals(PlayerViewModel.LABEL_SUBTITLE_LATINO, vm.uiState.value.assistant!!.spanishLabel)
+            assertEquals(
+                PlayerViewModel.LABEL_SUBTITLE_LATINO,
+                vm.uiState.value.assistant!!
+                    .spanishLabel,
+            )
         }
 
     @Test
@@ -875,11 +882,19 @@ class PlayerViewModelTest {
 
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
             runCurrent()
-            assertEquals(TranslationUiState.Loading, vm.uiState.value.assistant!!.translation)
+            assertEquals(
+                TranslationUiState.Loading,
+                vm.uiState.value.assistant!!
+                    .translation,
+            )
 
             advanceTimeBy(301)
             runCurrent()
-            assertEquals(TranslationUiState.Ready("Hola, tú."), vm.uiState.value.assistant!!.translation)
+            assertEquals(
+                TranslationUiState.Ready("Hola, tú."),
+                vm.uiState.value.assistant!!
+                    .translation,
+            )
         }
 
     @Test
@@ -908,8 +923,15 @@ class PlayerViewModelTest {
             val vm = captured()
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
             runCurrent()
-            assertEquals(TranslationUiState.Failed(TranslationFailure.OFFLINE), vm.uiState.value.assistant!!.translation)
-            assertNull(vm.uiState.value.assistant!!.spanishLabel)
+            assertEquals(
+                TranslationUiState.Failed(TranslationFailure.OFFLINE),
+                vm.uiState.value.assistant!!
+                    .translation,
+            )
+            assertNull(
+                vm.uiState.value.assistant!!
+                    .spanishLabel,
+            )
 
             translations.translations["Hello there."] = "Hola."
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)

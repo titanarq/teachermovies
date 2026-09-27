@@ -377,12 +377,23 @@ class HiddenSubtitleControllerTest {
             writeSubtitle("movie.en.srt")
             val player = FakePlayer()
             val controller =
-                HiddenSubtitleController(player, SubtitleEngine(player.positionMs, backgroundScope), backgroundScope, cacheDir)
+                HiddenSubtitleController(
+                    player,
+                    SubtitleEngine(player.positionMs, backgroundScope),
+                    backgroundScope,
+                    cacheDir,
+                )
             assertNull(controller.track)
 
             controller.start(mediaFile)
             runCurrent()
-            assertEquals("Hello there.", controller.track?.cues?.first()?.text)
+            assertEquals(
+                "Hello there.",
+                controller.track
+                    ?.cues
+                    ?.first()
+                    ?.text,
+            )
 
             controller.stop()
             assertNull(controller.track)
@@ -399,12 +410,24 @@ class HiddenSubtitleControllerTest {
             player.selectSubtitle("sub-en")
             player.emitExtractionText(SRT, SubtitleFormat.SRT)
             val controller =
-                HiddenSubtitleController(player, SubtitleEngine(player.positionMs, backgroundScope), backgroundScope, cacheDir)
+                HiddenSubtitleController(
+                    player,
+                    SubtitleEngine(player.positionMs, backgroundScope),
+                    backgroundScope,
+                    cacheDir,
+                )
 
             val spanish = controller.embeddedSubtitle(mediaFile, "es")
 
             assertEquals(File(cacheDir, "subtitles/movie.sub-es.srt"), spanish?.file)
-            assertEquals("Hello there.", spanish?.track?.cues?.first()?.text)
+            assertEquals(
+                "Hello there.",
+                spanish
+                    ?.track
+                    ?.cues
+                    ?.first()
+                    ?.text,
+            )
             assertEquals(listOf("sub-es"), player.extractionCalls)
             assertEquals("sub-en", player.selectedSubtitleId.value)
             assertNull("no French track", controller.embeddedSubtitle(mediaFile, "fr"))
