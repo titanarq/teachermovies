@@ -67,6 +67,8 @@ class MainActivity : ComponentActivity() {
             pin = container.pairingManager::currentPin,
             serverState = container.httpServerController.state,
             serverUrl = serverUrl(container),
+            bridgeConnected = container.bridgeJobHub.connected,
+            disconnectBridge = container.bridgeJobHub::disconnectBridge,
         )
     }
 
