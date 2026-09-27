@@ -1,0 +1,328 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "a95356997f6842bb3e82d7b46c94f63f",
+    "entities": [
+      {
+        "tableName": "torrents",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`infoHash` TEXT NOT NULL, `name` TEXT NOT NULL, `state` TEXT NOT NULL, `progressPercent` REAL NOT NULL, `downloadedBytes` INTEGER NOT NULL, `totalBytes` INTEGER NOT NULL, `savePath` TEXT, `mainFileIndex` INTEGER, `mainFilePath` TEXT, `audioTrackId` TEXT, `subtitleTrackId` TEXT, `lastPositionMs` INTEGER NOT NULL, `addedAtEpochMs` INTEGER NOT NULL, `completedAtEpochMs` INTEGER, `errorMessage` TEXT, PRIMARY KEY(`infoHash`))",
+        "fields": [
+          {
+            "fieldPath": "infoHash",
+            "columnName": "infoHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "progressPercent",
+            "columnName": "progressPercent",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "downloadedBytes",
+            "columnName": "downloadedBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalBytes",
+            "columnName": "totalBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "savePath",
+            "columnName": "savePath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "mainFileIndex",
+            "columnName": "mainFileIndex",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "mainFilePath",
+            "columnName": "mainFilePath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "audioTrackId",
+            "columnName": "audioTrackId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "subtitleTrackId",
+            "columnName": "subtitleTrackId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastPositionMs",
+            "columnName": "lastPositionMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addedAtEpochMs",
+            "columnName": "addedAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedAtEpochMs",
+            "columnName": "completedAtEpochMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "errorMessage",
+            "columnName": "errorMessage",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "infoHash"
+          ]
+        }
+      },
+      {
+        "tableName": "translation_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sourceText` TEXT NOT NULL, `translationEs` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, `lastUsedAtEpochMs` INTEGER NOT NULL, `hitCount` INTEGER NOT NULL, PRIMARY KEY(`sourceText`))",
+        "fields": [
+          {
+            "fieldPath": "sourceText",
+            "columnName": "sourceText",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "translationEs",
+            "columnName": "translationEs",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMs",
+            "columnName": "createdAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUsedAtEpochMs",
+            "columnName": "lastUsedAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hitCount",
+            "columnName": "hitCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sourceText"
+          ]
+        }
+      },
+      {
+        "tableName": "explanation_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`movieTitle` TEXT NOT NULL, `line` TEXT NOT NULL, `promptVersion` TEXT NOT NULL, `explanationJson` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, `lastUsedAtEpochMs` INTEGER NOT NULL, `hitCount` INTEGER NOT NULL, PRIMARY KEY(`movieTitle`, `line`, `promptVersion`))",
+        "fields": [
+          {
+            "fieldPath": "movieTitle",
+            "columnName": "movieTitle",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "line",
+            "columnName": "line",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "promptVersion",
+            "columnName": "promptVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "explanationJson",
+            "columnName": "explanationJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMs",
+            "columnName": "createdAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUsedAtEpochMs",
+            "columnName": "lastUsedAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hitCount",
+            "columnName": "hitCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "movieTitle",
+            "line",
+            "promptVersion"
+          ]
+        }
+      },
+      {
+        "tableName": "subtitle_fetch_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`infoHash` TEXT NOT NULL, `language` TEXT NOT NULL, `state` TEXT NOT NULL, `movieHash` TEXT, `localPath` TEXT, `variantLabel` TEXT, `attempts` INTEGER NOT NULL, `lastAttemptEpochMs` INTEGER, `nextRetryEpochMs` INTEGER, `errorMessage` TEXT, `updatedAtEpochMs` INTEGER NOT NULL, PRIMARY KEY(`infoHash`, `language`))",
+        "fields": [
+          {
+            "fieldPath": "infoHash",
+            "columnName": "infoHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "language",
+            "columnName": "language",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "movieHash",
+            "columnName": "movieHash",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "localPath",
+            "columnName": "localPath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "variantLabel",
+            "columnName": "variantLabel",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "attempts",
+            "columnName": "attempts",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastAttemptEpochMs",
+            "columnName": "lastAttemptEpochMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "nextRetryEpochMs",
+            "columnName": "nextRetryEpochMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "errorMessage",
+            "columnName": "errorMessage",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "updatedAtEpochMs",
+            "columnName": "updatedAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "infoHash",
+            "language"
+          ]
+        }
+      },
+      {
+        "tableName": "subtitle_alignment",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`infoHash` TEXT NOT NULL, `subtitlePath` TEXT NOT NULL, `offsetMs` INTEGER NOT NULL, `frameRateScale` REAL NOT NULL, `qualityScore` REAL NOT NULL, `computedAtEpochMs` INTEGER NOT NULL, PRIMARY KEY(`infoHash`, `subtitlePath`))",
+        "fields": [
+          {
+            "fieldPath": "infoHash",
+            "columnName": "infoHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subtitlePath",
+            "columnName": "subtitlePath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "offsetMs",
+            "columnName": "offsetMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "frameRateScale",
+            "columnName": "frameRateScale",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "qualityScore",
+            "columnName": "qualityScore",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "computedAtEpochMs",
+            "columnName": "computedAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "infoHash",
+            "subtitlePath"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a95356997f6842bb3e82d7b46c94f63f')"
+    ]
+  }
+}
