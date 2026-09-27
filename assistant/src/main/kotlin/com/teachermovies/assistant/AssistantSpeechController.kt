@@ -4,6 +4,7 @@ import com.teachermovies.assistant.speech.Speaker
 import com.teachermovies.assistant.speech.SpeakerAvailability
 import com.teachermovies.assistant.speech.SpeakerState
 import com.teachermovies.assistant.speech.SpeechLanguage
+import com.teachermovies.assistant.speech.SpokenOutputSettings
 import com.teachermovies.assistant.translation.TranslationProvider
 import com.teachermovies.assistant.translation.TranslationResult
 import kotlinx.coroutines.CoroutineScope
@@ -59,9 +60,13 @@ data class AssistantSpeechState(
 )
 
 /**
- * Turns a [CapturedLine] into the two spoken assistant answers (VISION §7): say the line again in
- * English, and show plus say its Spanish translation. Works only through [Speaker] and
- * [TranslationProvider]; no Android, `TextToSpeech` or libVLC type is referenced here.
+ * Turns a [CapturedLine] into the assistant's spoken answers (VISION §7): say the line again in
+ * English, show plus say its Spanish translation, and say the explanation of it. Works only through
+ * [Speaker] and [TranslationProvider]; no Android, `TextToSpeech` or libVLC type is referenced here.
+ *
+ * Speaking is optional and off until the learner turns it on: [spokenOutput] gates every utterance,
+ * per answer, and ADR-0005 §10's default [SpokenOutputSettings] silences all of them. The text on
+ * screen is never gated -- with speech off this is the translation-only controller the panel needs.
  *
  * Coroutines are started on [scope] only while there is something to follow: the mirror of
  * [Speaker.state] after an accepted utterance, and at most one translation. [reset] cancels both.
@@ -70,6 +75,7 @@ class AssistantSpeechController(
     private val speaker: Speaker,
     private val translations: TranslationProvider,
     private val scope: CoroutineScope,
+    private val spokenOutput: StateFlow<SpokenOutputSettings> = MutableStateFlow(SpokenOutputSettings()),
 ) {
     private val mutableState = MutableStateFlow(AssistantSpeechState())
 
@@ -110,8 +116,12 @@ class AssistantSpeechController(
         }
     }
 
-    /** Says the captured line again in English; returns what [Speaker.speak] returned. */
-    fun speakOriginal(line: CapturedLine): Boolean = say(line.cue.text, SpeechLanguage.EN)
+    /**
+     * Says the captured line again in English; returns what [Speaker.speak] returned, so `false`
+     * when [SpokenOutputSettings.englishLine] is off as well as when no EN voice is available.
+     */
+    fun speakOriginal(line: CapturedLine): Boolean =
+        say(line.cue.text, SpeechLanguage.EN, spokenOutput.value.englishLine)
 
     /**
      * Translates [line] into Spanish on [scope]: [TranslationUiState.Loading], then `Ready` or
@@ -166,29 +176,42 @@ class AssistantSpeechController(
                 mutableState.update { it.copy(translation = uiState) }
                 if (speakWhenReady) {
                     speakWhenReady = false
-                    if (uiState is TranslationUiState.Ready) say(uiState.text, SpeechLanguage.ES)
+                    if (uiState is TranslationUiState.Ready) {
+                        say(uiState.text, SpeechLanguage.ES, spokenOutput.value.spanishLine)
+                    }
                 }
             }
     }
 
     /**
      * Says the `Ready` translation in Spanish and returns what [Speaker.speak] returned; `false`
-     * and nothing else happens unless [AssistantSpeechState.translation] is `Ready`.
+     * and nothing else happens unless [AssistantSpeechState.translation] is `Ready` and
+     * [SpokenOutputSettings.spanishLine] is on.
      */
     fun speakTranslation(): Boolean {
         val translation = mutableState.value.translation
         if (translation !is TranslationUiState.Ready) return false
-        return say(translation.text, SpeechLanguage.ES)
+        return say(translation.text, SpeechLanguage.ES, spokenOutput.value.spanishLine)
     }
 
     /**
      * [translate]s [line] (reusing a `Ready` result for the same line) and says the result in
-     * Spanish as soon as it arrives. On `Failed` nothing is said and the failure stays in the
-     * state for the screen to show; without speech only the text is shown.
+     * Spanish as soon as it arrives, when [SpokenOutputSettings.spanishLine] is on. On `Failed`
+     * nothing is said and the failure stays in the state for the screen to show; with the setting
+     * off this is [translate], so the Spanish line is read rather than heard.
      */
     fun translateAndSpeak(line: CapturedLine) {
         request(line, speak = true)
     }
+
+    /**
+     * Says [text] -- the Spanish explanation of the captured line (ADR-0005 §7), which the screen
+     * already shows -- and returns what [Speaker.speak] returned; `false` when
+     * [SpokenOutputSettings.explanations] is off or no ES voice is available. Explanations come from
+     * the laptop bridge, not from this controller, so the text arrives already rendered and saying
+     * it aloud is the only thing left to do here.
+     */
+    fun speakExplanation(text: String): Boolean = say(text, SpeechLanguage.ES, spokenOutput.value.explanations)
 
     /**
      * Silences the speaker, cancels every coroutine this controller started and returns the state
@@ -205,10 +228,17 @@ class AssistantSpeechController(
         mutableState.update { AssistantSpeechState(speechAvailable = it.speechAvailable) }
     }
 
+    /**
+     * Says [text] in [language] when [enabled] -- the [SpokenOutputSettings] flag of that answer --
+     * and the language is available; returns what [Speaker.speak] returned. The setting is read here
+     * rather than when the answer was asked for, so turning it on mid-translation still speaks.
+     */
     private fun say(
         text: String,
         language: SpeechLanguage,
+        enabled: Boolean,
     ): Boolean {
+        if (!enabled) return false
         if (language !in mutableState.value.speechAvailable) return false
         val accepted = speaker.speak(text, language)
         if (accepted) followSpeaker()

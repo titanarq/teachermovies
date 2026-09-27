@@ -2,9 +2,9 @@ package com.teachermovies.player.vlc
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import com.teachermovies.core.log.AppLog
 import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.SubtitleExtraction
@@ -133,7 +133,7 @@ class VlcPlayer(
         openedFile = file
         player.setMedia(loaded)
         resetFlows(startPositionMs)
-        Log.d(TAG, "open start=$startPositionMs")
+        AppLog.d(LOG_MODULE, "open start=$startPositionMs")
         mutableState.value = PlayerState.Opening
         player.play()
     }
@@ -191,7 +191,7 @@ class VlcPlayer(
                 else -> id.toIntOrNull() ?: return
             }
         val accepted = player.setSpuTrack(trackId)
-        Log.d(TAG, "selectSubtitle($id) accepted=$accepted")
+        AppLog.d(LOG_MODULE, "selectSubtitle($id) accepted=$accepted")
         if (accepted) {
             mutableSelectedSubtitleId.value = id
         }
@@ -314,7 +314,7 @@ class VlcPlayer(
         val audio = player.audioTrack
         val spu = player.spuTrack
         // libVLC's own picks (its default subtitle while it starts a media) show up here (#248).
-        Log.d(TAG, "ESSelected type=${event.esChangedType} id=${event.esChangedID}: audio=$audio spu=$spu")
+        AppLog.d(LOG_MODULE, "ESSelected type=${event.esChangedType} id=${event.esChangedID}: audio=$audio spu=$spu")
         mutableSelectedAudioId.value = audio.toSelectedId()
         mutableSelectedSubtitleId.value = spu.toSelectedId()
     }
@@ -346,8 +346,8 @@ class VlcPlayer(
     private fun Int.toSelectedId(): String? = if (this < 0) null else toString()
 
     private companion object {
-        /** Logcat tag of the track-selection debug lines: requests and libVLC's read-backs. */
-        const val TAG = "TmTracks"
+        /** [AppLog] module of the track-selection debug lines: requests and libVLC's read-backs. */
+        const val LOG_MODULE = "player"
 
         /** [fileCachingMs] unless the caller tunes it: three seconds of read cache on a growing file. */
         const val DEFAULT_FILE_CACHING_MS = 3000

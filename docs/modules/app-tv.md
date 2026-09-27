@@ -317,6 +317,17 @@
   process, and downloads resume when the app is opened. The receiver firing on a real boot is a
   manual check on a device (`adb` / instrumented tests are not run by agents).
 
+## Logging (#268, ADR-0006)
+- Nothing in the app calls `android.util.Log` except `tv.log.AndroidLogSink`; every module logs
+  through `AppLog` (`:core-model`) with its module name (`app-tv`, `player`, `torrent`...).
+- `AppContainer` declares `logBuffer: RingBufferLogSink` first and runs `LoggingSetup.install` right
+  after it, before anything else is built: `AppLog.minLevel` is DEBUG in a debuggable build and
+  INFO otherwise, and it installs `AndroidLogSink` (logcat, tag `TM/<module>`, priority by level)
+  and `logBuffer` (redacted, what #269 serves over HTTP).
+- It also installs `CrashLogHandler` as the default uncaught-exception handler: it logs the crash at
+  ERROR (module `app-tv`, thread name and stack trace) and then always chains to the handler that
+  was there before, so the platform still reports the crash and kills the process.
+
 ## Boundaries
 - Depends on feature modules' public interfaces only; contains no torrent, HTTP or VLC logic itself.
 - All screens fully usable with the D-pad; focus order and initial focus are acceptance criteria.

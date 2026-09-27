@@ -1,6 +1,7 @@
 package com.teachermovies.tv.di
 
 import android.app.Application
+import android.content.pm.ApplicationInfo
 import android.os.Build
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -15,6 +16,7 @@ import com.teachermovies.assistant.translation.AnthropicTranslationProvider
 import com.teachermovies.assistant.translation.CachingTranslationProvider
 import com.teachermovies.assistant.translation.TranslationProvider
 import com.teachermovies.core.db.TeacherMoviesDatabase
+import com.teachermovies.core.log.RingBufferLogSink
 import com.teachermovies.core.repo.RoomTorrentRepository
 import com.teachermovies.core.repo.TorrentRepository
 import com.teachermovies.core.settings.DataStoreSettingsRepository
@@ -47,6 +49,7 @@ import com.teachermovies.torrent.sync.EngineRepositorySync
 import com.teachermovies.tv.autostart.BootAutostartCoordinator
 import com.teachermovies.tv.autostart.ServiceAutostart
 import com.teachermovies.tv.discovery.ServerAnnouncementCoordinator
+import com.teachermovies.tv.log.LoggingSetup
 import com.teachermovies.tv.net.LanAddressResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -75,6 +78,20 @@ import java.security.SecureRandom
 class AppContainer(
     application: Application,
 ) {
+    /**
+     * The app's log lines, redacted, in memory (ADR-0006): the one buffer of the process, which the
+     * HTTP API serves (#269). Declared first, with [LoggingSetup] run right after it, so every
+     * object built below already logs through `AppLog` to logcat and here, and a crash is recorded.
+     */
+    val logBuffer: RingBufferLogSink = RingBufferLogSink()
+
+    init {
+        LoggingSetup.install(
+            debugBuild = application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0,
+            buffer = logBuffer,
+        )
+    }
+
     // DataStore rejects a second instance over a file one is already active on, so the store is
     // created once here and kept for the life of the process.
     private val dataStore: DataStore<Preferences> = application.settingsDataStore()

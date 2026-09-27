@@ -5,7 +5,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.util.Log
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -13,6 +12,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
+import com.teachermovies.core.log.AppLog
 import com.teachermovies.torrent.R
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.TorrentEngine
@@ -78,7 +78,7 @@ class TorrentService : LifecycleService() {
         )
 
         if (!TorrentEngineHolder.isInitialized) {
-            Log.e(TAG, "TorrentEngineHolder.init(engine) was not called before starting the service")
+            AppLog.e(LOG_MODULE, "TorrentEngineHolder.init(engine) was not called before starting the service")
             stopSelf()
             return
         }
@@ -87,7 +87,7 @@ class TorrentService : LifecycleService() {
         TorrentEngineHolder.lifecycleScope.launch {
             val result = engine.start()
             if (result is EngineResult.Failure) {
-                Log.e(TAG, "Torrent engine failed to start: ${result.error}")
+                AppLog.e(LOG_MODULE, "Torrent engine failed to start: ${result.error}")
             }
         }
         lifecycleScope.launch {
@@ -124,7 +124,7 @@ class TorrentService : LifecycleService() {
         startId: Int,
         fgsType: Int,
     ) {
-        Log.w(TAG, "Foreground service time limit reached (type $fgsType); stopping")
+        AppLog.w(LOG_MODULE, "Foreground service time limit reached (type $fgsType); stopping")
         stopSelf()
     }
 
@@ -133,7 +133,7 @@ class TorrentService : LifecycleService() {
             TorrentEngineHolder.lifecycleScope.launch {
                 val saved = engine.saveResumeData()
                 if (saved is EngineResult.Failure) {
-                    Log.e(TAG, "Saving resume data failed: ${saved.error}")
+                    AppLog.e(LOG_MODULE, "Saving resume data failed: ${saved.error}")
                 }
                 engine.stop()
             }
@@ -174,7 +174,7 @@ class TorrentService : LifecycleService() {
         const val CHANNEL_ID: String = "downloads"
         internal const val NOTIFICATION_ID: Int = 54_001
         internal const val NOTIFICATION_PERIOD_MILLIS: Long = 2_000
-        private const val TAG = "TorrentService"
+        private const val LOG_MODULE = "torrent"
 
         /**
          * Starts (or keeps) the service in the foreground. Call it while the app is visible:
