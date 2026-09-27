@@ -1,5 +1,6 @@
 package com.teachermovies.http
 
+import com.teachermovies.http.auth.TokenScope
 import com.teachermovies.http.auth.requireBearer
 import com.teachermovies.http.dto.toDto
 import com.teachermovies.http.sse.SseFormat
@@ -46,7 +47,7 @@ private val eventsJson = Json { explicitNulls = true }
  * failure).
  */
 internal fun Route.eventsRoutes(deps: ServerDeps) {
-    requireBearer(deps.pairing, allowQueryToken = true) {
+    requireBearer(deps.pairing, setOf(TokenScope.PHONE), allowQueryToken = true) {
         get("/api/events") {
             call.response.header(HttpHeaders.CacheControl, "no-cache")
             call.respondTextWriter(ContentType.Text.EventStream) {

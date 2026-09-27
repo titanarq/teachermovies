@@ -101,6 +101,38 @@ class InMemorySettingsRepositoryTest {
         }
 
     @Test
+    fun addBridgeTokenHashKeepsTheHashesAlreadyStoredApartFromThePhoneOnes() =
+        runTest {
+            val repository = InMemorySettingsRepository()
+            repository.addAuthTokenHash("hash-phone")
+
+            repository.addBridgeTokenHash("hash-a")
+            repository.addBridgeTokenHash("hash-b")
+            repository.addBridgeTokenHash("hash-a")
+
+            assertEquals(setOf("hash-a", "hash-b"), repository.settings.first().bridgeTokenHashes)
+            assertEquals(setOf("hash-phone"), repository.settings.first().authTokenHashes)
+        }
+
+    @Test
+    fun clearAuthTokenHashesLeavesTheBridgeHashesAlone() =
+        runTest {
+            val repository = InMemorySettingsRepository()
+            repository.addAuthTokenHash("hash-phone")
+            repository.addBridgeTokenHash("hash-bridge")
+
+            repository.clearAuthTokenHashes()
+
+            assertTrue(
+                repository.settings
+                    .first()
+                    .authTokenHashes
+                    .isEmpty(),
+            )
+            assertEquals(setOf("hash-bridge"), repository.settings.first().bridgeTokenHashes)
+        }
+
+    @Test
     fun setFirstRunCompletedIsReflectedInSettings() =
         runTest {
             val repository = InMemorySettingsRepository()

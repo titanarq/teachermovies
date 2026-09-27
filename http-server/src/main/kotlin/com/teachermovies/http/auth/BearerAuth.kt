@@ -16,25 +16,31 @@ import io.ktor.server.routing.RoutingResolveContext
 const val TOKEN_QUERY_PARAMETER = "token"
 
 /**
- * Routes declared in [build] require a token issued by [pairing] (ADR-0002).
+ * Routes declared in [build] require a token [pairing] issued with one of [scopes] (ADR-0002,
+ * ADR-0005 §4). A phone route passes `setOf(TokenScope.PHONE)`; the bridge routes under
+ * `/api/bridge` pass `setOf(TokenScope.BRIDGE)` and the log routes under `/api/logs` both, so a
+ * token of the wrong scope is refused exactly like an unknown one.
  *
  * The token is read from `Authorization: Bearer <token>`. Only when [allowQueryToken] is true (used
  * solely by `GET /api/events`, whose `EventSource` client cannot set headers) is `?token=<token>`
- * also accepted; everywhere else a query-param token alone is rejected. A missing or invalid token
- * is 401 `{"error":"unauthorized"}` with `WWW-Authenticate: Bearer`, and the handler never runs.
- * The token is never echoed in the response.
+ * also accepted; everywhere else a query-param token alone is rejected. A missing, invalid or
+ * out-of-scope token is 401 `{"error":"unauthorized"}` with `WWW-Authenticate: Bearer`, and the
+ * handler never runs. The token is never echoed in the response.
  */
 fun Route.requireBearer(
     pairing: PairingManager,
+    scopes: Set<TokenScope>,
     allowQueryToken: Boolean = false,
     build: Route.() -> Unit,
 ): Route {
-    val route = createChild(BearerRouteSelector(allowQueryToken))
+    require(scopes.isNotEmpty()) { "requireBearer needs at least one accepted token scope" }
+    val route = createChild(BearerRouteSelector(scopes, allowQueryToken))
     route.install(
         createRouteScopedPlugin("RequireBearer") {
             onCall { call ->
                 val token = call.bearerToken(allowQueryToken)
-                if (token == null || !pairing.isValid(token)) {
+                val scope = token?.let { pairing.scopeOf(it) }
+                if (scope == null || scope !in scopes) {
                     call.response.header(HttpHeaders.WWWAuthenticate, "Bearer")
                     call.respond(
                         HttpStatusCode.Unauthorized,
@@ -64,6 +70,7 @@ private fun ApplicationCall.bearerToken(allowQueryToken: Boolean): String? {
  * every [requireBearer] block gets its own child route and its own plugin instance.
  */
 private class BearerRouteSelector(
+    private val scopes: Set<TokenScope>,
     private val allowQueryToken: Boolean,
 ) : RouteSelector() {
     override suspend fun evaluate(
@@ -71,7 +78,11 @@ private class BearerRouteSelector(
         segmentIndex: Int,
     ): RouteSelectorEvaluation = RouteSelectorEvaluation.Transparent
 
-    override fun toString(): String = "(requireBearer${if (allowQueryToken) " +query" else ""})"
+    override fun toString(): String {
+        val accepted = scopes.joinToString(",") { it.wireValue }
+        val query = if (allowQueryToken) "+query" else ""
+        return "(requireBearer[$accepted]$query)"
+    }
 }
 
 /**

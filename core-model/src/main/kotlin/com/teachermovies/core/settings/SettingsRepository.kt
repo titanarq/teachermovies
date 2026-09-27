@@ -24,11 +24,20 @@ interface SettingsRepository {
     /** Chooses the volume downloads go to, or clears the choice when [id] is null. */
     suspend fun setDownloadVolumeId(id: String?)
 
-    /** Records one more pairing token hash, keeping the ones already stored. */
+    /**
+     * Records one more phone-scoped pairing token hash, keeping the ones already stored. A
+     * bridge-scoped token goes to [addBridgeTokenHash] instead (ADR-0005 §4).
+     */
     suspend fun addAuthTokenHash(hash: String)
 
-    /** Forgets every pairing token hash, which revokes every paired phone. */
+    /** Forgets every phone-scoped pairing token hash, which revokes every paired phone. */
     suspend fun clearAuthTokenHashes()
+
+    /**
+     * Records one more bridge-scoped pairing token hash, keeping the ones already stored. Kept
+     * apart from the phone hashes so a laptop bridge reaches only the bridge and log routes.
+     */
+    suspend fun addBridgeTokenHash(hash: String)
 
     suspend fun setFirstRunCompleted(done: Boolean)
 

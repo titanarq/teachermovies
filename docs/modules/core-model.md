@@ -30,7 +30,9 @@
   maps to `DownloadState.Error`); `InMemoryTorrentRepository` in
   `com.teachermovies.core.repo.fake` is the deterministic fake other modules' tests use (ADR-0003).
   It does not keep itself in sync with the torrent engine -- that mapping is #68.
-- DataStore-backed settings (HTTP port, download volume, auth token hash, first-run done,
+- DataStore-backed settings (HTTP port, download volume, auth token hashes -- one set for
+  phone-scoped pairing tokens and a separate `bridgeTokenHashes` for bridge-scoped ones, each with
+  its own add method (#270, ADR-0005 §4) -- first-run done,
   `autostartOnBoot` -- open the app when the TV powers on, off by default -- `translationApiKey` --
   the user's own Anthropic API key for EN->ES translation, pasted in Configuración, null by default,
   cleared by `setTranslationApiKey(null)` or a blank string, never logged and redacted from

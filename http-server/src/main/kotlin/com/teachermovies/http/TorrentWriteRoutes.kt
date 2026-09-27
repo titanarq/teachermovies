@@ -1,6 +1,7 @@
 package com.teachermovies.http
 
 import com.teachermovies.core.model.TorrentId
+import com.teachermovies.http.auth.TokenScope
 import com.teachermovies.http.auth.requireBearer
 import com.teachermovies.http.dto.toDto
 import com.teachermovies.torrent.api.EngineError
@@ -46,7 +47,7 @@ data class AddTorrentResponse(
  * through [toHttp]; request-shape errors are 400 `bad_request`.
  */
 internal fun Route.torrentWriteRoutes(deps: ServerDeps) {
-    requireBearer(deps.pairing) {
+    requireBearer(deps.pairing, setOf(TokenScope.PHONE)) {
         post("/api/torrents/magnet") {
             val request = call.receiveOrNull<AddMagnetRequest>()
             if (request == null) {

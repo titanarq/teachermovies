@@ -20,6 +20,7 @@ private const val MAX_HTTP_PORT = 65535
 private val HTTP_PORT = intPreferencesKey("httpPort")
 private val DOWNLOAD_VOLUME_ID = stringPreferencesKey("downloadVolumeId")
 private val AUTH_TOKEN_HASHES = stringSetPreferencesKey("authTokenHashes")
+private val BRIDGE_TOKEN_HASHES = stringSetPreferencesKey("bridgeTokenHashes")
 private val FIRST_RUN_COMPLETED = booleanPreferencesKey("firstRunCompleted")
 private val AUTOSTART_ON_BOOT = booleanPreferencesKey("autostartOnBoot")
 private val TRANSLATION_API_KEY = stringPreferencesKey("translationApiKey")
@@ -34,6 +35,7 @@ class DataStoreSettingsRepository(
                 httpPort = preferences[HTTP_PORT] ?: DEFAULT_HTTP_PORT,
                 downloadVolumeId = preferences[DOWNLOAD_VOLUME_ID],
                 authTokenHashes = preferences[AUTH_TOKEN_HASHES] ?: emptySet(),
+                bridgeTokenHashes = preferences[BRIDGE_TOKEN_HASHES] ?: emptySet(),
                 firstRunCompleted = preferences[FIRST_RUN_COMPLETED] ?: false,
                 autostartOnBoot = preferences[AUTOSTART_ON_BOOT] ?: false,
                 translationApiKey = preferences[TRANSLATION_API_KEY],
@@ -65,6 +67,12 @@ class DataStoreSettingsRepository(
 
     override suspend fun clearAuthTokenHashes() {
         dataStore.edit { preferences -> preferences.remove(AUTH_TOKEN_HASHES) }
+    }
+
+    override suspend fun addBridgeTokenHash(hash: String) {
+        dataStore.edit { preferences ->
+            preferences[BRIDGE_TOKEN_HASHES] = (preferences[BRIDGE_TOKEN_HASHES] ?: emptySet()) + hash
+        }
     }
 
     override suspend fun setFirstRunCompleted(done: Boolean) {
