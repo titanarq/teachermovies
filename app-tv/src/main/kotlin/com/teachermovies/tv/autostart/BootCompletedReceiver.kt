@@ -3,7 +3,7 @@ package com.teachermovies.tv.autostart
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.util.Log
+import com.teachermovies.core.log.AppLog
 import com.teachermovies.tv.TeacherMoviesApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,17 +33,17 @@ class BootCompletedReceiver : BroadcastReceiver() {
                     is BootDecision.Started -> {
                         when (val result = decision.result) {
                             AutostartResult.Started -> {
-                                Log.i(TAG, "Autostart after boot: services started")
+                                AppLog.i(LOG_MODULE, "Autostart after boot: services started")
                             }
 
                             is AutostartResult.TorrentServiceRefused -> {
-                                Log.w(TAG, "Autostart after boot: torrent service refused: ${result.reason}")
+                                AppLog.w(LOG_MODULE, "Autostart after boot: torrent service refused: ${result.reason}")
                             }
                         }
                     }
 
                     BootDecision.Disabled -> {
-                        Log.i(TAG, "Autostart after boot is off")
+                        AppLog.i(LOG_MODULE, "Autostart after boot is off")
                     }
 
                     BootDecision.IgnoredAction -> {
@@ -51,7 +51,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Autostart after boot failed", e)
+                AppLog.e(LOG_MODULE, "Autostart after boot failed", e)
             } finally {
                 pending.finish()
             }
@@ -59,7 +59,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
     }
 
     private companion object {
-        const val TAG = "BootCompletedReceiver"
+        const val LOG_MODULE = "app-tv"
 
         // Main: `ServiceAutostart` starts a service and the server controller, both main-safe calls;
         // the settings read suspends without blocking it.
