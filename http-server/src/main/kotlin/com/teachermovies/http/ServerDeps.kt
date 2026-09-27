@@ -4,6 +4,7 @@ import com.teachermovies.core.log.RingBufferLogSink
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.TorrentRepository
 import com.teachermovies.http.auth.PairingManager
+import com.teachermovies.http.bridge.BridgeJobHub
 import com.teachermovies.storage.SpaceInfo
 import com.teachermovies.torrent.api.EngineResult
 import com.teachermovies.torrent.api.TorrentEngine
@@ -26,6 +27,9 @@ import com.teachermovies.torrent.api.TorrentEngine
  * @property logs the redacting ring buffer (ADR-0006) that `GET /api/logs` and
  * `GET /api/logs/stream` (#269) serve. The default is a fresh, empty buffer; #268's
  * `AppContainer` wiring passes the one process-wide instance it installs in `AppLog`.
+ * @property bridge the job hub (#275, ADR-0005 §2) behind `/api/bridge/jobs`. The default is a
+ * fresh hub; `AppContainer` passes the one instance whose `AssistantBridge` side the assistant uses
+ * (#287/#292), so both ends share it.
  * @property allowTestRemoteHeader test-only (#59): when `true`, the `X-Test-Remote` header
  * overrides the socket's remote address for the LAN-address guard. Must stay `false` in
  * production; `AppContainer` never sets it.
@@ -40,5 +44,6 @@ data class ServerDeps(
     val subtitles: SubtitleStore,
     val library: TorrentRepository,
     val logs: RingBufferLogSink = RingBufferLogSink(),
+    val bridge: BridgeJobHub = BridgeJobHub(),
     val allowTestRemoteHeader: Boolean = false,
 )
