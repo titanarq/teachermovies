@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-09-23
 - **Deciders:** MatillaM
+- **Amended by:** ADR-0005 (§6, assistant AI via the laptop bridge)
 
 ## Context
 
@@ -36,11 +37,25 @@ English-learning assistant from a hidden subtitle track.
    whether the next seconds are on disk. Signature, added in #93 and implemented in #94:
    `suspend fun rangeReadiness(id: TorrentId, fileIndex: Int, byteOffset: Long, lengthBytes: Long): EngineResult<RangeReadiness>`,
    with `data class RangeReadiness(val ready: Boolean, val readyBytes: Long, val missingPieces: List<Int>)`.
+
+   Amendment (recorded 2026-09-27): issue #245 / PR #255 (merged 2026-09-25) added the additive
+   `suspend fun prioritizeRanges(id: TorrentId, fileIndex: Int, ranges: List<FileByteRange>): EngineResult<Unit>`,
+   with `data class FileByteRange(val offsetBytes: Long, val lengthBytes: Long)`. It is the
+   multi-range form of `prioritizeWindow`: one call prioritises the pieces of several
+   non-contiguous ranges of a file (the player's head, tail and start buffer before opening an
+   incomplete file), with deadlines in the order of `ranges`. Still one window per torrent (a later
+   `prioritizeWindow`/`prioritizeRanges` replaces it, `clearWindow` clears it; an empty list clears
+   it); `prioritizeWindow` is now the single-range case. No existing signature changed.
+
 5. **Local HTTP server** embedded in the app on `0.0.0.0:8787` (configurable port, LAN only),
    with SSE or WebSocket for progress and PIN-pairing + bearer-token auth; **NSD/mDNS** for
    discovery. The concrete server library is chosen by its first task.
 6. **Assistant:** Android `TextToSpeech`; translation behind a swappable `TranslationProvider`,
    not on the MVP critical path.
+
+   Amended by ADR-0005 (2026-09-27): assistant AI (explanations and the fallback translation) runs
+   through Claude Code on the human's subscription via the laptop bridge (`:laptop-bridge`); no API
+   key on the TV (the Anthropic API provider is unwired, code kept dormant). TTS is deferred.
 
 ## Consequences
 

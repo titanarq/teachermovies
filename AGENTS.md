@@ -27,7 +27,8 @@ download -> stored -> appears in Library -> libVLC plays it.
 
 ## Modules
 
-Gradle modules map 1:1 to `module:<name>` labels and `docs/modules/<name>.md`:
+Gradle modules map 1:1 to `module:<name>` labels and `docs/modules/<name>.md` (one exception:
+`:bridge-protocol` has no label of its own and falls under `laptop-bridge`):
 
 | module | Gradle path | owns |
 |---|---|---|
@@ -40,12 +41,15 @@ Gradle modules map 1:1 to `module:<name>` labels and `docs/modules/<name>.md`:
 | assistant | `:assistant` | subtitle engine, capture, TTS, translation provider interface |
 | discovery | `:discovery` | NSD/mDNS announcement (`movieassistant.local`) |
 | mobile-app | `:mobile-app` | phase 2 phone app (share -> send to TV) |
+| laptop-bridge | `:laptop-bridge`, `:bridge-protocol` | laptop-side bridge (Kotlin/JVM, systemd user service): Claude Code CLI for explain/translate jobs, OpenSubtitles download, TV log mirror (ADR-0005/0006); `:bridge-protocol` is the pure-JVM module of DTOs shared with `:http-server`, covered by this label (issues driven by TV endpoints, e.g. #269, may file it under `module:http-server`) |
 | infra | (root) | Gradle build, version catalog, CI, agent OS config |
 
 Dependency direction: `app-tv` -> feature modules -> `core-model`. Feature modules never depend on
 `app-tv` or on each other's implementations; they talk through interfaces in `core-model` or their
 own `api` package. `torrent` exposes only `TorrentEngine` and its value types to other modules --
-never a jlibtorrent type.
+never a jlibtorrent type. `:laptop-bridge` depends only on `:bridge-protocol` (never on an Android
+module); `:http-server` may depend on `:bridge-protocol`; `:bridge-protocol` depends on no other
+project module (ADR-0005).
 
 ## Kotlin / Android conventions
 
