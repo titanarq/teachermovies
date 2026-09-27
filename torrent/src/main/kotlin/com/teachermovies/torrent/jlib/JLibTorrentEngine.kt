@@ -1,6 +1,5 @@
 package com.teachermovies.torrent.jlib
 
-import android.util.Log
 import com.frostwire.jlibtorrent.AddTorrentParams
 import com.frostwire.jlibtorrent.AlertListener
 import com.frostwire.jlibtorrent.InfoHash
@@ -27,6 +26,7 @@ import com.frostwire.jlibtorrent.alerts.TorrentDeletedAlert
 import com.frostwire.jlibtorrent.alerts.TorrentFinishedAlert
 import com.frostwire.jlibtorrent.swig.error_code
 import com.frostwire.jlibtorrent.swig.libtorrent
+import com.teachermovies.core.log.AppLog
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
@@ -794,8 +794,8 @@ class JLibTorrentEngine(
                     }
                 val next = StatusSampleMapper.apply(current, sampleOf(torrentStatus, savePath))
                 if (StatusSampleMapper.isUnexpectedTransition(current.state, next.state)) {
-                    Log.w(
-                        TAG,
+                    AppLog.w(
+                        LOG_MODULE,
                         "Torrent ${id.value}: ${current.state} -> ${next.state} is outside the transition table; " +
                             "publishing it anyway",
                     )
@@ -919,7 +919,7 @@ class JLibTorrentEngine(
     private fun failure(error: EngineError): EngineResult<Nothing> = EngineResult.Failure(error)
 
     private companion object {
-        const val TAG = "JLibTorrentEngine"
+        const val LOG_MODULE = "torrent"
 
         /** How often the ticker republishes [torrents]. */
         const val TICK_MILLIS = 1_000L
