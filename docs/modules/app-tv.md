@@ -230,6 +230,34 @@
   while `speaking`, `Repitiendo…` while replaying, and the hint
   `OK Repetir · DERECHA Escuchar · IZQUIERDA Traducir · ATRÁS Cerrar`. Focus behaviour is that of #86.
 
+## Asistente: IZQUIERDA = español, subtítulo alineado primero (#288, ADR-0005 §6)
+- `TranslateLine` (DPAD_LEFT, overlay open) no longer calls `translateAndSpeak`: nothing is spoken.
+  `PlayerViewModel(..., spanishLines: AlignedSpanishSource = NONE)` first asks
+  `spanishLines.lineFor(torrentId, mainFile, cue)`; while it runs the translation is `Loading`. A
+  line -> `Ready(text)` labelled `subtítulo` (`subtítulo · latino` for the Latin-American download,
+  ADR-0005 §5), and the bridge is not asked. Null -> `speech.translate(line)` and, once `Ready`,
+  the label `IA`; its failures keep their texts (`Sin conexión para traducir`,
+  `Traducción no disponible`). A second LEFT while looking or aligned does nothing; on the bridge
+  path it retries a failed translation. Dismiss/exit cancels the lookup and drops a late answer.
+- `AssistantOverlayState.spanishLabel` carries that label; `AssistantOverlay` draws it under the
+  Spanish line.
+- `LookupAlignedSpanishSource(lookup: SpanishLineLookup, english = hidden.track, find)`: null outside
+  hidden mode, with no Spanish track, or without a trustworthy alignment (`NoGoodAlignment` /
+  `NoMatchingLine`); a throwing lookup is logged and answers null (-> bridge).
+  `SpanishSubtitleFinder(fetches, embedded)` lists, in order, sidecars `*.es|spa.srt|ass` next to
+  the movie then in `Subs/`, the embedded `es`/`spa` text track
+  (`HiddenSubtitleController.embeddedSubtitle`), and the bridge download (`es` fetch row
+  `Downloaded`, `latino` from its variant); a sidecar that is the download counts once, as the
+  download; missing/unparseable files are skipped. Re-run on every press, so a mid-movie download
+  counts from the next LEFT.
+- `AppContainer`: the translation provider is now
+  `PersistentCachingTranslationProvider(BridgeTranslationProvider(HubBridgeTranslateGateway(bridgeJobHub)), RoomTranslationCacheRepository)`;
+  `bridgeJobHub` is the same `BridgeJobHub` passed to `ServerDeps.bridge`. `HubBridgeTranslateGateway`
+  maps `BridgeOutcome` to `BridgeTranslateOutcome` (`Replaced` -> `Disconnected`, `Rejected` ->
+  `BridgeError`). `alignedSpanishSource` wires `SpanishLineLookup` over
+  `RoomSubtitleAlignmentRepository` and is passed to `PlayerViewModel.Factory`. The Anthropic API
+  key is no longer read by this wiring.
+
 ## Reproducir mientras descarga (#226)
 - Entry point: Descargas, OK on a row -> the action dialog starts with `Reproducir` (focused) when
   the row is `Downloading`/`Paused` and its main file is known (`DownloadRow.canPlay`); a completed
