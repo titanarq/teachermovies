@@ -11,13 +11,16 @@ import com.teachermovies.assistant.LineCaptureController
 import com.teachermovies.assistant.SubtitleEngine
 import com.teachermovies.assistant.speech.AndroidTextToSpeechSpeaker
 import com.teachermovies.assistant.speech.Speaker
-import com.teachermovies.assistant.translation.AnthropicApiConfigSource
-import com.teachermovies.assistant.translation.AnthropicTranslationProvider
-import com.teachermovies.assistant.translation.CachingTranslationProvider
+import com.teachermovies.assistant.alignment.SpanishLineLookup
+import com.teachermovies.assistant.translation.BridgeTranslationProvider
+import com.teachermovies.assistant.translation.PersistentCachingTranslationProvider
 import com.teachermovies.assistant.translation.TranslationProvider
 import com.teachermovies.core.db.TeacherMoviesDatabase
 import com.teachermovies.core.log.RingBufferLogSink
+import com.teachermovies.core.repo.RoomSubtitleAlignmentRepository
+import com.teachermovies.core.repo.RoomSubtitleFetchRepository
 import com.teachermovies.core.repo.RoomTorrentRepository
+import com.teachermovies.core.repo.RoomTranslationCacheRepository
 import com.teachermovies.core.repo.TorrentRepository
 import com.teachermovies.core.settings.DataStoreSettingsRepository
 import com.teachermovies.core.settings.SettingsRepository
@@ -31,6 +34,7 @@ import com.teachermovies.http.LocalHttpServer
 import com.teachermovies.http.RunningServer
 import com.teachermovies.http.ServerDeps
 import com.teachermovies.http.auth.PairingManager
+import com.teachermovies.http.bridge.BridgeJobHub
 import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.VideoSurfaceHost
 import com.teachermovies.player.streaming.StreamingPlaybackController
@@ -51,6 +55,9 @@ import com.teachermovies.tv.autostart.ServiceAutostart
 import com.teachermovies.tv.discovery.ServerAnnouncementCoordinator
 import com.teachermovies.tv.log.LoggingSetup
 import com.teachermovies.tv.net.LanAddressResolver
+import com.teachermovies.tv.player.AlignedSpanishSource
+import com.teachermovies.tv.player.LookupAlignedSpanishSource
+import com.teachermovies.tv.player.SpanishSubtitleFinder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -212,22 +219,42 @@ class AppContainer(
     /** Android text-to-speech for the assistant's spoken answers (#92); prepared by the player screen. */
     private val speaker: Speaker = AndroidTextToSpeechSpeaker(application)
 
-    // The user's own Anthropic key from Configuración (#212), read on every request so a key typed
-    // or cleared there applies at once. Without one the provider answers `Unavailable` and the
-    // player shows `Traducción no disponible` (#90). The key is never logged.
-    private val translationApiKeySource =
-        AnthropicApiConfigSource {
-            settingsRepository.settings
-                .first()
-                .translationApiKey
-                ?.takeIf { it.isNotBlank() }
-        }
+    /**
+     * The laptop bridge's job hub (#275, ADR-0005 §2): the one instance behind `/api/bridge/jobs`
+     * (passed to every server restart through [serverDeps]) and the one the assistant submits to.
+     */
+    private val bridgeJobHub: BridgeJobHub = BridgeJobHub()
 
+    // LEFT's fallback when no Spanish subtitle aligns (#288): Claude on the laptop through the
+    // bridge (#287), its real answers kept in Room. Without a bridge it answers `Unavailable` and
+    // the player shows `Traducción no disponible`.
     private val translationProvider: TranslationProvider =
-        CachingTranslationProvider(AnthropicTranslationProvider(translationApiKeySource))
+        PersistentCachingTranslationProvider(
+            BridgeTranslationProvider(HubBridgeTranslateGateway(bridgeJobHub)),
+            RoomTranslationCacheRepository(torrentDatabase.translationCacheDao()),
+        )
 
     val assistantSpeechController: AssistantSpeechController =
         AssistantSpeechController(speaker, translationProvider, assistantScope)
+
+    /**
+     * LEFT's first answer (#288, ADR-0005 §6): the Spanish subtitle line aligned to the captured
+     * English one -- sidecar, embedded or bridge-downloaded -- with the alignments cached in Room.
+     */
+    val alignedSpanishSource: AlignedSpanishSource =
+        LookupAlignedSpanishSource(
+            lookup =
+                SpanishLineLookup(
+                    RoomSubtitleAlignmentRepository(torrentDatabase.subtitleAlignmentDao()),
+                    nowMs = System::currentTimeMillis,
+                ),
+            english = { hiddenSubtitleController.track },
+            find =
+                SpanishSubtitleFinder(
+                    fetches = RoomSubtitleFetchRepository(torrentDatabase.subtitleFetchStateDao()),
+                    embedded = hiddenSubtitleController::embeddedSubtitle,
+                )::find,
+        )
 
     /**
      * PIN pairing and token validation (ADR-0002). One instance for the process, shared by every
@@ -253,6 +280,7 @@ class AppContainer(
                     SubtitleLayoutResolver.layoutFor(id, torrentEngine.torrents.value)
                 },
             library = torrentRepository,
+            bridge = bridgeJobHub,
         )
 
     /**

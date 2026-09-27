@@ -17,7 +17,10 @@ sealed interface AssistantAction {
     /** Say the captured English line out loud again (#92). */
     data object SpeakOriginal : AssistantAction
 
-    /** Show the captured line's Spanish translation and say it (#92). */
+    /**
+     * Show the captured line in Spanish, never spoken (#288): the aligned Spanish subtitle, or the
+     * bridge's translation when none aligns.
+     */
     data object TranslateLine : AssistantAction
 
     /** Close the captured-line overlay and resume the movie. */
@@ -33,7 +36,7 @@ sealed interface AssistantAction {
  * With the overlay closed only the capture keys (DPAD_DOWN, CAPTIONS) are taken; every other key is
  * null so the transport mapping of [RemoteKeyMapper] keeps handling it. With the overlay open every
  * key is taken: OK/ENTER/PLAY_PAUSE replay, DPAD_RIGHT speaks the English line, DPAD_LEFT
- * translates it (#92), BACK/DPAD_DOWN/CAPTIONS dismiss, and the rest is
+ * shows it in Spanish (#92, #288), BACK/DPAD_DOWN/CAPTIONS dismiss, and the rest is
  * [AssistantAction.Consumed], so no transport action can run behind the overlay. The exception is
  * the volume keys (VOLUME_UP/DOWN/MUTE, #178): they are null in both modes so the system still
  * changes the TV volume while the overlay is open.

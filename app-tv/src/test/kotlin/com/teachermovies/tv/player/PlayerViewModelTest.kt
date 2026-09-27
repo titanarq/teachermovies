@@ -29,6 +29,7 @@ import com.teachermovies.player.streaming.StreamingPlaybackController
 import com.teachermovies.torrent.fake.FakeTorrentEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -65,6 +66,17 @@ class PlayerViewModelTest {
     private val repo = InMemoryTorrentRepository()
     private val speaker = FakeSpeaker()
     private val translations = FakeTranslationProvider()
+
+    /** LEFT's aligned Spanish line (#288): [aligned] after [alignedDelayMs]; null sends LEFT to [translations]. */
+    private var aligned: AlignedSpanishLine? = null
+    private var alignedDelayMs = 0L
+    private val alignedAsked = mutableListOf<Pair<TorrentId, String>>()
+    private val spanishLines =
+        AlignedSpanishSource { torrentId, _, cue ->
+            alignedAsked += torrentId to cue.text
+            delay(alignedDelayMs)
+            aligned
+        }
 
     /**
      * Every answer spoken aloud, which is what these tests assume: they exercise the panel's keys,
@@ -105,6 +117,7 @@ class PlayerViewModelTest {
             speech,
             backgroundScope,
             prepareDispatcher = dispatcher,
+            spanishLines = spanishLines,
         )
     }
 
@@ -791,7 +804,7 @@ class PlayerViewModelTest {
         }
 
     @Test
-    fun translateLineGoesThroughLoadingToReadyAndSaysTheSpanishText() =
+    fun translateLineWithoutAnAlignedSubtitleShowsTheBridgeTranslationLabelledIaAndSaysNothing() =
         runTest(dispatcher) {
             translations.translations["Hello there."] = "Hola."
             translations.delayMs = 500
@@ -804,15 +817,109 @@ class PlayerViewModelTest {
                 vm.uiState.value.assistant!!
                     .translation,
             )
+            assertNull(vm.uiState.value.assistant!!.spanishLabel)
 
             advanceTimeBy(501)
             runCurrent()
 
             val overlay = vm.uiState.value.assistant!!
             assertEquals(TranslationUiState.Ready("Hola."), overlay.translation)
-            assertEquals(listOf("Hola." to SpeechLanguage.ES), speaker.spoken)
-            assertTrue(overlay.speaking)
+            assertEquals(PlayerViewModel.LABEL_AI, overlay.spanishLabel)
+            assertEquals(listOf(id to "Hello there."), alignedAsked)
+            assertEquals(listOf("Hello there."), translations.requests)
+            assertTrue("LEFT never speaks (#288)", speaker.spoken.isEmpty())
+            assertFalse(overlay.speaking)
             assertEquals("the movie stays paused", PlayerState.Paused, player.state.value)
+        }
+
+    @Test
+    fun translateLineShowsTheAlignedSpanishSubtitleLabelledSubtituloWithoutAskingTheBridge() =
+        runTest(dispatcher) {
+            aligned = AlignedSpanishLine("Hola, tú.")
+            translations.translations["Hello there."] = "Hola."
+            val vm = captured()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+
+            val overlay = vm.uiState.value.assistant!!
+            assertEquals(TranslationUiState.Ready("Hola, tú."), overlay.translation)
+            assertEquals(PlayerViewModel.LABEL_SUBTITLE, overlay.spanishLabel)
+            assertTrue(translations.requests.isEmpty())
+            assertTrue(speaker.spoken.isEmpty())
+            assertEquals(PlayerState.Paused, player.state.value)
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+            assertEquals("a second LEFT does not look again", 1, alignedAsked.size)
+        }
+
+    @Test
+    fun anAlignedLatinAmericanSubtitleSaysSo() =
+        runTest(dispatcher) {
+            aligned = AlignedSpanishLine("Hola, güey.", latino = true)
+            val vm = captured()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+
+            assertEquals(PlayerViewModel.LABEL_SUBTITLE_LATINO, vm.uiState.value.assistant!!.spanishLabel)
+        }
+
+    @Test
+    fun translateLineIsLoadingWhileTheAlignedLookupRuns() =
+        runTest(dispatcher) {
+            aligned = AlignedSpanishLine("Hola, tú.")
+            alignedDelayMs = 300
+            val vm = captured()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+            assertEquals(TranslationUiState.Loading, vm.uiState.value.assistant!!.translation)
+
+            advanceTimeBy(301)
+            runCurrent()
+            assertEquals(TranslationUiState.Ready("Hola, tú."), vm.uiState.value.assistant!!.translation)
+        }
+
+    @Test
+    fun dismissWhileLookingDropsTheLateAnswer() =
+        runTest(dispatcher) {
+            alignedDelayMs = 300
+            translations.translations["Hello there."] = "Hola."
+            val vm = captured()
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+
+            vm.press(KeyEvent.KEYCODE_BACK)
+            advanceTimeBy(301)
+            runCurrent()
+            assertTrue("the cancelled lookup never reached the bridge", translations.requests.isEmpty())
+
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+            assertEquals(AssistantOverlayState("Hello there.", replaying = false), vm.uiState.value.assistant)
+        }
+
+    @Test
+    fun aSecondLeftAfterAnOfflineFailureAsksTheBridgeAgain() =
+        runTest(dispatcher) {
+            translations.nextResult = TranslationResult.Offline
+            val vm = captured()
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+            assertEquals(TranslationUiState.Failed(TranslationFailure.OFFLINE), vm.uiState.value.assistant!!.translation)
+            assertNull(vm.uiState.value.assistant!!.spanishLabel)
+
+            translations.translations["Hello there."] = "Hola."
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+
+            val overlay = vm.uiState.value.assistant!!
+            assertEquals(TranslationUiState.Ready("Hola."), overlay.translation)
+            assertEquals(PlayerViewModel.LABEL_AI, overlay.spanishLabel)
+            assertEquals(listOf("Hello there.", "Hello there."), translations.requests)
+            assertEquals("the aligned lookup ran once", 1, alignedAsked.size)
         }
 
     @Test
@@ -873,6 +980,7 @@ class PlayerViewModelTest {
             translations.translations["Hello there."] = "Hola."
             val vm = captured()
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
             runCurrent()
             assertTrue(speech.state.value.speaking)
 

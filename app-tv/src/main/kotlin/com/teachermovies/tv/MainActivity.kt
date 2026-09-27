@@ -180,6 +180,7 @@ class MainActivity : ComponentActivity() {
             capture = container.lineCaptureController,
             speech = container.assistantSpeechController,
             streamingController = container.streamingPlaybackController,
+            spanishLines = container.alignedSpanishSource,
         )
     }
 
