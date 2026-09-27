@@ -1,5 +1,6 @@
 package com.teachermovies.http
 
+import com.teachermovies.core.log.RingBufferLogSink
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.TorrentRepository
 import com.teachermovies.http.auth.PairingManager
@@ -22,6 +23,9 @@ import com.teachermovies.torrent.api.TorrentEngine
  * @property pairing PIN pairing and token validation behind `POST /api/pair` and `requireBearer`.
  * @property subtitles where `POST /api/subtitles` (#61) writes an uploaded subtitle file.
  * @property library persisted torrents; `GET /api/library` (#73) lists its completed movies.
+ * @property logs the redacting ring buffer (ADR-0006) that `GET /api/logs` and
+ * `GET /api/logs/stream` (#269) serve. The default is a fresh, empty buffer; #268's
+ * `AppContainer` wiring passes the one process-wide instance it installs in `AppLog`.
  * @property allowTestRemoteHeader test-only (#59): when `true`, the `X-Test-Remote` header
  * overrides the socket's remote address for the LAN-address guard. Must stay `false` in
  * production; `AppContainer` never sets it.
@@ -35,5 +39,6 @@ data class ServerDeps(
     val pairing: PairingManager,
     val subtitles: SubtitleStore,
     val library: TorrentRepository,
+    val logs: RingBufferLogSink = RingBufferLogSink(),
     val allowTestRemoteHeader: Boolean = false,
 )

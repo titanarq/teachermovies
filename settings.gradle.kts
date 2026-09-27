@@ -48,3 +48,5 @@ include(":player")
 include(":assistant")
 include(":discovery")
 include(":mobile-app")
+// Pure-JVM DTO module shared by :http-server and the future :laptop-bridge (#269, ADR-0005 §1).
+include(":bridge-protocol")

@@ -45,10 +45,11 @@ fun Application.module(deps: ServerDeps) {
         subtitleRoutes(deps)
         libraryRoutes(deps)
         eventsRoutes(deps)
+        logRoutes(deps)
         webUiRoutes()
-        // Every protected route goes inside `requireBearer(deps.pairing, setOf(TokenScope.PHONE))`
-        // (ADR-0002), naming the token scopes it accepts; `/api/bridge/*` is bridge-only and
-        // `/api/logs*` takes both (ADR-0005 §4).
+        // Every protected route goes inside `requireBearer`, naming the token scopes it accepts
+        // (ADR-0002): the routes above are phone-only except `/api/logs*`, which takes phone and
+        // bridge tokens (#269, ADR-0005 §4); `/api/bridge/*` will be bridge-only (#275).
     }
 }
 

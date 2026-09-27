@@ -33,9 +33,11 @@
 - `ServerDeps(engine: TorrentEngine, remove: suspend (TorrentId, Boolean) -> EngineResult<Unit>,
   space: () -> SpaceInfo?, appVersion: String, clock: () -> Long,
   pairing: PairingManager, subtitles: SubtitleStore, library: TorrentRepository,
-  allowTestRemoteHeader: Boolean = false)`,
-  extended by later issues. `allowTestRemoteHeader` is test-only (#59) and must stay `false` in
-  production.
+  logs: RingBufferLogSink = RingBufferLogSink(), allowTestRemoteHeader: Boolean = false)`,
+  extended by later issues. `logs` is the ring buffer of ADR-0006 that `/api/logs*` serves (#269);
+  the default is a fresh empty buffer until #268's `AppContainer` wiring passes the process-wide
+  instance it installs in `AppLog`. `allowTestRemoteHeader` is test-only (#59) and must stay
+  `false` in production.
 - `com.teachermovies.http.auth.LanAddressPolicy.isAllowed(address: String): Boolean` (#59): whether
   a literal IPv4/IPv6 address is on the LAN -- loopback, `10/8`, `172.16/12`, `192.168/16`,
   `169.254/16`, `fe80::/10`, `fc00::/7`, and the IPv4-mapped IPv6 form of any allowed IPv4 range.
@@ -63,9 +65,9 @@
 - `fun Route.requireBearer(pairing, scopes, allowQueryToken = false) { ... }` wraps every protected
   route: a missing/invalid token, or one whose scope is not in `scopes`, -> 401 `unauthorized` +
   `WWW-Authenticate: Bearer`, handler not run. Phone routes pass `setOf(TokenScope.PHONE)`;
-  `/api/bridge/*` will pass `setOf(TokenScope.BRIDGE)` (#275) and `/api/logs*` both (#269). Only
-  `/api/events` passes `allowQueryToken = true`. `redactTokenQuery(uri)` is what any request
-  logging must apply (and it must never log the `Authorization` header).
+  `/api/logs*` passes both scopes (#269) and `/api/bridge/*` will pass `setOf(TokenScope.BRIDGE)`
+  (#275). Only `/api/events` passes `allowQueryToken = true`. `redactTokenQuery(uri)` is what any
+  request logging must apply (and it must never log the `Authorization` header).
 - `GET /api/status` (public) -> 200
   `{"version":"...","engine":"running","freeBytes":123,"totalBytes":456,"torrents":2}`; `engine` is
   the `EngineStatus` in lower case, `freeBytes`/`totalBytes` are `null` when unknown.
@@ -139,6 +141,28 @@
   quietly (no exception reaches the client) when the connection drops. `com.teachermovies.http.sse.
   SseFormat.event(name, data)` renders one frame (a multi-line `data` becomes one `data:` line per
   input line); the web client consuming this is #63.
+- Log routes (#269, `LogRoutes.kt`, ADR-0006 §4): `GET /api/logs` and `GET /api/logs/stream`,
+  both wrapped in `requireBearer` with BOTH token scopes (`PHONE` and `BRIDGE`) and neither with
+  `allowQueryToken` -- the stream takes the token only in the `Authorization` header (the
+  `?token=` exception stays exclusive to `/api/events`; the phone web reads the stream with
+  `fetch`, #273). The wire DTOs live in `:bridge-protocol` (`com.teachermovies.bridge.protocol`,
+  ADR-0005 §1), shared with the laptop bridge, and are served from `ServerDeps.logs`:
+  - `GET /api/logs?since=&level=&limit=` -> 200
+    `LogsPageDto{"bootId":"...","entries":[LogEntryDto(seq, timeMs, level, module, message)]}`,
+    oldest first. `since` is a `LogEntry.seq` cursor (only `seq > since`; default 0 = the whole
+    buffer), `level` a minimum (`debug`|`info`|`warn`|`error`, lower case on the wire) and
+    `limit` the page size (default `RingBufferLogSink.DEFAULT_PAGE` = 500, at most
+    `RingBufferLogSink.MAX_LINES` = 5000). The first invalid parameter -> 400 `bad_request`.
+    `timeMs` is epoch millis and `message` arrived redacted and truncated from the sink. When
+    `bootId` changes, `seq` started over and readers page again from 0.
+  - `GET /api/logs/stream?since=&level=` -> SSE in the same `respondTextWriter` shape as
+    `/api/events`: `Cache-Control: no-cache`, a `: ping` comment every 15 s, quiet end when the
+    connection drops. First frame `event: boot` with `{"bootId":"..."}` (`LogStreamBootDto`),
+    then the backlog as one `event: log` frame per entry (`data` = `LogEntryDto`), then every
+    new line live. `limit` is ignored (the backlog is the whole buffer). The live queue is armed
+    before the backlog snapshot is read and a seq cursor drops duplicates, so a line recorded
+    while the stream starts up is delivered exactly once. Invalid `since`/`level` -> 400 before
+    the stream starts.
 - Phone web UI (#63, `WebUiRoutes.kt`), public: `GET /` -> 200 `text/html` (`web/index.html`),
   `GET /static/<file>` -> any file under `src/main/resources/web/` (`app.js`, `app.css`) via
   `staticResources`; vanilla JS, no build step, no external resources. The page pairs with
@@ -166,3 +190,7 @@ host runs a request's whole pipeline -- including the response body -- to comple
 anything back to its client, which an SSE stream that outlives the request never does on its own;
 a real loopback connection has no such limitation and needs no `X-Test-Remote` override, since
 `127.0.0.1` already satisfies `LanAddressPolicy`.
+`LogsRouteTest` (the page) and the 401/400 paths of `LogsStreamRouteTest` run in-process; the
+stream's happy paths drive a real loopback `embeddedServer` like `EventsRouteTest` (boot frame,
+backlog from `since`, live lines, level filter), and assert that `?token=` is 401 on
+`/api/logs/stream`.
