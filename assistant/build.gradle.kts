@@ -22,7 +22,11 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":core-model"))
+    // `api`, not `implementation`: `PersistentCachingTranslationProvider`'s constructor takes a
+    // `TranslationCacheRepository` (#274), so whoever wires the persistent translation cache compiles
+    // against it (the same reasoning as `:player` below). Only `com.teachermovies.core.repo` is used
+    // from here; no Room type appears in `:assistant`.
+    api(project(":core-model"))
     // `api`, not `implementation`: `HiddenSubtitleController`'s constructor takes a `Player`, so
     // anything wiring the assistant compiles against it (the same way `:http-server` depends on
     // `:torrent`). Only the public `com.teachermovies.player.api` package is used from here; no
