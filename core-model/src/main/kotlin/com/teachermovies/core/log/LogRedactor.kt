@@ -88,7 +88,10 @@ class LogRedactor {
                 // `pin=123456`, `PIN 123456`, `"pairingPin": "123456"` -- the 6-digit pairing PIN.
                 Regex("""(?i)\b(\w*pin["']?\s*[:=]?\s*["']?)\d{4,8}\b""") to KEEP_KEY,
                 // The bearer token `PairingManager` issues: 32 random bytes, base64url, no padding.
-                Regex("""\b[A-Za-z0-9_-]{43}\b""") to REDACTED,
+                // Lookarounds, not `\b`: `-` and `_` belong to that alphabet but are non-word
+                // characters, so `\b` found no boundary at them and let a token with one at an end
+                // through. The class is the alphabet, so a 43-run inside a longer one stays whole.
+                Regex("""(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])""") to REDACTED,
             )
 
         private const val KEEP_KEY = "\$1$REDACTED"

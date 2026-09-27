@@ -102,6 +102,21 @@ class LogRedactorTest {
                 expected = "curl -H $REDACTED",
             ),
             Redaction(
+                name = "a bare 43-character base64url token that starts with a dash",
+                input = "curl -H $TOKEN_LEADING_DASH",
+                expected = "curl -H $REDACTED",
+            ),
+            Redaction(
+                name = "a bare 43-character base64url token that starts with an underscore",
+                input = "curl -H $TOKEN_LEADING_UNDERSCORE",
+                expected = "curl -H $REDACTED",
+            ),
+            Redaction(
+                name = "a bare 43-character base64url token that ends with a dash",
+                input = "curl -H $TOKEN_TRAILING_DASH",
+                expected = "curl -H $REDACTED",
+            ),
+            Redaction(
                 name = "a line that only mentions authorization in prose",
                 input = "GET /api/logs refused: authorization missing",
                 expected = "GET /api/logs refused: authorization missing",
@@ -189,6 +204,13 @@ class LogRedactorTest {
     private companion object {
         const val REDACTED = LogRedactor.REDACTED
         const val TOKEN = "abcdefghijabcdefghijabcdefghijabcdefghijxyz"
+
+        // TOKEN's length with a `-` or `_` at one end -- the shapes `\b` cannot bound. Derived
+        // from TOKEN so they cannot drift out of the 43 characters the rule counts.
+        val TOKEN_LEADING_DASH = "-${TOKEN.drop(1)}"
+        val TOKEN_LEADING_UNDERSCORE = "_${TOKEN.drop(1)}"
+        val TOKEN_TRAILING_DASH = "${TOKEN.dropLast(1)}-"
+
         const val JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0aXRhbiJ9.abcDEF123"
         const val INFO_HASH = "3a7bd3e2360a3d29eea436fcfb7e44c735d117c4"
         const val PIN = "123456"
