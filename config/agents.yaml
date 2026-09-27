@@ -124,7 +124,7 @@ planner:
   # Human decision 2026-09-27 (speed up epic #266): 20 -> 40 runs/day, 1 -> 2 parallel issues.
   # Parallelism is one worker per backend (qwen + claude worktrees), never two issues sharing a
   # module: label -- both enforced by worker_task.sh start.
-  max_runs_per_day: 40
+  max_runs_per_day: 60
   relaunch_cap: 3
   max_parallel_issues: 2
   reconcile_closed_lookback_days: 30
