@@ -121,9 +121,12 @@ mechanism:
 
 planner:
   idle_wake_minutes: 120
-  max_runs_per_day: 20
+  # Human decision 2026-09-27 (speed up epic #266): 20 -> 40 runs/day, 1 -> 2 parallel issues.
+  # Parallelism is one worker per backend (qwen + claude worktrees), never two issues sharing a
+  # module: label -- both enforced by worker_task.sh start.
+  max_runs_per_day: 40
   relaunch_cap: 3
-  max_parallel_issues: 1
+  max_parallel_issues: 2
   reconcile_closed_lookback_days: 30
   # Reviewed the refiner's dry run on #29/#81-#83 (2026-09-24); unattended from here on
   # (agent_os/docs/adr/2026-09-15-the-refiner-runs-unattended-only-after-a-human-reviewed-its-dry-run.md).
