@@ -38,6 +38,14 @@ class InMemorySettingsRepository(
         state.update { it.copy(bridgeTokenHashes = it.bridgeTokenHashes + hash) }
     }
 
+    override suspend fun setBridgeDeviceName(name: String?) {
+        state.update { it.copy(bridgeDeviceName = name?.takeUnless { n -> n.isBlank() }) }
+    }
+
+    override suspend fun clearBridgeTokenHashes() {
+        state.update { it.copy(bridgeTokenHashes = emptySet(), bridgeDeviceName = null) }
+    }
+
     override suspend fun setFirstRunCompleted(done: Boolean) {
         state.update { it.copy(firstRunCompleted = done) }
     }

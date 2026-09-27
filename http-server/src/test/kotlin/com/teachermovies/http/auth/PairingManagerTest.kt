@@ -187,6 +187,39 @@ class PairingManagerTest {
         }
 
     @Test
+    fun `bridge pairing records the bridge name, cleaned and bounded`() =
+        runTest {
+            manager.pair(manager.currentPin(), TokenScope.BRIDGE, "  portatil\u0007-manuel  ")
+            assertEquals("portatil-manuel", settings.current.bridgeDeviceName)
+
+            manager.pair(manager.currentPin(), TokenScope.BRIDGE, "x".repeat(200))
+            assertEquals("x".repeat(PairingManager.MAX_DEVICE_NAME_LENGTH), settings.current.bridgeDeviceName)
+
+            manager.pair(manager.currentPin(), TokenScope.BRIDGE, null)
+            assertNull(settings.current.bridgeDeviceName)
+        }
+
+    @Test
+    fun `phone pairing stores no device name`() =
+        runTest {
+            manager.pair(manager.currentPin(), TokenScope.PHONE, "telefono")
+
+            assertNull(settings.current.bridgeDeviceName)
+        }
+
+    @Test
+    fun `clearing the bridge hashes revokes a bridge token and leaves a phone token alone`() =
+        runTest {
+            val bridgeToken = pairedToken(TokenScope.BRIDGE)
+            val phoneToken = pairedToken(TokenScope.PHONE)
+
+            settings.clearBridgeTokenHashes()
+
+            assertNull(manager.scopeOf(bridgeToken))
+            assertEquals(TokenScope.PHONE, manager.scopeOf(phoneToken))
+        }
+
+    @Test
     fun `a wrong pin pairs no bridge token`() =
         runTest {
             assertEquals(PairResult.WrongPin, manager.pair(wrongPin(), TokenScope.BRIDGE))

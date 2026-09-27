@@ -263,6 +263,12 @@ class AppContainer(
     val pairingManager: PairingManager =
         PairingManager(settings = settingsRepository, random = SecureRandom(), clock = System::currentTimeMillis)
 
+    /**
+     * The laptop bridge's job hub (#275), one for the process: every server restart gets this same
+     * instance, so Configuración's "Portátil (Claude)" state (#289) does not reset with the server.
+     */
+    val bridgeJobHub: BridgeJobHub = BridgeJobHub()
+
     private val appVersion: String =
         runCatching { application.packageManager.getPackageInfo(application.packageName, 0).versionName }
             .getOrNull() ?: UNKNOWN_VERSION

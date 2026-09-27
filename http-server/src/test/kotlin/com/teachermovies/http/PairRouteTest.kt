@@ -302,6 +302,7 @@ class PairRouteTest {
             assertEquals("bridge", response.jsonField("scope"))
             assertEquals(setOf(PairingManager.sha256Hex(token)), settings.current.bridgeTokenHashes)
             assertTrue(settings.current.authTokenHashes.isEmpty())
+            assertEquals("Pixel", settings.current.bridgeDeviceName)
         }
 
     @Test
