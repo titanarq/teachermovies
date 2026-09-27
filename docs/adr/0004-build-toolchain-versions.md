@@ -23,6 +23,7 @@ jlibtorrent and libVLC).
 | minSdk | 26 | Android TV 8.0+ covers all target devices; above jlibtorrent's 24 and libVLC's 17. |
 | AGP | 8.6.1 | Newest AGP that runs on Gradle 8.7 (8.7.x needs Gradle 8.9) and officially supports API 35. |
 | Kotlin (+ compose plugin) | 2.1.21 | Supports Gradle 8.7 and AGP 8.6; lets us consume Ktor 3.1 (built with Kotlin 2.1). |
+| Kotlin JVM plugin (`org.jetbrains.kotlin.jvm`, catalog alias `kotlin-jvm`) | 2.1.21 (`version.ref = kotlin`) | Pure-JVM modules `:bridge-protocol` (DTOs shared by `:http-server` and the laptop) and `:laptop-bridge` (ADR-0005), which cannot be Android libraries. Same Kotlin version as the Android/compose plugins; must stay in lockstep with them. |
 | KSP | 2.1.21-2.0.2 | Matches Kotlin 2.1.21 (Room). |
 | Compose BOM | 2025.08.00 | Compose 1.9.0 (`minCompileSdk=35`, AGP >= 8.6.0); verified. Later BOMs were not verified against SDK 35. |
 | `androidx.tv:tv-material` | 1.1.0 | Latest stable Compose-for-TV (`minCompileSdk=35`, AGP >= 8.6.0); verified with the BOM above. |
@@ -41,6 +42,8 @@ jlibtorrent and libVLC).
 | `androidx.test:core` (test-only) | 1.6.1 | `ApplicationProvider` for Robolectric tests; introduced by #40 (PR #107). |
 | `kotlinx-coroutines-test` (test-only) | 1.10.2 | Same `coroutines` version ref as kotlinx-coroutines (must stay in lockstep); `runTest`/virtual time for the `:player` `StreamingPlaybackController` tests (#98). Already in the catalog; this row records it. |
 | `com.anthropic:anthropic-java` | 2.65.0 | Official Anthropic Java SDK, runtime dependency for `AnthropicTranslationProvider` (#90, post-MVP). Pure JVM jar (not an AAR), so AGP's `minCompileSdk`/AAR-metadata checks don't apply; requires Java 8+ (JDK 17 toolchain satisfies it) and pulls in OkHttp 4.12.0 and Jackson 2.19.4 (Jackson >= 2.13.4 required) transitively, both fine on minSdk 26. |
+| Gradle `application` plugin (core, build-only) | bundled with Gradle 8.7 (no catalog version) | `:laptop-bridge` only (ADR-0005): `run` and `installDist` start scripts for the `teachermovies-bridge` CLI launched by the systemd user unit. A Gradle core plugin, applied as `application` in the module's `plugins { }`, so it has no version to pin. |
+| JmDNS (`org.jmdns:jmdns`) | 3.6.3 | `:laptop-bridge` only (ADR-0005): mDNS browse of the TV's `_http._tcp` announcement when the URL saved at pairing no longer answers. Latest release on Maven Central; pure JVM jar (Java 8+), pulls in `slf4j-api` 2.0.7 transitively. Never used on the TV, which keeps Android NSD (`:discovery`). |
 | `org.jlleitschuh.gradle.ktlint` (Gradle plugin, build-only) | 14.2.0 | Formatting check/format tasks (`ktlintCheck`/`ktlintFormat`) for every project, root included (#38). Latest release; minimum Gradle 7.4 / AGP 4.1, so fine on Gradle 8.7 + AGP 8.6.1. |
 | ktlint engine (`com.pinterest.ktlint`, build-only) | 1.8.0 | Run by the plugin above (`ktlint { version }`, #38); latest release, verified with `ktlintCheck`/`ktlintFormat` over the whole repo. |
 

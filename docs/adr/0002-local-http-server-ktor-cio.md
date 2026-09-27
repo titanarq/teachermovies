@@ -4,6 +4,7 @@
 - **Date:** 2026-09-24
 - **Deciders:** MatillaM
 - **Refines:** ADR-0001 §5 (which left the server library to its first task)
+- **Amended by:** ADR-0005 §4 (token scopes phone/bridge)
 
 ## Context
 
@@ -36,6 +37,11 @@ stay small on the APK.
    cannot set request headers, that one route (and only it) additionally accepts the token as the
    query parameter `?token=<token>`. Every other route rejects a query-param token (401). Request
    logging must redact the `token` query parameter as well as the `Authorization` header.
+
+   Amended by ADR-0005 §4 (2026-09-27): tokens now carry a scope from `POST /api/pair`,
+   `phone` or `bridge`. Bridge tokens reach only `/api/bridge/*` and `/api/logs*`; phone tokens are
+   refused on `/api/bridge/*`. The `?token=` exception above stays exclusive to `/api/events`.
+
 4. Static web UI (`/`, `/static/*`) is served without a token; it holds no data and performs the
    pairing flow itself.
 
