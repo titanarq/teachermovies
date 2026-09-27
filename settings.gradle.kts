@@ -48,5 +48,8 @@ include(":player")
 include(":assistant")
 include(":discovery")
 include(":mobile-app")
-// Pure-JVM DTO module shared by :http-server and the future :laptop-bridge (#269, ADR-0005 §1).
+// Pure-JVM DTO module shared by :http-server and :laptop-bridge (#269, ADR-0005 §1).
 include(":bridge-protocol")
+// The laptop-side bridge: a Kotlin/JVM CLI (and later a systemd user service), never an Android
+// module; it depends only on :bridge-protocol (ADR-0005 §1).
+include(":laptop-bridge")
