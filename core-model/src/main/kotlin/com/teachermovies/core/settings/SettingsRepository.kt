@@ -39,6 +39,18 @@ interface SettingsRepository {
      */
     suspend fun addBridgeTokenHash(hash: String)
 
+    /**
+     * Records the name the laptop bridge gave when it paired, or clears it when [name] is null or
+     * blank. Informational only: no token check reads it.
+     */
+    suspend fun setBridgeDeviceName(name: String?)
+
+    /**
+     * Forgets every bridge-scoped pairing token hash and the bridge's name ("Olvidar portátil",
+     * ADR-0005 §4), which revokes every paired laptop bridge and leaves the phones paired.
+     */
+    suspend fun clearBridgeTokenHashes()
+
     suspend fun setFirstRunCompleted(done: Boolean)
 
     /** Turns on or off opening the app by itself when the TV powers on. */

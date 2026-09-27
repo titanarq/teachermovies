@@ -10,6 +10,8 @@ internal const val DEFAULT_HTTP_PORT = 8787
  * chosen one. [authTokenHashes] holds a hash of every phone-scoped bearer token PIN pairing has
  * issued and [bridgeTokenHashes] a hash of every bridge-scoped one, never a token itself; the two
  * sets are separate so a laptop bridge can be unpaired without unpairing the phone (ADR-0005 §4).
+ * [bridgeDeviceName] is the name the last laptop bridge gave when it paired, null when it gave none
+ * or no bridge is paired; Configuración shows it next to the bridge's connection state (#289).
  * [firstRunCompleted] is false until the first-run setup has finished, which is what
  * makes the app show it again after a fresh install. [autostartOnBoot] is whether the app opens by
  * itself when the TV powers on, off until the user turns it on. [translationApiKey] is the user's own
@@ -22,6 +24,7 @@ data class AppSettings(
     val downloadVolumeId: String? = null,
     val authTokenHashes: Set<String> = emptySet(),
     val bridgeTokenHashes: Set<String> = emptySet(),
+    val bridgeDeviceName: String? = null,
     val firstRunCompleted: Boolean = false,
     val autostartOnBoot: Boolean = false,
     val translationApiKey: String? = null,
@@ -29,6 +32,7 @@ data class AppSettings(
     override fun toString(): String =
         "AppSettings(httpPort=$httpPort, downloadVolumeId=$downloadVolumeId, " +
             "authTokenHashes=$authTokenHashes, bridgeTokenHashes=$bridgeTokenHashes, " +
+            "bridgeDeviceName=$bridgeDeviceName, " +
             "firstRunCompleted=$firstRunCompleted, " +
             "autostartOnBoot=$autostartOnBoot, " +
             "translationApiKey=${if (translationApiKey == null) "null" else "<redacted>"})"

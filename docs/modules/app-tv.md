@@ -18,14 +18,14 @@
   row -- and never change the port; OK opens a numeric text field whose OK/Done saves and BACK
   cancels without saving, #224), radio-style volume list on the right (`X,Y GB libres de Z GB`). RIGHT/LEFT move
   between them; entry focus is the port field; BACK returns to the tab row.
-- Text-field editors (port, translation key; #222): OK opens the editor *inside* the focused row's
+- Text-field editors (port; #222, which also covered the translation-key field removed by #289): OK opens the editor *inside* the focused row's
   `Surface` instead of swapping the row out, so the row keeps focus until the editor is attached;
   the editor then takes focus from a `LaunchedEffect` (IME opens). On OK/Done or BACK the row takes
   focus back *before* the editor leaves composition, so focus is never left on a removed node
   (which dropped it to the first focusable, the Biblioteca tab, and switched tabs). Moving focus
   out of an open editor abandons the edit and leaves focus where it went. Manual check on the TV
   emulator: Configuración -> OK on the port row -> focused node is the text field and the
-  Configuración tab stays selected; BACK -> focus back on the port row; same for the key row
+  Configuración tab stays selected; BACK -> focus back on the port row
   (`adb shell input keyevent DPAD_CENTER` / `BACK`, then `uiautomator dump` for the focused bounds).
 - Theme (#225): `com.teachermovies.tv.ui.TeacherMoviesTheme` wraps everything `MainActivity` shows:
   tv-material `MaterialTheme(colorScheme = TeacherMoviesColorScheme)` (`darkColorScheme()`), its
@@ -301,14 +301,22 @@
   switch row `Arrancar al encender la TV` sits under the volume list (title `Arranque`). DOWN from
   the last volume reaches it (RIGHT from the port field when there is no volume), OK toggles it,
   UP returns to the list, LEFT to the port field. Entry focus is still the port field.
-- Configuración, translation key (#212): `SettingsUiState.translationApiKey` (empty when unset)
-  and `SettingsViewModel.changeTranslationApiKey(String)` (trimmed; blank clears the key via
-  `setTranslationApiKey(null)`; an unchanged key writes nothing). The field `Clave API de traducción
-  (Anthropic)` sits under the autostart switch: it shows only `Configurada` / `No configurada`,
-  never the key. DOWN from the switch reaches it, UP returns to the switch, LEFT to the port field;
-  OK opens a masked text field holding the stored key (all selected, so a paste replaces it), OK/Done
-  saves, BACK or moving focus away abandons the edit. `SettingsUiState.toString` redacts the key
-  (and the PIN); neither is ever logged.
+- Configuración, laptop bridge (#289, ADR-0005 §4/§9; replaces the translation-key field of #212,
+  which is gone from the screen -- the stored key itself and the Anthropic provider wiring are
+  #290): `SettingsViewModel(..., bridgeConnected: Flow<Boolean> = flowOf(false),
+  disconnectBridge: () -> Unit = {})`, wired by `MainActivity` to `AppContainer.bridgeJobHub`
+  (`connected`, `disconnectBridge`) -- one `BridgeJobHub` for the process, passed to every
+  `ServerDeps` so the state survives a server restart. `SettingsUiState.bridgeConnected`,
+  `bridgePaired` (any bridge token stored) and `bridgeName` (`AppSettings.bridgeDeviceName`).
+  `forgetBridge()` calls `settings.clearBridgeTokenHashes()` (phones stay paired) and then
+  `disconnectBridge()`, so the laptop's reconnect is refused. Under the autostart switch a plain
+  text line says `Portátil (Claude): Conectado · <nombre>` (`Conectado` alone when the bridge gave
+  no name) or `Portátil (Claude): No conectado`; while a bridge is paired or connected the row
+  `Olvidar portátil` follows it. DOWN from the switch reaches that row, UP returns to the switch,
+  LEFT to the port field; OK forgets the bridge and moves focus to the switch before the row
+  leaves the screen (#222). `SettingsUiState.toString` redacts the PIN.
+  `SettingsScreenFocusTest` (Robolectric + Compose `ui-test-junit4`, on a 960x540 dp screen,
+  plain `Application`) drives this order with real D-pad key events.
 - Platform limits: after a boot only the process, the HTTP server (+ NSD announcement) and, where
   allowed, the torrent service run; the app is **not** brought to the foreground (Android 10+
   forbids starting an activity from a background receiver). `TorrentService` is a `dataSync`

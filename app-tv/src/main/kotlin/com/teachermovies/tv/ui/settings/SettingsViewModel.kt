@@ -46,9 +46,10 @@ data class VolumeRow(
  * [SettingsViewModel.changePort] was rejected, until a valid one succeeds. [serverUrl] is
  * `http://<lan-ip>:<port>` (null without a LAN address), [pin] the pairing PIN and [serverState]
  * the embedded HTTP server's state (#66). [autostartOnBoot] mirrors the persisted "Arrancar al
- * encender la TV" switch (#126), off by default. [translationApiKey] is the user's own Anthropic
- * API key for subtitle translation (#212), the empty string when none is set; it is never logged
- * (`SettingsUiState.toString` redacts it).
+ * encender la TV" switch (#126), off by default. [bridgeConnected] is whether a laptop bridge holds
+ * the job stream open right now (#275), [bridgePaired] whether any bridge token is stored (#270)
+ * and [bridgeName] the name the paired bridge gave, null when it gave none (#289). The Anthropic
+ * API-key field this screen used to offer is gone (ADR-0005 §9).
  */
 data class SettingsUiState(
     val httpPort: Int = AppSettings().httpPort,
@@ -60,13 +61,15 @@ data class SettingsUiState(
     val pin: String = "",
     val serverState: ServerState = ServerState.Stopped,
     val autostartOnBoot: Boolean = AppSettings().autostartOnBoot,
-    val translationApiKey: String = "",
+    val bridgeConnected: Boolean = false,
+    val bridgePaired: Boolean = false,
+    val bridgeName: String? = null,
 ) {
     override fun toString(): String =
         "SettingsUiState(httpPort=$httpPort, volumes=$volumes, selectedVolumeId=$selectedVolumeId, " +
             "volumeMissing=$volumeMissing, portError=$portError, serverUrl=$serverUrl, pin=<redacted>, " +
             "serverState=$serverState, autostartOnBoot=$autostartOnBoot, " +
-            "translationApiKey=${if (translationApiKey.isEmpty()) "\"\"" else "<redacted>"})"
+            "bridgeConnected=$bridgeConnected, bridgePaired=$bridgePaired, bridgeName=$bridgeName)"
 }
 
 /**
@@ -81,6 +84,9 @@ data class SettingsUiState(
  *
  * [pin] is read on creation, on [refreshVolumes] (each time the screen is shown), whenever
  * [serverState] changes and on every `pinTicks` emission.
+ *
+ * [bridgeConnected] is the bridge job hub's connection state; [disconnectBridge] ends its open
+ * stream, and [forgetBridge] calls it after forgetting the bridge tokens.
  */
 class SettingsViewModel(
     private val settings: SettingsRepository,
@@ -90,6 +96,8 @@ class SettingsViewModel(
     private val serverState: StateFlow<ServerState>,
     serverUrl: Flow<String?> = flowOf(null),
     pinTicks: Flow<Unit> = pinRefreshTicker(),
+    bridgeConnected: Flow<Boolean> = flowOf(false),
+    private val disconnectBridge: () -> Unit = {},
 ) : ViewModel() {
     private val portError = MutableStateFlow(false)
     private val volumeSnapshot = MutableStateFlow(volumes.volumes())
@@ -103,8 +111,10 @@ class SettingsViewModel(
             volumeSnapshot,
             portError,
             server,
-        ) { appSettings, available, error, (url, p, state) ->
-            buildState(appSettings, available, error).copy(serverUrl = url, pin = p, serverState = state)
+            bridgeConnected,
+        ) { appSettings, available, error, (url, p, state), connected ->
+            buildState(appSettings, available, error)
+                .copy(serverUrl = url, pin = p, serverState = state, bridgeConnected = connected)
         }.stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
@@ -146,13 +156,15 @@ class SettingsViewModel(
     }
 
     /**
-     * Persists [key], trimmed, as the translation API key (#212); a blank one clears the stored
-     * key. Nothing is written when the trimmed key equals the one already stored.
+     * "Olvidar portátil" (#289, ADR-0005 §4): forgets every bridge token and the bridge's name --
+     * the phones stay paired -- and only then ends the open bridge stream, so the laptop's
+     * reconnect is refused rather than let back in on a token that is still stored.
      */
-    fun changeTranslationApiKey(key: String) {
-        val trimmed = key.trim()
-        if (trimmed == uiState.value.translationApiKey) return
-        viewModelScope.launch { settings.setTranslationApiKey(trimmed.ifEmpty { null }) }
+    fun forgetBridge() {
+        viewModelScope.launch {
+            settings.clearBridgeTokenHashes()
+            disconnectBridge()
+        }
     }
 
     /** Re-reads the attached volumes and their free space, and the PIN. */
@@ -180,7 +192,8 @@ class SettingsViewModel(
             volumeMissing = selection is VolumeSelection.PersistedMissing,
             portError = error,
             autostartOnBoot = appSettings.autostartOnBoot,
-            translationApiKey = appSettings.translationApiKey.orEmpty(),
+            bridgePaired = appSettings.bridgeTokenHashes.isNotEmpty(),
+            bridgeName = appSettings.bridgeDeviceName,
         )
     }
 
@@ -203,13 +216,24 @@ class SettingsViewModel(
         private val pin: () -> String,
         private val serverState: StateFlow<ServerState>,
         private val serverUrl: Flow<String?>,
+        private val bridgeConnected: Flow<Boolean>,
+        private val disconnectBridge: () -> Unit,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
                 "Unknown ViewModel class ${modelClass.name}"
             }
-            return SettingsViewModel(settings, volumes, space, pin, serverState, serverUrl) as T
+            return SettingsViewModel(
+                settings = settings,
+                volumes = volumes,
+                space = space,
+                pin = pin,
+                serverState = serverState,
+                serverUrl = serverUrl,
+                bridgeConnected = bridgeConnected,
+                disconnectBridge = disconnectBridge,
+            ) as T
         }
     }
 }

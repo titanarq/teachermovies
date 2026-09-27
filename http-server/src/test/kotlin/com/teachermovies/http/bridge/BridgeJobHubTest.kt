@@ -44,6 +44,25 @@ class BridgeJobHubTest {
     }
 
     @Test
+    fun `disconnectBridge closes the open stream and resolves its jobs Disconnected`() =
+        runTest {
+            val stream = hub.connect()
+            val outcome = async { hub.submit(BridgeJob.Translate("hi"), timeout) }
+            runCurrent()
+            stream.next()
+
+            hub.disconnectBridge()
+
+            assertFalse(hub.connected.value)
+            assertEquals(BridgeOutcome.Disconnected, outcome.await())
+            assertTrue(stream.events.isClosedForReceive)
+            // The route's own disconnect afterwards is a no-op, and so is a second call.
+            hub.disconnect(stream)
+            hub.disconnectBridge()
+            assertFalse(hub.connected.value)
+        }
+
+    @Test
     fun `a job goes out on the stream and resolves Done with the posted text`() =
         runTest {
             val stream = hub.connect()

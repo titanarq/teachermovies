@@ -21,6 +21,7 @@ private val HTTP_PORT = intPreferencesKey("httpPort")
 private val DOWNLOAD_VOLUME_ID = stringPreferencesKey("downloadVolumeId")
 private val AUTH_TOKEN_HASHES = stringSetPreferencesKey("authTokenHashes")
 private val BRIDGE_TOKEN_HASHES = stringSetPreferencesKey("bridgeTokenHashes")
+private val BRIDGE_DEVICE_NAME = stringPreferencesKey("bridgeDeviceName")
 private val FIRST_RUN_COMPLETED = booleanPreferencesKey("firstRunCompleted")
 private val AUTOSTART_ON_BOOT = booleanPreferencesKey("autostartOnBoot")
 private val TRANSLATION_API_KEY = stringPreferencesKey("translationApiKey")
@@ -36,6 +37,7 @@ class DataStoreSettingsRepository(
                 downloadVolumeId = preferences[DOWNLOAD_VOLUME_ID],
                 authTokenHashes = preferences[AUTH_TOKEN_HASHES] ?: emptySet(),
                 bridgeTokenHashes = preferences[BRIDGE_TOKEN_HASHES] ?: emptySet(),
+                bridgeDeviceName = preferences[BRIDGE_DEVICE_NAME],
                 firstRunCompleted = preferences[FIRST_RUN_COMPLETED] ?: false,
                 autostartOnBoot = preferences[AUTOSTART_ON_BOOT] ?: false,
                 translationApiKey = preferences[TRANSLATION_API_KEY],
@@ -72,6 +74,23 @@ class DataStoreSettingsRepository(
     override suspend fun addBridgeTokenHash(hash: String) {
         dataStore.edit { preferences ->
             preferences[BRIDGE_TOKEN_HASHES] = (preferences[BRIDGE_TOKEN_HASHES] ?: emptySet()) + hash
+        }
+    }
+
+    override suspend fun setBridgeDeviceName(name: String?) {
+        dataStore.edit { preferences ->
+            if (name.isNullOrBlank()) {
+                preferences.remove(BRIDGE_DEVICE_NAME)
+            } else {
+                preferences[BRIDGE_DEVICE_NAME] = name
+            }
+        }
+    }
+
+    override suspend fun clearBridgeTokenHashes() {
+        dataStore.edit { preferences ->
+            preferences.remove(BRIDGE_TOKEN_HASHES)
+            preferences.remove(BRIDGE_DEVICE_NAME)
         }
     }
 
