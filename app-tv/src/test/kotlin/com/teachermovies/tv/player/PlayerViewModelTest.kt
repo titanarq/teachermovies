@@ -12,6 +12,7 @@ import com.teachermovies.assistant.TranslationFailure
 import com.teachermovies.assistant.TranslationUiState
 import com.teachermovies.assistant.speech.SpeakerAvailability
 import com.teachermovies.assistant.speech.SpeechLanguage
+import com.teachermovies.assistant.speech.SpokenOutputSettings
 import com.teachermovies.assistant.speech.fake.FakeSpeaker
 import com.teachermovies.assistant.translation.TranslationResult
 import com.teachermovies.assistant.translation.fake.FakeTranslationProvider
@@ -28,6 +29,8 @@ import com.teachermovies.player.streaming.StreamingPlaybackController
 import com.teachermovies.torrent.fake.FakeTorrentEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -63,6 +66,14 @@ class PlayerViewModelTest {
     private val speaker = FakeSpeaker()
     private val translations = FakeTranslationProvider()
 
+    /**
+     * Every answer spoken aloud, which is what these tests assume: they exercise the panel's keys,
+     * not the optional-TTS setting (#294) -- gating each answer is `AssistantSpeechControllerTest`'s
+     * job, and its default silences all three.
+     */
+    private val allSpoken: StateFlow<SpokenOutputSettings> =
+        MutableStateFlow(SpokenOutputSettings(englishLine = true, spanishLine = true, explanations = true))
+
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
@@ -85,7 +96,7 @@ class PlayerViewModelTest {
         val engine = SubtitleEngine(player.positionMs, backgroundScope)
         hidden = HiddenSubtitleController(player, engine, backgroundScope, tmp.newFolder("cache"))
         capture = LineCaptureController(player, engine, backgroundScope)
-        speech = AssistantSpeechController(speaker, translations, backgroundScope)
+        speech = AssistantSpeechController(speaker, translations, backgroundScope, allSpoken)
         return PlayerViewModel(
             PlaybackSession(player, repo, backgroundScope, clock = { 0L }),
             player,
@@ -915,7 +926,7 @@ class PlayerViewModelTest {
         val subtitles = SubtitleEngine(player.positionMs, backgroundScope)
         hidden = HiddenSubtitleController(player, subtitles, backgroundScope, tmp.newFolder("cache"))
         capture = LineCaptureController(player, subtitles, backgroundScope)
-        speech = AssistantSpeechController(speaker, translations, backgroundScope)
+        speech = AssistantSpeechController(speaker, translations, backgroundScope, allSpoken)
         val controller =
             StreamingPlaybackController(
                 player = player,

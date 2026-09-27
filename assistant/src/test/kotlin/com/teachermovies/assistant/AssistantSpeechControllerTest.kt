@@ -2,6 +2,7 @@ package com.teachermovies.assistant
 
 import com.teachermovies.assistant.speech.SpeakerAvailability
 import com.teachermovies.assistant.speech.SpeechLanguage
+import com.teachermovies.assistant.speech.SpokenOutputSettings
 import com.teachermovies.assistant.speech.fake.FakeSpeaker
 import com.teachermovies.assistant.subtitles.SubtitleCue
 import com.teachermovies.assistant.translation.TranslationProvider
@@ -10,6 +11,7 @@ import com.teachermovies.assistant.translation.fake.FakeTranslationProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.job
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -27,9 +29,14 @@ class AssistantSpeechControllerTest {
     private val bye =
         CapturedLine(SubtitleCue(index = 1, startMs = 5_000L, endMs = 6_000L, text = "Bye."), capturedAtMs = 5_500L)
 
+    /** Every answer spoken aloud, which is what the tests that are not about the setting assume. */
+    private val allSpoken =
+        SpokenOutputSettings(englishLine = true, spanishLine = true, explanations = true)
+
     private class Fixture(
         val speaker: FakeSpeaker,
         val translations: FakeTranslationProvider,
+        val spokenOutput: MutableStateFlow<SpokenOutputSettings>,
         val controllerJob: Job,
         val controller: AssistantSpeechController,
     ) {
@@ -43,13 +50,14 @@ class AssistantSpeechControllerTest {
         runCurrent()
     }
 
-    private fun TestScope.fixture(): Fixture {
+    private fun TestScope.fixture(spokenOutput: SpokenOutputSettings = allSpoken): Fixture {
         val speaker = FakeSpeaker()
         val translations =
             FakeTranslationProvider().apply {
                 translations["Hello."] = "Hola."
                 translations["Bye."] = "Adiós."
             }
+        val settings = MutableStateFlow(spokenOutput)
         // A child scope of its own, so the test can count the controller's coroutines.
         val controllerJob = Job(backgroundScope.coroutineContext.job)
         val controller =
@@ -57,8 +65,9 @@ class AssistantSpeechControllerTest {
                 speaker,
                 translations,
                 CoroutineScope(backgroundScope.coroutineContext + controllerJob),
+                settings,
             )
-        return Fixture(speaker, translations, controllerJob, controller)
+        return Fixture(speaker, translations, settings, controllerJob, controller)
     }
 
     @Test
@@ -530,5 +539,104 @@ class AssistantSpeechControllerTest {
             assertEquals(AssistantSpeechState(), f.controller.state.value)
             assertEquals(0, f.activeCoroutines)
             assertFalse(f.controller.speakTranslation())
+        }
+
+    @Test
+    fun `a controller built without the setting speaks nothing at all`() =
+        runTest {
+            val speaker = FakeSpeaker()
+            val translations =
+                FakeTranslationProvider().apply { translations["Hello."] = "Hola." }
+            val controller = AssistantSpeechController(speaker, translations, backgroundScope)
+            controller.prepare()
+
+            assertFalse(controller.speakOriginal(hello))
+            controller.translateAndSpeak(hello)
+            settle()
+            assertFalse(controller.speakTranslation())
+            assertFalse(controller.speakExplanation("Es un modismo."))
+
+            assertTrue(speaker.spoken.isEmpty())
+            assertEquals(TranslationUiState.Ready("Hola."), controller.state.value.translation)
+        }
+
+    @Test
+    fun `with spoken English off the captured line is not said`() =
+        runTest {
+            val f = fixture(SpokenOutputSettings())
+            f.controller.prepare()
+
+            assertFalse(f.controller.speakOriginal(hello))
+
+            assertTrue(f.speaker.spoken.isEmpty())
+            assertFalse(f.controller.state.value.speaking)
+            assertEquals(0, f.activeCoroutines)
+        }
+
+    @Test
+    fun `with only spoken English on the captured line is said`() =
+        runTest {
+            val f = fixture(SpokenOutputSettings(englishLine = true))
+            f.controller.prepare()
+
+            assertTrue(f.controller.speakOriginal(hello))
+
+            assertEquals(listOf("Hello." to SpeechLanguage.EN), f.speaker.spoken)
+        }
+
+    @Test
+    fun `with spoken Spanish off the translation is shown but not said`() =
+        runTest {
+            val f = fixture(SpokenOutputSettings())
+            f.controller.prepare()
+
+            f.controller.translateAndSpeak(hello)
+            settle()
+
+            assertEquals(TranslationUiState.Ready("Hola."), f.controller.state.value.translation)
+            assertTrue(f.speaker.spoken.isEmpty())
+            assertFalse(f.controller.speakTranslation())
+            assertEquals(0, f.activeCoroutines)
+        }
+
+    @Test
+    fun `turning spoken Spanish on mid-session speaks the translation already on screen`() =
+        runTest {
+            val f = fixture(SpokenOutputSettings())
+            f.controller.prepare()
+            f.controller.translateAndSpeak(hello)
+            settle()
+            assertTrue(f.speaker.spoken.isEmpty())
+
+            f.spokenOutput.value = SpokenOutputSettings(spanishLine = true)
+
+            assertTrue(f.controller.speakTranslation())
+            assertEquals(listOf("Hola." to SpeechLanguage.ES), f.speaker.spoken)
+        }
+
+    @Test
+    fun `with spoken explanations off the explanation is not said`() =
+        runTest {
+            val f = fixture(SpokenOutputSettings(spanishLine = true))
+            f.controller.prepare()
+
+            assertFalse(f.controller.speakExplanation("Es un modismo."))
+
+            assertTrue(f.speaker.spoken.isEmpty())
+        }
+
+    @Test
+    fun `with only spoken explanations on the explanation is said in Spanish`() =
+        runTest {
+            val f = fixture(SpokenOutputSettings(explanations = true))
+            f.controller.prepare()
+
+            assertFalse(f.controller.speakOriginal(hello))
+            f.controller.translateAndSpeak(hello)
+            settle()
+            assertTrue(f.controller.speakExplanation("Es un modismo."))
+
+            assertEquals(listOf("Es un modismo." to SpeechLanguage.ES), f.speaker.spoken)
+            assertEquals(TranslationUiState.Ready("Hola."), f.controller.state.value.translation)
         }
 }
