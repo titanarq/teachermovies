@@ -13,7 +13,7 @@
 - Token scopes (#270, ADR-0005 §4): a token is issued for `phone` (the default, and what the phone
   and the bundled web UI use) or for `bridge` (a laptop bridge). Its hash is stored in that scope's
   own set (`AppSettings.authTokenHashes` / `AppSettings.bridgeTokenHashes`), and every protected
-  route names the scopes it accepts: a bridge token reaches only `/api/bridge/*` (#275) and
+  route names the scopes it accepts: a bridge token reaches only `/api/bridge/*` (#275, #280) and
   `/api/logs*` (#269, ADR-0006 §4), and is 401 on every phone route, just as a phone token is 401
   on `/api/bridge/*`. Clearing the phone hashes revokes the phones only ("Olvidar portátil" is #289).
 - `GET /api/events` (SSE) also requires the token; because `EventSource` cannot set headers, this
@@ -34,11 +34,15 @@
   space: () -> SpaceInfo?, appVersion: String, clock: () -> Long,
   pairing: PairingManager, subtitles: SubtitleStore, library: TorrentRepository,
   logs: RingBufferLogSink = RingBufferLogSink(), bridge: BridgeJobHub = BridgeJobHub(),
+  subtitleFetches: SubtitleFetchRepository = InMemorySubtitleFetchRepository(),
   allowTestRemoteHeader: Boolean = false)`, extended by later issues. `bridge` is the job hub of
-  `/api/bridge/*` (#275); `AppContainer` must pass the same instance the assistant submits to. `logs` is the ring buffer of ADR-0006 that `/api/logs*` serves (#269);
+  `/api/bridge/*` (#275); `AppContainer` must pass the same instance the assistant submits to, and
+  the same one `SubtitleNeedsCoordinator` nudges (#280). `logs` is the ring buffer of ADR-0006 that `/api/logs*` serves (#269);
   the default is a fresh empty buffer until #268's `AppContainer` wiring passes the process-wide
-  instance it installs in `AppLog`. `allowTestRemoteHeader` is test-only (#59) and must stay
-  `false` in production.
+  instance it installs in `AppLog`. `subtitleFetches` is the automatic-subtitle fetch state of #274
+  that the bridge subtitle routes of #280 publish and move on; the default keeps nothing across a
+  restart, so `AppContainer` passes the Room-backed one. `allowTestRemoteHeader` is test-only (#59)
+  and must stay `false` in production.
 - `com.teachermovies.http.auth.LanAddressPolicy.isAllowed(address: String): Boolean` (#59): whether
   a literal IPv4/IPv6 address is on the LAN -- loopback, `10/8`, `172.16/12`, `192.168/16`,
   `169.254/16`, `fe80::/10`, `fc00::/7`, and the IPv4-mapped IPv6 form of any allowed IPv4 range.
@@ -200,6 +204,48 @@
     ago -- the hub remembers the last 256 ended ids) | 409 `job_closed` (already answered,
     replaced, timed out, cancelled or disconnected) | 400 `bad_request` (not a valid result) |
     400 `too_large` (body over 4 KB; never buffers more). A 400 leaves the job waiting.
+- Bridge subtitle routes (#280, ADR-0005 §5, `BridgeSubtitleRoutes.kt`): the TV publishes which
+  completed movies still need a subtitle and takes the bridge's result. All three are wrapped in
+  `requireBearer(setOf(TokenScope.BRIDGE))` without `allowQueryToken`, exactly like the job routes.
+  The wire DTOs, field names and limits live in `:bridge-protocol` (`SubtitleNeedDto`,
+  `SubtitlesNeededDto`, `SubtitleStatusDto`, `SubtitleUploadedDto`, `BridgeSubtitleProtocol`), and
+  the state they move is `ServerDeps.subtitleFetches` (#274) -- `SubtitleFetch.isDue` stays the one
+  place the ADR's retry rules live, so this route and the bridge loop cannot drift apart on them.
+  - `GET /api/bridge/subtitle-needs` -> 200
+    `[SubtitleNeedDto(torrentId, title, language, movieHash, state, attempts)]`: every row a search
+    may act on now (`dueForFetch(clock())`), most recently updated first, each with the title of the
+    movie it is for. A downloaded row never appears, nor one already in flight, nor a not-found one
+    still waiting out its seven days; `state` is therefore `pending`, `not_found` or `failed`
+    (snake_case, as every other enum goes on the wire). A row whose movie has left the library is
+    dropped: there is no file left to subtitle. No file system path is exposed. This route only
+    *publishes* rows -- deciding that a completed movie needs a language at all, and computing its
+    moviehash (#279), belongs to whoever writes them.
+  - `POST /api/bridge/subtitles`: multipart fields `torrentId`, `language` and `file`, plus the
+    optional `variant` label (`"latino"` for a Latin-American Spanish file accepted as the last
+    resort; at most 32 chars). At most `MAX_SUBTITLE_BYTES` = 2 MiB, never buffering more -> 201
+    `{"path":"subs/<base>.<lang>.opensubtitles.srt"}` | 400 `invalid_id` | 400 `invalid_language`
+    (anything but a two-letter tag, lower-cased first) | 404 `unknown_torrent` | 413 `too_large` |
+    400 `bad_request` (not multipart, or a required field missing) | 500 `io_error`. The TV names
+    the file, never the bridge: `<base>` is the movie's own main-file name without its extension
+    (hence the 404 when there is no library row to read it from) and the `opensubtitles` marker is
+    what keeps the result distinguishable from a hand-uploaded subtitle and from the hidden English
+    track (#284). It writes through the same `ServerDeps.subtitles` store as `POST /api/subtitles`,
+    so the name is sanitised there, and then marks that movie and language `downloaded` with the
+    absolute `localPath` and the variant -- creating the row when the TV had none, since a file on
+    disk is worth keeping either way. The uploaded file's own name is never read.
+  - `POST /api/bridge/subtitle-status` with a `SubtitleStatusDto(torrentId, language, status,
+    message?)` body of at most `MAX_STATUS_BYTES` = 4 KB -> 204 | 404 `unknown_need` (the TV has no
+    row for that movie and language) | 400 `invalid_id` | 400 `invalid_language` | 400 `bad_request`
+    (not valid JSON, or a `status` other than `searching`, `not_found`, `failed`) | 400 `too_large`.
+    `searching` takes the row off the needs list until it is answered and counts one attempt more,
+    `not_found` starts its seven-day retry clock, `failed` stores `message` and is due again on the
+    next pass. A refused body changes nothing.
+  - `event: subtitles-needed` rides the bridge's own `GET /api/bridge/jobs` stream (its one
+    connection), `data` = `SubtitlesNeededDto(torrentId?)`: a nudge to read the needs list again,
+    not a payload. `BridgeJobHub.notifySubtitlesNeeded(torrentId?)` sends it -- from `AppContainer`'s
+    `SubtitleNeedsCoordinator` when a movie finishes downloading, and later from the phone's "Buscar
+    subtítulos" (#285). With no stream open it is dropped rather than queued: a bridge reads the
+    whole list when it connects (#282), so nothing is lost.
 - Phone web UI (#63, `WebUiRoutes.kt`), public: `GET /` -> 200 `text/html` (`web/index.html`),
   `GET /static/<file>` -> any file under `src/main/resources/web/` (`app.js`, `app.css`) via
   `staticResources`; vanilla JS, no build step, no external resources. The page pairs with
@@ -230,7 +276,13 @@ a real loopback connection has no such limitation and needs no `X-Test-Remote` o
 `BridgeJobHubTest` covers the hub's rules in virtual time (`runTest`); `BridgeRoutesTest` runs
 the result route and the bridge-only auth in-process, opening the stream side straight on the hub;
 `BridgeJobsStreamTest` drives `GET /api/bridge/jobs` over a real loopback connection (job, result,
-replace -> cancel, newest stream wins).
+replace -> cancel, newest stream wins, and the `subtitles-needed` nudge of #280 -- including that
+one sent with no stream open is dropped, not queued).
+`BridgeSubtitleRoutesTest` (#280) runs all three subtitle routes in-process against
+`InMemorySubtitleFetchRepository` and `InMemoryTorrentRepository`: what the needs list publishes and
+what it filters out (downloaded, in flight, a not-found row inside its seven days, a movie gone from
+the library), the name and the fetch-state row an upload writes, every refusal, and the bridge-only
+auth of the three.
 `LogsRouteTest` (the page) and the 401/400 paths of `LogsStreamRouteTest` run in-process; the
 stream's happy paths drive a real loopback `embeddedServer` like `EventsRouteTest` (boot frame,
 backlog from `since`, live lines, level filter), and assert that `?token=` is 401 on

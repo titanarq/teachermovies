@@ -2,7 +2,9 @@ package com.teachermovies.http
 
 import com.teachermovies.core.log.RingBufferLogSink
 import com.teachermovies.core.model.TorrentId
+import com.teachermovies.core.repo.SubtitleFetchRepository
 import com.teachermovies.core.repo.TorrentRepository
+import com.teachermovies.core.repo.fake.InMemorySubtitleFetchRepository
 import com.teachermovies.http.auth.PairingManager
 import com.teachermovies.http.bridge.BridgeJobHub
 import com.teachermovies.storage.SpaceInfo
@@ -30,6 +32,10 @@ import com.teachermovies.torrent.api.TorrentEngine
  * @property bridge the job hub (#275, ADR-0005 §2) behind `/api/bridge/jobs`. The default is a
  * fresh hub; `AppContainer` passes the one instance whose `AssistantBridge` side the assistant uses
  * (#287/#292), so both ends share it.
+ * @property subtitleFetches the automatic-subtitle fetch state (#274) the bridge routes of #280
+ * publish and update: `GET /api/bridge/subtitle-needs` lists the rows a search may act on,
+ * `POST /api/bridge/subtitles` and `POST /api/bridge/subtitle-status` move them on. The default is
+ * a fresh in-memory store, so nothing survives a restart; `AppContainer` passes the Room-backed one.
  * @property allowTestRemoteHeader test-only (#59): when `true`, the `X-Test-Remote` header
  * overrides the socket's remote address for the LAN-address guard. Must stay `false` in
  * production; `AppContainer` never sets it.
@@ -45,5 +51,6 @@ data class ServerDeps(
     val library: TorrentRepository,
     val logs: RingBufferLogSink = RingBufferLogSink(),
     val bridge: BridgeJobHub = BridgeJobHub(),
+    val subtitleFetches: SubtitleFetchRepository = InMemorySubtitleFetchRepository(),
     val allowTestRemoteHeader: Boolean = false,
 )

@@ -328,6 +328,23 @@
   ERROR (module `app-tv`, thread name and stack trace) and then always chains to the handler that
   was there before, so the platform still reports the crash and kills the process.
 
+## Subtitle needs nudge (#280, ADR-0005 §5)
+- `AppContainer.subtitleFetchRepository: SubtitleFetchRepository` is
+  `RoomSubtitleFetchRepository(torrentDatabase.subtitleFetchStateDao())`, the automatic-subtitle
+  fetch state of #274, and is what `ServerDeps.subtitleFetches` hands to the bridge's subtitle
+  routes. `AppContainer` now also owns the one `BridgeJobHub`, so the server's `/api/bridge/jobs`
+  routes and the nudge below act on the same instance instead of one hub each.
+- `tv.subtitles.SubtitleNeedsCoordinator(library: TorrentRepository, notify: (TorrentId) -> Unit,
+  scope)` (no Android types): `start()` collects `observeLibrary()` and calls `notify` once per
+  movie that appears in it, wired to `bridgeJobHub.notifySubtitlesNeeded(id)`, so a download that
+  completes puts a `subtitles-needed` frame on the bridge's stream. The library already there when
+  it starts is only recorded, never replayed -- a bridge that was off reads the whole needs list when
+  it connects (#282) -- and a movie that leaves the library and comes back counts as new again.
+- What is *not* wired yet: deciding which languages a completed movie needs and computing its
+  moviehash (`:assistant`'s `OpenSubtitlesHash`, #279). Nothing in production calls
+  `SubtitleFetchRepository.ensurePending`, so the needs list the bridge reads stays empty until that
+  detection exists; the nudge, the routes and the stored state are in place for it.
+
 ## Boundaries
 - Depends on feature modules' public interfaces only; contains no torrent, HTTP or VLC logic itself.
 - All screens fully usable with the D-pad; focus order and initial focus are acceptance criteria.

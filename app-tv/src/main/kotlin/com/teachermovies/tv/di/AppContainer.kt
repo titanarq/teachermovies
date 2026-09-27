@@ -17,7 +17,9 @@ import com.teachermovies.assistant.translation.CachingTranslationProvider
 import com.teachermovies.assistant.translation.TranslationProvider
 import com.teachermovies.core.db.TeacherMoviesDatabase
 import com.teachermovies.core.log.RingBufferLogSink
+import com.teachermovies.core.repo.RoomSubtitleFetchRepository
 import com.teachermovies.core.repo.RoomTorrentRepository
+import com.teachermovies.core.repo.SubtitleFetchRepository
 import com.teachermovies.core.repo.TorrentRepository
 import com.teachermovies.core.settings.DataStoreSettingsRepository
 import com.teachermovies.core.settings.SettingsRepository
@@ -31,6 +33,7 @@ import com.teachermovies.http.LocalHttpServer
 import com.teachermovies.http.RunningServer
 import com.teachermovies.http.ServerDeps
 import com.teachermovies.http.auth.PairingManager
+import com.teachermovies.http.bridge.BridgeJobHub
 import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.VideoSurfaceHost
 import com.teachermovies.player.streaming.StreamingPlaybackController
@@ -51,6 +54,7 @@ import com.teachermovies.tv.autostart.ServiceAutostart
 import com.teachermovies.tv.discovery.ServerAnnouncementCoordinator
 import com.teachermovies.tv.log.LoggingSetup
 import com.teachermovies.tv.net.LanAddressResolver
+import com.teachermovies.tv.subtitles.SubtitleNeedsCoordinator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -132,6 +136,14 @@ class AppContainer(
     private val torrentDatabase: TeacherMoviesDatabase = TeacherMoviesDatabase.build(application)
 
     val torrentRepository: TorrentRepository = RoomTorrentRepository(torrentDatabase.torrentDao())
+
+    /**
+     * The automatic-subtitle fetch state (#274, ADR-0005 §5) of every movie and language: what the
+     * bridge's subtitle routes publish and update (#280), in the same database as the torrents so it
+     * survives a restart.
+     */
+    val subtitleFetchRepository: SubtitleFetchRepository =
+        RoomSubtitleFetchRepository(torrentDatabase.subtitleFetchStateDao())
 
     // Lives for the process (no owner to cancel it): `engineRepositorySync` collects the engine for
     // as long as the process runs, same as `TorrentEngineHolder`'s own scope.
@@ -236,6 +248,13 @@ class AppContainer(
     val pairingManager: PairingManager =
         PairingManager(settings = settingsRepository, random = SecureRandom(), clock = System::currentTimeMillis)
 
+    /**
+     * The one bridge job hub of the process (#275): the server's `/api/bridge/jobs` routes and
+     * [subtitleNeedsCoordinator] act on the same instance, so a nudge reaches the stream the server
+     * is holding open, and the assistant submits through it too (#287/#292).
+     */
+    private val bridgeJobHub = BridgeJobHub()
+
     private val appVersion: String =
         runCatching { application.packageManager.getPackageInfo(application.packageName, 0).versionName }
             .getOrNull() ?: UNKNOWN_VERSION
@@ -253,6 +272,8 @@ class AppContainer(
                     SubtitleLayoutResolver.layoutFor(id, torrentEngine.torrents.value)
                 },
             library = torrentRepository,
+            bridge = bridgeJobHub,
+            subtitleFetches = subtitleFetchRepository,
         )
 
     /**
@@ -271,6 +292,18 @@ class AppContainer(
                 RunningServer(server::stop)
             },
         )
+
+    /**
+     * Tells the paired laptop bridge that a movie just finished downloading (#280, ADR-0005 §5), so
+     * it looks for its subtitles now instead of on its next timer pass. Started here, after the
+     * server that holds the bridge's stream; it only ever nudges [bridgeJobHub].
+     */
+    val subtitleNeedsCoordinator: SubtitleNeedsCoordinator =
+        SubtitleNeedsCoordinator(
+            library = torrentRepository,
+            notify = { id -> bridgeJobHub.notifySubtitlesNeeded(id) },
+            scope = applicationScope,
+        ).also { it.start() }
 
     /** Announces the TV's HTTP service over NSD (#103); failures only show on its own `state`. */
     val serviceAnnouncer: ServiceAnnouncer = NsdServiceAnnouncer(AndroidNsdRegistrar(application))

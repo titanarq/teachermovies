@@ -5,6 +5,7 @@ import com.teachermovies.bridge.protocol.BridgeJobProtocol
 import com.teachermovies.bridge.protocol.BridgeJobResultDto
 import com.teachermovies.bridge.protocol.ExplainJobDto
 import com.teachermovies.bridge.protocol.TranslateJobDto
+import com.teachermovies.core.model.TorrentId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -33,6 +34,14 @@ internal sealed interface BridgeStreamEvent {
 
     data class Cancel(
         val id: String,
+    ) : BridgeStreamEvent
+
+    /**
+     * A nudge to read `GET /api/bridge/subtitle-needs` again (#280); [torrentId] names the movie
+     * whose need changed when the caller knows it, and is null for "the whole list may have".
+     */
+    data class SubtitlesNeeded(
+        val torrentId: String?,
     ) : BridgeStreamEvent
 }
 
@@ -75,6 +84,8 @@ internal enum class CompleteResult {
  * - One job per [BridgeJob.slot]: a newer one resolves the older [BridgeOutcome.Replaced].
  * - Whenever a job ends without an answer while its stream is still open (replaced, timed out, its
  *   caller cancelled) the bridge gets an `event: cancel` for it.
+ * - The same stream carries the `subtitles-needed` nudge of #280, which [notifySubtitlesNeeded]
+ *   sends and which no job waits on.
  *
  * Ids are 16 random bytes, base64url without padding, and single-use. Thread-safe: every piece of
  * state is touched only under one lock, which never suspends.
@@ -146,6 +157,18 @@ class BridgeJobHub internal constructor(
             }
             job.outcome.getCompleted()
         }
+
+    /**
+     * Tells the connected bridge that the subtitle-needs list changed (#280, ADR-0005 §5): a movie
+     * finished downloading, or the phone asked for a retry now (#285). The frame is a nudge only --
+     * the bridge answers it by reading `GET /api/bridge/subtitle-needs` again. With no stream open
+     * this does nothing and nothing is lost: a bridge reads the list when it connects (#282).
+     */
+    fun notifySubtitlesNeeded(torrentId: TorrentId? = null) {
+        synchronized(lock) {
+            stream?.send(BridgeStreamEvent.SubtitlesNeeded(torrentId?.value))
+        }
+    }
 
     /** Opens a new bridge stream, replacing (and closing) any older one. */
     internal fun connect(): BridgeStream =
