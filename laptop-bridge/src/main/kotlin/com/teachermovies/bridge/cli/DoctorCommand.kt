@@ -3,6 +3,7 @@ package com.teachermovies.bridge.cli
 import com.teachermovies.bridge.config.BridgeConfig
 import com.teachermovies.bridge.config.BridgeConfigStore
 import com.teachermovies.bridge.config.ConfigLoad
+import com.teachermovies.bridge.opensubtitles.CredentialsFile
 import com.teachermovies.bridge.tv.ApiResult
 import com.teachermovies.bridge.tv.TvApi
 import com.teachermovies.bridge.tv.TvStatus
@@ -16,11 +17,16 @@ import com.teachermovies.bridge.tv.TvStatus
  * on it. Checks run in the order in which one failing explains the next (file, its permissions, the
  * pairing, then the two calls to the TV) and stop after a missing or unreadable file, since without
  * it there is nothing to call with. The token is reported as present or absent and never printed.
+ *
+ * The OpenSubtitles credentials file (#281) is checked last and whatever happened to the config:
+ * only that it exists and that its permissions are `0600`. `doctor` never opens it, so none of its
+ * contents -- not even whether it is complete -- can reach the report.
  */
 internal class DoctorCommand(
     private val out: Appendable,
     private val store: BridgeConfigStore,
     private val api: TvApi,
+    private val credentials: CredentialsFile,
 ) {
     private var problems = 0
 
@@ -125,7 +131,34 @@ internal class DoctorCommand(
     private fun statusText(status: TvStatus): String =
         "versión ${status.version}, motor ${status.engine}, torrents ${status.torrents}"
 
+    /** Existence and mode only: the file is never read (#281). */
+    private fun reportCredentials() {
+        val path = credentials.path
+        if (!credentials.exists()) {
+            problem("credenciales OpenSubtitles", "no existe $path", CREDENTIALS_HINT)
+            return
+        }
+        when (val permissions = credentials.permissions()) {
+            null -> {
+                problem("credenciales OpenSubtitles", "no se han podido leer los permisos de $path")
+            }
+
+            EXPECTED_PERMISSIONS -> {
+                ok("credenciales OpenSubtitles", "$path (permisos $permissions, contenido no mostrado)")
+            }
+
+            else -> {
+                problem(
+                    "credenciales OpenSubtitles",
+                    "$permissions en $path, y ese fichero guarda la cuenta de OpenSubtitles",
+                    "chmod $EXPECTED_PERMISSIONS $path",
+                )
+            }
+        }
+    }
+
     private fun finish(): Int {
+        reportCredentials()
         if (problems == 0) {
             out.appendLine("doctor: todo correcto")
             return ExitCode.OK
@@ -161,5 +194,9 @@ internal class DoctorCommand(
 
         const val PAIR_HINT =
             "empareja con: teachermovies-bridge pair --url http://<ip-de-la-tv>:8787 --pin <pin>"
+
+        const val CREDENTIALS_HINT =
+            "crea ese fichero con ${CredentialsFile.API_KEY}, ${CredentialsFile.USERNAME} y " +
+                "${CredentialsFile.PASSWORD}, y dale permisos $EXPECTED_PERMISSIONS"
     }
 }

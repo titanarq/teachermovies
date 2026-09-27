@@ -8,7 +8,8 @@
   desktop login, once #278 installs it as a systemd user service.
 - #271 is the skeleton: pair with the TV over its PIN, keep the resulting bridge-scoped token safely
   on disk, report its own health with `doctor`, and print one page of the TV's log ring buffer with
-  `logs`. Nothing else runs on the laptop yet (see "Boundaries").
+  `logs`. #281 adds the OpenSubtitles client (package `opensubtitles`), a library nothing calls
+  yet besides `doctor`'s credentials check: #282's fetch loop will drive it (see "Boundaries").
 - Pure JVM, never an Android library, so it depends only on `:bridge-protocol` and never on
   `:http-server` or any other Android module (ADR-0005 §1, AGENTS.md). The Ktor *server* artifacts
   are test-only here, for the in-test fake TV.
@@ -47,10 +48,13 @@
   Prints the TV URL, the scope and the config path -- never the token, never the PIN.
 - `unpair`: deletes the config file. With nothing stored it is not an error (exit 0) and says so.
   The TV keeps its own copy of the token's hash until the human forgets this laptop from the TV.
-- `doctor`: five checks in order, each printing `OK`/`FALLO` plus a one-line fix hint, then a count
+- `doctor`: seven checks in order, each printing `OK`/`FALLO` plus a one-line fix hint, then a count
   of the problems (exit 1 if there is any): the config file exists, its permissions are `0600`, it
-  holds a pairing, the TV answers the public `GET /api/status`, and the stored token still
-  authenticates against `GET /api/logs` (probed cheaply with `since=0&limit=1`). A token the TV no
+  holds a pairing, the TV answers the public `GET /api/status`, the stored token still
+  authenticates against `GET /api/logs` (probed cheaply with `since=0&limit=1`), and -- always,
+  even when the config is missing -- the OpenSubtitles credentials file exists and is `0600` (#281).
+  That last check never opens the file: it reports the path and the mode, never a line of it, not
+  even whether it is complete. A token the TV no
   longer accepts is reported as such, without printing it. The permission check reads the file's
   mode only: the directory is created `0700` but never re-checked, and `Files.createDirectories`
   does not tighten one that already existed.
@@ -112,6 +116,50 @@
   reason is a short diagnostic ("timeout", "unexpected response body", an exception class name) that
   never includes a response body or a request's contents.
 
+## OpenSubtitles client (package `com.teachermovies.bridge.opensubtitles`, #281)
+- ADR-0005 §5: the bridge is the only holder of the OpenSubtitles credentials. `CredentialsFile`
+  reads them from `<config dir>/.secrets/opensubtitles.env` (the bridge's config directory, e.g.
+  `~/.config/teachermovies-bridge/.secrets/opensubtitles.env`, independent of `--config`), or from
+  the file `$TEACHERMOVIES_OPENSUBTITLES_ENV` names (`~` expanded). Format: `KEY=VALUE` lines, `#`
+  comments, optional `export ` and matching quotes. Required keys `OPENSUBTITLES_API_KEY`,
+  `OPENSUBTITLES_USERNAME`, `OPENSUBTITLES_PASSWORD`; optional `OPENSUBTITLES_USER_AGENT`.
+  `load()` is `Missing`, `Loaded`, `Incomplete(missingKeys)` (key names only) or
+  `Unreadable(reason)`; `OpenSubtitlesCredentials.toString()` redacts all three secrets.
+- `OpenSubtitlesApi(httpClient, credentials, baseUrl = https://api.opensubtitles.com/api/v1)`, 20 s
+  timeout per request, never throws (`OsResult` / `DownloadOutcome`; `OsFailure` is `LoginRefused`
+  (401 at `/login`), `Unauthorized` (401/403 with a fresh JWT: the API key), `RateLimited` (429),
+  `Http(status)` or `Network(reason)` -- no body, credential or JWT in any of them).
+  - Every request carries `Api-Key` and `User-Agent` (default `teachermovies-bridge v1.0`).
+  - `POST /login` for a JWT kept in memory only, the first time `/download` or `/infos/user` needs
+    one; on a 401 it logs in once more and repeats the request once. Concurrent 401s log in once
+    (a mutex; a caller that finds the JWT already replaced reuses it). Searches send the JWT when
+    there is one but never log in for it. The `base_url` the login answers is ignored.
+  - `search(SearchQuery(languages, moviehash?, imdbId?, title?, year?))` -> `GET /subtitles` with
+    only the fields given, alphabetical and lower-cased (OpenSubtitles redirects otherwise); the
+    IMDb id is sent as digits (`tt0133093` -> `133093`). Results without a file are dropped; each
+    becomes a `SubtitleCandidate` (first file id, language code, HI, machine/AI-translated,
+    foreign-parts-only, `moviehash_match`, trusted, download count, release).
+  - `download(fileId)` -> `POST /download {"file_id","sub_format":"srt"}`: a temporary `Link`, or
+    `QuotaExhausted` on 406. `fetch(link)` gets the file with only a `User-Agent` -- the link is on
+    another host, so neither the API key nor the JWT goes there.
+  - Quota: `QuotaTracker` keeps the latest `Quota(remaining, allowed, resetsAt)`, each report
+    replacing only the fields it carries -- `allowed` from `/login`, `remaining` and
+    `reset_time_utc` from every `/download` (406 included), both from `refreshQuota()`
+    (`GET /infos/user`). While `remaining <= 0` and `resetsAt` is still ahead, `download` refuses
+    locally without spending a request.
+- `SubtitleRanker`: excludes machine-translated, AI-translated and foreign-parts-only results, then
+  orders by moviehash match, not hearing-impaired, trusted uploader, download count (stable).
+- `SubtitleFinder(api).find(SubtitleRequest(language, moviehash?, imdbId?, title?, year?))`: searches
+  by moviehash, then IMDb id, then title + year, skipping those the request cannot fill and stopping
+  at the first that yields an acceptable subtitle; downloads only the chosen file (one quota unit at
+  most). English asks for `en`. Spanish asks for `es,sp` (Castilian) and `ea` (Latin-American)
+  together, but a Latin-American result is taken only after *every* search found no Castilian one;
+  then the best `ea` result across all searches wins, `SubtitleVariant.LATINO`, label `"latino"`.
+  Returns `Found(FetchedSubtitle, quota)`, `NotFound`, `QuotaExhausted` or `Failed(failure)`, each
+  with the quota as last known.
+- `SubtitleText.normalise(bytes)`: UTF-8/UTF-16LE/UTF-16BE by byte-order mark (dropped), else strict
+  UTF-8, else Windows-1252. `FetchedSubtitle.text` is that string; `utf8Bytes()` the normalised file.
+
 ## Boundaries
 - The bridge token and the PIN are never printed to stdout or stderr, and the module has no logging
   framework of its own for them to reach: `doctor` and `logs` say that a token is stored and valid,
@@ -124,12 +172,16 @@
   `Appendable`s instead of the console.
 - Not here yet, each its own issue: tailing the TV log to a local file (#272), the job hub and
   `run` loop with reconnect and mDNS re-discovery (#275, #277), the Claude Code CLI transport
-  (#276), the systemd user unit and `install-service` (#278), the OpenSubtitles client and its
-  `.secrets/opensubtitles.env` credentials (#281).
+  (#276), the systemd user unit and `install-service` (#278), the loop that decides when to search
+  subtitles and uploads them to the TV (#282, through #280's routes), and the moviehash itself (#279:
+  the TV computes it, this module only sends it).
+- The OpenSubtitles credentials follow the token's rule: no command prints them, `doctor` reports
+  the file's existence and mode only, and nothing in the `opensubtitles` package puts one -- or the
+  JWT -- in a result, a failure or a `toString`.
 - The `laptop-bridge` row in AGENTS.md's module table is the human's edit, not this module's.
 
 ## Tests
-`bash scripts/test.sh :laptop-bridge:test` (six test classes as of #271) and
+`bash scripts/test.sh :laptop-bridge:test` (eleven test classes as of #281) and
 `./gradlew :laptop-bridge:ktlintCheck` for style. No test touches the network or the real home
 directory: `tv.FakeTv` is a real Ktor CIO server on a loopback port standing in for the TV (the
 criterion "tests run against an in-test Ktor server"), serving `/api/pair`, `/api/status` and
@@ -152,6 +204,19 @@ criterion "tests run against an in-test Ktor server"), serving `/api/pair`, `/ap
   the header, and the mapping of refusals, an undecodable body and an unreachable TV onto
   `ApiFailure`.
 - `BridgeConfigTest`: `isPaired` and a `toString` that redacts the token.
+- `opensubtitles.FakeOpenSubtitles` is a real Ktor CIO server on a loopback port standing in for
+  OpenSubtitles (the criterion "tests run against a fake OpenSubtitles HTTP server"): `/login`,
+  `/subtitles`, `/download`, `/infos/user` and the download links, checking the API key and the
+  JWT, keeping a daily quota, expiring the JWT on demand and recording every request's headers.
+- `OpenSubtitlesApiTest`: headers on every call, login on first need and the re-login after a 401,
+  wrong password vs wrong key, query parameters, attribute mapping, quota tracking, 406 and the
+  local refusal until the reset, no credential sent to the download link, failure mapping.
+- `SubtitleFinderTest`: search order and skipping, ranking, Castilian from a later search beating a
+  Latin-American hash match, the "latino" last resort, NotFound/QuotaExhausted/Failed, the quota
+  reported, and a Windows-1252 file arriving as UTF-8.
+- `SubtitleRankerTest`, `SubtitleTextTest`, `CredentialsFileTest` (parsing, `Incomplete`, default
+  path and the override variable, permissions); `BridgeCliTest` covers `doctor`'s credentials check
+  (missing, `0644`, unreadable-without-config, moved by the variable, contents never printed).
 - No JVM test covers `main` itself (the stream flushes and `exitProcess`), the start script
   `installDist` generates, or a real TV on the LAN -- those are manual checks, as elsewhere. For
   #271 they were done by driving the installed `teachermovies-bridge` against a stub of the TV's
