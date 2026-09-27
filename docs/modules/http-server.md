@@ -33,8 +33,9 @@
 - `ServerDeps(engine: TorrentEngine, remove: suspend (TorrentId, Boolean) -> EngineResult<Unit>,
   space: () -> SpaceInfo?, appVersion: String, clock: () -> Long,
   pairing: PairingManager, subtitles: SubtitleStore, library: TorrentRepository,
-  logs: RingBufferLogSink = RingBufferLogSink(), allowTestRemoteHeader: Boolean = false)`,
-  extended by later issues. `logs` is the ring buffer of ADR-0006 that `/api/logs*` serves (#269);
+  logs: RingBufferLogSink = RingBufferLogSink(), bridge: BridgeJobHub = BridgeJobHub(),
+  allowTestRemoteHeader: Boolean = false)`, extended by later issues. `bridge` is the job hub of
+  `/api/bridge/*` (#275); `AppContainer` must pass the same instance the assistant submits to. `logs` is the ring buffer of ADR-0006 that `/api/logs*` serves (#269);
   the default is a fresh empty buffer until #268's `AppContainer` wiring passes the process-wide
   instance it installs in `AppLog`. `allowTestRemoteHeader` is test-only (#59) and must stay
   `false` in production.
@@ -65,7 +66,7 @@
 - `fun Route.requireBearer(pairing, scopes, allowQueryToken = false) { ... }` wraps every protected
   route: a missing/invalid token, or one whose scope is not in `scopes`, -> 401 `unauthorized` +
   `WWW-Authenticate: Bearer`, handler not run. Phone routes pass `setOf(TokenScope.PHONE)`;
-  `/api/logs*` passes both scopes (#269) and `/api/bridge/*` will pass `setOf(TokenScope.BRIDGE)`
+  `/api/logs*` passes both scopes (#269) and `/api/bridge/*` passes `setOf(TokenScope.BRIDGE)`
   (#275). Only `/api/events` passes `allowQueryToken = true`. `redactTokenQuery(uri)` is what any
   request logging must apply (and it must never log the `Authorization` header).
 - `GET /api/status` (public) -> 200
@@ -163,6 +164,42 @@
     before the backlog snapshot is read and a seq cursor drops duplicates, so a line recorded
     while the stream starts up is delivered exactly once. Invalid `since`/`level` -> 400 before
     the stream starts.
+- Bridge job hub (#275, ADR-0005 §2; `BridgeRoutes.kt`, package `com.teachermovies.http.bridge`):
+  the TV never runs an AI call; it hands typed jobs to the paired laptop bridge and waits for its
+  answer. Both routes are wrapped in `requireBearer(setOf(TokenScope.BRIDGE))` without
+  `allowQueryToken`: a phone token, a `?token=` or no token is 401. Wire DTOs live in
+  `:bridge-protocol` (`BridgeJobDto` = `TranslateJobDto(id, line)` | `ExplainJobDto(id, title, line,
+  before, after, spanishLine)` discriminated by `kind` = `translate`|`explain`; `BridgeCancelDto(id)`;
+  `BridgeJobResultDto` = `Done(text)` | `Failed(code, message?)` discriminated by `status` =
+  `ok`|`error`; names and limits in `BridgeJobProtocol`).
+  - `interface AssistantBridge { val connected: StateFlow<Boolean>; suspend fun submit(job:
+    BridgeJob, timeout: Duration): BridgeOutcome }` is what other modules use (#287/#292);
+    `BridgeJob` = `Translate(line)` | `Explain(title, line, before, after, spanishLine)`, and
+    `BridgeOutcome` = `Done(text)` | `NoBridge` (no bridge stream open: answered at once, nothing
+    sent) | `TimedOut` | `BridgeError(code, message)` | `Disconnected` (the stream the job went out
+    on closed first) | `Replaced` | `Rejected(reason)` (over the per-job limits: a line -- `line`,
+    `title`, `spanishLine` or any `before`/`after` entry -- over 500 chars, or the encoded job over
+    4 KB; never sent). `submit` never throws for a bridge-side failure.
+  - `BridgeJobHub(random: SecureRandom = SecureRandom())` implements it. Job ids are 16 random
+    bytes base64url, single-use. One job per slot (= kind): a newer `translate` resolves the
+    older one `Replaced`. The bridge gets `event: cancel` whenever a job ends without an answer
+    while its stream is open (replaced, timed out, the caller cancelled). The newest stream wins:
+    a second `GET /api/bridge/jobs` closes the older stream, whose in-flight jobs resolve
+    `Disconnected`, and `connected` stays true. `connected` turns false when the current stream
+    ends; a bridge that vanishes without closing its socket is noticed at the next write (a job,
+    or the 15 s ping) at the latest.
+  - `FakeAssistantBridge(connected = true, respond = { Done("") })` (main source set, ADR-0003):
+    records `submitted`, answers `respond(job)` while connected and `NoBridge` after
+    `setConnected(false)`.
+  - `GET /api/bridge/jobs` -> SSE in the `respondTextWriter` shape of `/api/events`:
+    `Cache-Control: no-cache`, a `: ping` comment at once and every 15 s, then one `event: job`
+    frame (`data` = `BridgeJobDto`) per submitted job and `event: cancel` (`data` =
+    `BridgeCancelDto`) per cancelled one. Quiet end when the connection drops.
+  - `POST /api/bridge/jobs/{id}/result` with a `BridgeJobResultDto` body -> 204 (the waiting
+    `submit` resolves `Done`/`BridgeError`) | 404 `unknown_job` (never issued, or ended too long
+    ago -- the hub remembers the last 256 ended ids) | 409 `job_closed` (already answered,
+    replaced, timed out, cancelled or disconnected) | 400 `bad_request` (not a valid result) |
+    400 `too_large` (body over 4 KB; never buffers more). A 400 leaves the job waiting.
 - Phone web UI (#63, `WebUiRoutes.kt`), public: `GET /` -> 200 `text/html` (`web/index.html`),
   `GET /static/<file>` -> any file under `src/main/resources/web/` (`app.js`, `app.css`) via
   `staticResources`; vanilla JS, no build step, no external resources. The page pairs with
@@ -190,6 +227,10 @@ host runs a request's whole pipeline -- including the response body -- to comple
 anything back to its client, which an SSE stream that outlives the request never does on its own;
 a real loopback connection has no such limitation and needs no `X-Test-Remote` override, since
 `127.0.0.1` already satisfies `LanAddressPolicy`.
+`BridgeJobHubTest` covers the hub's rules in virtual time (`runTest`); `BridgeRoutesTest` runs
+the result route and the bridge-only auth in-process, opening the stream side straight on the hub;
+`BridgeJobsStreamTest` drives `GET /api/bridge/jobs` over a real loopback connection (job, result,
+replace -> cancel, newest stream wins).
 `LogsRouteTest` (the page) and the 401/400 paths of `LogsStreamRouteTest` run in-process; the
 stream's happy paths drive a real loopback `embeddedServer` like `EventsRouteTest` (boot frame,
 backlog from `since`, live lines, level filter), and assert that `?token=` is 401 on
