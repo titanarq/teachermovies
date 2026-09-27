@@ -159,6 +159,21 @@ generic `ci-host.yml` (agent-os#50).
   in `config/agent_prompts/refiner.md` lists `complex-claude`) or an explicit human decision may
   assign `complex-claude`.
 
+- **A `CHANGES_REQUESTED` review cannot be handed back to a worker once every stage of
+  its task is already committed.** Found on #267 / PR #298 (2026-09-27): the validator
+  requested changes on a one-stage task whose single stage was already committed and
+  clean. The planner tried to resume qwen on it, but `agent_os/bin/worker_task.sh`'s
+  `launch_stage` always starts from the first pending stage; with none pending it stops
+  ("all N stage(s) ... already committed") instead of launching a fix pass with the
+  review as context. Worse, qwen had since started a different issue (#279), so
+  `.cache/worker_qwen.issue` no longer even pointed at #267 -- a plain `resume` would
+  have picked up the wrong task. The planner could not route around this itself and
+  posted the question to the human instead. Workaround until agent_os supports
+  relaunching a completed-stage task on review feedback: the human (or the control
+  plane, once the human decides) adds a second stage to the task body naming the fix, so
+  the next planner pass launches it as ordinary pending work with the review as context;
+  or, files a follow-up task on the PR's branch; or fixes it directly on the PR.
+
 ## Refiner
 
 `config/agents.yaml`'s `refiner_unattended` is `true`: the refiner runs unattended. First
