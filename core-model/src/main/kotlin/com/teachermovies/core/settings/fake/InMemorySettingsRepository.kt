@@ -45,6 +45,10 @@ class InMemorySettingsRepository(
         state.update { it.copy(authTokenHashes = emptySet()) }
     }
 
+    override suspend fun addBridgeTokenHash(hash: String) {
+        state.update { it.copy(bridgeTokenHashes = it.bridgeTokenHashes + hash) }
+    }
+
     override suspend fun setFirstRunCompleted(done: Boolean) {
         state.update { it.copy(firstRunCompleted = done) }
     }

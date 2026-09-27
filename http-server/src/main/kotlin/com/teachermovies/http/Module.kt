@@ -46,7 +46,9 @@ fun Application.module(deps: ServerDeps) {
         libraryRoutes(deps)
         eventsRoutes(deps)
         webUiRoutes()
-        // Every protected route goes inside `requireBearer(deps.pairing) { ... }` (ADR-0002).
+        // Every protected route goes inside `requireBearer(deps.pairing, setOf(TokenScope.PHONE))`
+        // (ADR-0002), naming the token scopes it accepts; `/api/bridge/*` is bridge-only and
+        // `/api/logs*` takes both (ADR-0005 §4).
     }
 }
 

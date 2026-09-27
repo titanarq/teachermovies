@@ -28,6 +28,7 @@ class DataStoreSettingsRepositoryTest {
             assertEquals(8787, settings.httpPort)
             assertNull(settings.downloadVolumeId)
             assertTrue(settings.authTokenHashes.isEmpty())
+            assertTrue(settings.bridgeTokenHashes.isEmpty())
             assertFalse(settings.firstRunCompleted)
             assertFalse(settings.autostartOnBoot)
         }
@@ -126,6 +127,38 @@ class DataStoreSettingsRepositoryTest {
                     .authTokenHashes
                     .isEmpty(),
             )
+        }
+
+    @Test
+    fun addBridgeTokenHashKeepsTheHashesAlreadyStoredApartFromThePhoneOnes() =
+        runTest {
+            val repository = newRepository()
+            repository.addAuthTokenHash("hash-phone")
+
+            repository.addBridgeTokenHash("hash-a")
+            repository.addBridgeTokenHash("hash-b")
+            repository.addBridgeTokenHash("hash-a")
+
+            assertEquals(setOf("hash-a", "hash-b"), repository.settings.first().bridgeTokenHashes)
+            assertEquals(setOf("hash-phone"), repository.settings.first().authTokenHashes)
+        }
+
+    @Test
+    fun clearAuthTokenHashesLeavesTheBridgeHashesAlone() =
+        runTest {
+            val repository = newRepository()
+            repository.addAuthTokenHash("hash-phone")
+            repository.addBridgeTokenHash("hash-bridge")
+
+            repository.clearAuthTokenHashes()
+
+            assertTrue(
+                repository.settings
+                    .first()
+                    .authTokenHashes
+                    .isEmpty(),
+            )
+            assertEquals(setOf("hash-bridge"), repository.settings.first().bridgeTokenHashes)
         }
 
     @Test

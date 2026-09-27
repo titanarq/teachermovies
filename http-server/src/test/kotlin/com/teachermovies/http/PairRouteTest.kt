@@ -6,6 +6,7 @@ import com.teachermovies.http.auth.FakeClock
 import com.teachermovies.http.auth.InMemorySettingsRepository
 import com.teachermovies.http.auth.PairResult
 import com.teachermovies.http.auth.PairingManager
+import com.teachermovies.http.auth.TokenScope
 import com.teachermovies.http.auth.lanClient
 import com.teachermovies.http.auth.redactTokenQuery
 import com.teachermovies.http.auth.requireBearer
@@ -57,24 +58,38 @@ class PairRouteTest {
         )
 
     /**
-     * The real module plus two protected test routes: header-only and header-or-query. Returns a
-     * client that claims a LAN remote address (#59), so these auth-focused tests aren't also
-     * exercising the LAN-address guard.
+     * The real module plus four protected test routes: phone-only header-only, phone-only
+     * header-or-query, bridge-only, and one that takes either scope. The last two stand in for the
+     * bridge routes (#275) and the log routes (#269), the only ones a bridge token reaches
+     * (ADR-0005 §4). Returns a client that claims a LAN remote address (#59), so these auth-focused
+     * tests aren't also exercising the LAN-address guard.
      */
     private fun ApplicationTestBuilder.setUp(): HttpClient {
         application {
             module(deps)
             routing {
-                requireBearer(deps.pairing) {
+                requireBearer(deps.pairing, setOf(TokenScope.PHONE)) {
                     get("/api/test") {
                         handlerRuns++
                         call.respondText("ok")
                     }
                 }
-                requireBearer(deps.pairing, allowQueryToken = true) {
+                requireBearer(deps.pairing, setOf(TokenScope.PHONE), allowQueryToken = true) {
                     get("/api/test-events") {
                         handlerRuns++
                         call.respondText("ok")
+                    }
+                }
+                requireBearer(deps.pairing, setOf(TokenScope.BRIDGE)) {
+                    get("/api/test-bridge") {
+                        handlerRuns++
+                        call.respondText("bridge")
+                    }
+                }
+                requireBearer(deps.pairing, setOf(TokenScope.PHONE, TokenScope.BRIDGE)) {
+                    get("/api/test-logs") {
+                        handlerRuns++
+                        call.respondText("logs")
                     }
                 }
             }
@@ -82,19 +97,36 @@ class PairRouteTest {
         return lanClient()
     }
 
-    private suspend fun HttpClient.pair(pin: String): HttpResponse =
+    private suspend fun HttpClient.pair(
+        pin: String,
+        scope: String? = null,
+    ): HttpResponse =
         post("/api/pair") {
             contentType(ContentType.Application.Json)
-            setBody("""{"pin":"$pin","deviceName":"Pixel"}""")
+            setBody(pairBody(pin, scope))
         }
 
-    private suspend fun HttpClient.pairedToken(): String {
-        val body = pair(pairing.currentPin()).bodyAsText()
+    private suspend fun HttpClient.pairedToken(scope: String? = null): String {
+        val body = pair(pairing.currentPin(), scope).bodyAsText()
         return Json
             .parseToJsonElement(body)
             .jsonObject["token"]!!
             .jsonPrimitive.content
     }
+
+    private fun pairBody(
+        pin: String,
+        scope: String?,
+    ): String {
+        val scopeField = if (scope == null) "" else ",\"scope\":\"$scope\""
+        return "{\"pin\":\"$pin\",\"deviceName\":\"Pixel\"$scopeField}"
+    }
+
+    private suspend fun HttpResponse.jsonField(name: String): String =
+        Json
+            .parseToJsonElement(bodyAsText())
+            .jsonObject[name]!!
+            .jsonPrimitive.content
 
     private fun wrongPin(): String = ((pairing.currentPin().toInt() + 1) % 1_000_000).toString().padStart(6, '0')
 
@@ -115,12 +147,10 @@ class PairRouteTest {
 
             assertEquals(HttpStatusCode.OK, response.status)
             assertTrue(response.contentType()!!.match(ContentType.Application.Json))
-            val token =
-                Json
-                    .parseToJsonElement(response.bodyAsText())
-                    .jsonObject["token"]!!
-                    .jsonPrimitive.content
+            val token = response.jsonField("token")
+            assertEquals("phone", response.jsonField("scope"))
             assertEquals(setOf(PairingManager.sha256Hex(token)), settings.current.authTokenHashes)
+            assertTrue(settings.current.bridgeTokenHashes.isEmpty())
         }
 
     @Test
@@ -259,6 +289,118 @@ class PairRouteTest {
 
             assertEquals(HttpStatusCode.OK, client.get("/api/test") { bearerAuth(token) }.status)
         }
+
+    @Test
+    fun `pairing with scope bridge stores its hash apart and echoes the scope`() =
+        testApplication {
+            val client = setUp()
+
+            val response = client.pair(pairing.currentPin(), scope = "bridge")
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            val token = response.jsonField("token")
+            assertEquals("bridge", response.jsonField("scope"))
+            assertEquals(setOf(PairingManager.sha256Hex(token)), settings.current.bridgeTokenHashes)
+            assertTrue(settings.current.authTokenHashes.isEmpty())
+        }
+
+    @Test
+    fun `pairing with scope phone is the same as pairing without one`() =
+        testApplication {
+            val client = setUp()
+
+            assertEquals("phone", client.pair(pairing.currentPin(), scope = "phone").jsonField("scope"))
+            assertTrue(settings.current.bridgeTokenHashes.isEmpty())
+        }
+
+    @Test
+    fun `unknown scope is 400 bad_request and pairs nothing`() =
+        testApplication {
+            val client = setUp()
+            val pin = pairing.currentPin()
+
+            val response = client.pair(pin, scope = "remote")
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+            val body = response.bodyAsText()
+            val error = Json.parseToJsonElement(body).jsonObject
+            assertEquals("bad_request", error["error"]!!.jsonPrimitive.content)
+            assertEquals("Unknown scope; expected one of phone, bridge", error["message"]!!.jsonPrimitive.content)
+            assertFalse(body.contains(pin))
+            assertTrue(settings.current.authTokenHashes.isEmpty())
+            assertTrue(settings.current.bridgeTokenHashes.isEmpty())
+            // The PIN was not consumed by the refused attempt: the same one still pairs.
+            assertEquals(HttpStatusCode.OK, client.pair(pin).status)
+        }
+
+    @Test
+    fun `a scope is matched exactly, case included`() =
+        testApplication {
+            val client = setUp()
+
+            assertEquals(HttpStatusCode.BadRequest, client.pair(pairing.currentPin(), scope = "Bridge").status)
+        }
+
+    @Test
+    fun `a scope that is not a string is 400 bad_request`() =
+        testApplication {
+            val client = setUp()
+
+            val response =
+                client.post("/api/pair") {
+                    contentType(ContentType.Application.Json)
+                    setBody("""{"pin":"${pairing.currentPin()}","scope":3}""")
+                }
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+        }
+
+    @Test
+    fun `a bridge token is refused on every phone route`() =
+        testApplication {
+            val client = setUp()
+            val token = client.pairedToken(scope = "bridge")
+
+            client.get("/api/test") { bearerAuth(token) }.assertUnauthorized(sentToken = token)
+            client.get("/api/test-events?token=$token").assertUnauthorized(sentToken = token)
+            client.get("/api/torrents") { bearerAuth(token) }.assertUnauthorized(sentToken = token)
+            client.get("/api/library") { bearerAuth(token) }.assertUnauthorized(sentToken = token)
+            client.get("/api/events") { bearerAuth(token) }.assertUnauthorized(sentToken = token)
+            assertEquals(0, handlerRuns)
+        }
+
+    @Test
+    fun `a phone token is refused on a bridge-only route`() =
+        testApplication {
+            val client = setUp()
+            val token = client.pairedToken()
+
+            client.get("/api/test-bridge") { bearerAuth(token) }.assertUnauthorized(sentToken = token)
+            assertEquals(0, handlerRuns)
+        }
+
+    @Test
+    fun `each scope reaches the routes that accept it`() =
+        testApplication {
+            val client = setUp()
+            val phone = client.pairedToken()
+            val bridge = client.pairedToken(scope = "bridge")
+
+            val phoneRoute = client.get("/api/test") { bearerAuth(phone) }
+            assertEquals(HttpStatusCode.OK, phoneRoute.status)
+            assertEquals("ok", phoneRoute.bodyAsText())
+            val bridgeRoute = client.get("/api/test-bridge") { bearerAuth(bridge) }
+            assertEquals(HttpStatusCode.OK, bridgeRoute.status)
+            assertEquals("bridge", bridgeRoute.bodyAsText())
+            // A route that takes both scopes, as `/api/logs*` does (ADR-0006 §4).
+            assertEquals("logs", client.get("/api/test-logs") { bearerAuth(phone) }.bodyAsText())
+            assertEquals("logs", client.get("/api/test-logs") { bearerAuth(bridge) }.bodyAsText())
+        }
+
+    @Test
+    fun `the pair request never prints the pin`() {
+        assertFalse(PairRequest(pin = "482916", scope = "bridge").toString().contains("482916"))
+    }
 
     @Test
     fun `redactTokenQuery hides token query values`() {
