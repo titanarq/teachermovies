@@ -76,16 +76,45 @@
   `InMemorySettingsRepository` in `com.teachermovies.core.settings.fake` (main source set,
   ADR-0003) is the deterministic fake over a `MutableStateFlow<AppSettings>` that other modules'
   JVM tests use; it applies the same port rule and the same null/blank-clears key rule.
+- App logging (ADR-0006), package `com.teachermovies.core.log`: `AppLog` is the one facade every
+  module logs through -- `d`/`i`/`w`/`e(module, message[, error])` -- and an accepted global, the
+  exception to ADR-0003's constructor injection, because a logger handed through constructors would
+  touch every class in the app. It filters on `minLevel` (INFO by default; a debug build lowers it),
+  reads `timeMs` from a replaceable `clock`, numbers every accepted line into a
+  `LogEntry(seq, timeMs, level, module, message)` and hands it to each installed `LogSink`
+  (`AppContainer` installs them, #268). It does not redact: the facade keeps the text it is given.
+  `RingBufferLogSink` is the in-memory buffer the HTTP API serves (#269). On the way in it redacts
+  through `LogRedactor` and cuts a message to 2 KiB, marked `[truncated]`; it keeps the newest
+  5000 lines / 1 MiB of message text and evicts the oldest beyond either cap. It publishes each
+  stored line on `entries: SharedFlow<LogEntry>` (no replay, slow collectors lose the oldest line)
+  and pages the buffer back with `entries(since, minLevel, limit)`: oldest first, `since` being the
+  last `seq` the caller got, 500 lines to a page by default. `bootId` identifies the process, and a
+  reader that sees it change discards its cursor because `seq` started over.
+  `LogRedactor` replaces the values of `Authorization`/`Bearer`/`token=`/`password=`/`Api-Key`/
+  `OPENSUBTITLES_*`, `sk-ant-` Anthropic keys, JWTs, PINs and the 43-character base64url token
+  `PairingManager` issues, plus any secret registered with `registerSecret` (the current PIN), with
+  `[REDACTED]`, keeping the key that named the value. Redaction is idempotent and is a second line
+  of defence, not a licence to log a secret (AGENTS.md).
+  `RecordingLogSink` in `com.teachermovies.core.log.fake` (main source set, ADR-0003) is the
+  deterministic sink other modules' JVM tests use: it keeps every entry it is handed and invents
+  nothing.
 - Repository interfaces that other modules implement or consume.
 
 ## Boundaries
 - No dependency on any other project module. No Android UI types. Room only stores metadata, never media.
 - Schema changes need a Room migration and an exported schema JSON.
+- `com.teachermovies.core.log` is pure Kotlin/JVM (no Android type), so any module -- including the
+  future pure-JVM ones -- can log through `AppLog`, and the log tests run with no Android runtime.
 
 ## Tests
 JVM tests for domain logic; Room DAO tests via Robolectric or in-memory DB. Settings tests need no
 Android runtime: `PreferenceDataStoreFactory.create` over a file in a `TemporaryFolder` is a plain
-JVM store. `Migration1To2Test` is the pattern for a schema bump: it rebuilds the previous version's
-file from the committed schema JSON (no second copy of the entities, no `room-testing` dependency),
-migrates it, and asserts both that the old rows survived and that the exported JSON of the new
-version describes the tables the migration created.
+JVM store. Log tests need none either: the redactor is table-tested (including the lines that must
+survive untouched), the ring buffer's caps, truncation and paging are asserted directly, and
+`AppLog` is tested through `RecordingLogSink` with a fixed clock. A test that collects the sink's
+`SharedFlow` launches the collector on `UnconfinedTestDispatcher(testScheduler)`: on the standard
+test dispatcher it is not subscribed yet when the lines are recorded, and a `SharedFlow` with no
+replay keeps nothing for a latecomer. `Migration1To2Test` is the pattern for a schema bump: it
+rebuilds the previous version's file from the committed schema JSON (no second copy of the
+entities, no `room-testing` dependency), migrates it, and asserts both that the old rows survived
+and that the exported JSON of the new version describes the tables the migration created.
