@@ -13,7 +13,8 @@ import io.ktor.server.routing.post
 import kotlinx.serialization.Serializable
 
 /**
- * Body of `POST /api/pair`. [deviceName] is informational; nothing stores it yet. [scope] says
+ * Body of `POST /api/pair`. [deviceName] is informational: only a bridge's is stored, to name the
+ * paired laptop in Configuración (#289), and no token check reads it. [scope] says
  * which kind of client is pairing: `"bridge"` for a laptop bridge, and `"phone"` -- also the value
  * an omitted [scope] means, so a client written before scopes keeps working (ADR-0005 §4). Any
  * other value is refused with a 400. [toString] redacts [pin], so logging a request never prints it.
@@ -59,7 +60,7 @@ internal fun Route.pairRoutes(pairing: PairingManager) {
             call.respond(HttpStatusCode.BadRequest, ApiError("bad_request", unknownScopeMessage()))
             return@post
         }
-        when (val result = pairing.pair(request.pin, scope)) {
+        when (val result = pairing.pair(request.pin, scope, request.deviceName)) {
             is PairResult.Paired -> {
                 call.respond(PairResponse(result.token, scope.wireValue))
             }

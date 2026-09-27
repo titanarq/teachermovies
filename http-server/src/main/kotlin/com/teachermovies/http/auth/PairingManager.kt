@@ -55,11 +55,14 @@ class PairingManager(
 
     /**
      * Exchanges [pin] for a new token of [scope], stores the token's hash in that scope's set and
-     * rotates the PIN.
+     * rotates the PIN. A bridge pairing also records [deviceName] (trimmed, control characters
+     * dropped, at most [MAX_DEVICE_NAME_LENGTH] characters; none clears the stored one) so
+     * Configuración can name the paired laptop (#289); a phone's is not stored.
      */
     suspend fun pair(
         pin: String,
         scope: TokenScope = TokenScope.PHONE,
+        deviceName: String? = null,
     ): PairResult {
         val token =
             synchronized(lock) {
@@ -79,8 +82,14 @@ class PairingManager(
             }
         val hash = sha256Hex(token)
         when (scope) {
-            TokenScope.PHONE -> settings.addAuthTokenHash(hash)
-            TokenScope.BRIDGE -> settings.addBridgeTokenHash(hash)
+            TokenScope.PHONE -> {
+                settings.addAuthTokenHash(hash)
+            }
+
+            TokenScope.BRIDGE -> {
+                settings.addBridgeTokenHash(hash)
+                settings.setBridgeDeviceName(deviceName?.let(::cleanDeviceName))
+            }
         }
         return PairResult.Paired(token)
     }
@@ -116,6 +125,14 @@ class PairingManager(
         return match
     }
 
+    private fun cleanDeviceName(name: String): String? =
+        name
+            .filterNot(Char::isISOControl)
+            .trim()
+            .take(MAX_DEVICE_NAME_LENGTH)
+            .trim()
+            .ifEmpty { null }
+
     private fun freshPin(now: Long): String {
         val current = pin
         if (current != null && now - pinIssuedAt < PIN_LIFETIME_MS) return current
@@ -135,6 +152,9 @@ class PairingManager(
         const val PIN_LIFETIME_MS = 10 * 60 * 1000L
         const val ATTEMPT_WINDOW_MS = 60 * 1000L
         const val MAX_WRONG_ATTEMPTS = 5
+
+        /** Longest bridge name [pair] stores; a longer one is cut, not refused. */
+        const val MAX_DEVICE_NAME_LENGTH = 64
         private const val PIN_LENGTH = 6
         private const val PIN_BOUND = 1_000_000
         private const val TOKEN_BYTES = 32

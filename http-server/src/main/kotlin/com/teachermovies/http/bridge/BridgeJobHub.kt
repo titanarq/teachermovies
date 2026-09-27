@@ -191,6 +191,22 @@ class BridgeJobHub internal constructor(
         }
     }
 
+    /**
+     * Ends the open bridge stream, if any, as if the bridge had hung up: its in-flight jobs resolve
+     * Disconnected and [connected] turns false. "Olvidar portátil" (#289) calls it right after
+     * forgetting the bridge tokens, so the laptop's reconnect is refused instead of the old stream
+     * staying open on a token that no longer exists.
+     */
+    fun disconnectBridge() {
+        synchronized(lock) {
+            stream?.let { current ->
+                dropLocked(current)
+                stream = null
+                state.value = false
+            }
+        }
+    }
+
     /** Resolves job [id] with the bridge's [result]. */
     internal fun complete(
         id: String,

@@ -64,7 +64,9 @@
   It does not keep itself in sync with the torrent engine -- that mapping is #68.
 - DataStore-backed settings (HTTP port, download volume, auth token hashes -- one set for
   phone-scoped pairing tokens and a separate `bridgeTokenHashes` for bridge-scoped ones, each with
-  its own add method (#270, ADR-0005 §4) -- first-run done,
+  its own add method (#270, ADR-0005 §4); `clearBridgeTokenHashes()` forgets the bridge set and
+  `bridgeDeviceName` -- the name the paired bridge gave, set by `setBridgeDeviceName` (blank
+  clears) -- while leaving the phone set alone ("Olvidar portátil", #289) -- first-run done,
   `autostartOnBoot` -- open the app when the TV powers on, off by default -- `translationApiKey` --
   the user's own Anthropic API key for EN->ES translation, pasted in Configuración, null by default,
   cleared by `setTranslationApiKey(null)` or a blank string, never logged and redacted from

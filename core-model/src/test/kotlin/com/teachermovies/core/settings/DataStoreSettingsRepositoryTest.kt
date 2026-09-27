@@ -144,6 +144,34 @@ class DataStoreSettingsRepositoryTest {
         }
 
     @Test
+    fun clearBridgeTokenHashesForgetsTheBridgeAndItsNameButKeepsThePhones() =
+        runTest {
+            val repository = newRepository()
+            repository.addAuthTokenHash("hash-phone")
+            repository.addBridgeTokenHash("hash-bridge")
+            repository.setBridgeDeviceName("portatil-manuel")
+
+            repository.clearBridgeTokenHashes()
+
+            val settings = repository.settings.first()
+            assertTrue(settings.bridgeTokenHashes.isEmpty())
+            assertEquals(null, settings.bridgeDeviceName)
+            assertEquals(setOf("hash-phone"), settings.authTokenHashes)
+        }
+
+    @Test
+    fun setBridgeDeviceNameRoundTripsAndBlankClearsIt() =
+        runTest {
+            val repository = newRepository()
+
+            repository.setBridgeDeviceName("portatil-manuel")
+            assertEquals("portatil-manuel", repository.settings.first().bridgeDeviceName)
+
+            repository.setBridgeDeviceName("  ")
+            assertEquals(null, repository.settings.first().bridgeDeviceName)
+        }
+
+    @Test
     fun clearAuthTokenHashesLeavesTheBridgeHashesAlone() =
         runTest {
             val repository = newRepository()

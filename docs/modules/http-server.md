@@ -57,12 +57,14 @@
   `TokenScope.fromWireValue(scope)` returning null for anything else (#270).
 - `com.teachermovies.http.auth.PairingManager(settings: SettingsRepository, random: SecureRandom,
   clock: () -> Long)`: `currentPin()` (6 digits, zero-padded; new every 10 min and after each
-  successful pairing), `suspend pair(pin, scope = PHONE): PairResult` (`Paired(token)` | `WrongPin` |
+  successful pairing), `suspend pair(pin, scope = PHONE, deviceName = null): PairResult` (`Paired(token)` | `WrongPin` |
   `TooManyAttempts` once 5 wrong PINs fall within 60 s), `suspend scopeOf(token): TokenScope?` --
   the scope a pairing issued the token with, or null for a token none issued. Tokens are 32
   random bytes, base64url without padding; only their SHA-256 hex is persisted, in
   `SettingsRepository.addAuthTokenHash` for a phone token and `addBridgeTokenHash` for a bridge
-  one, so they survive restarts and each scope's set can be cleared on its own.
+  one, so they survive restarts and each scope's set can be cleared on its own. A bridge pairing
+  also stores its `deviceName` (control characters dropped, trimmed, at most 64 characters; none
+  clears it) via `setBridgeDeviceName`, which Configuración shows (#289); a phone's is not stored.
 - `POST /api/pair` (public) body `{"pin":"482916","deviceName":"...","scope":"phone"}` -> 200
   `{"token":"...","scope":"phone"}` | 400 `bad_request` (also for a `scope` that is not `phone` or
   `bridge`, which pairs nothing and leaves the PIN usable) | 401 `wrong_pin` | 429
@@ -191,7 +193,9 @@
     a second `GET /api/bridge/jobs` closes the older stream, whose in-flight jobs resolve
     `Disconnected`, and `connected` stays true. `connected` turns false when the current stream
     ends; a bridge that vanishes without closing its socket is noticed at the next write (a job,
-    or the 15 s ping) at the latest.
+    or the 15 s ping) at the latest. `disconnectBridge()` ends the current stream from the TV
+    side (in-flight jobs `Disconnected`, `connected` false); "Olvidar portátil" (#289) calls it
+    after clearing the bridge tokens, so the laptop's reconnect is then refused 401.
   - `FakeAssistantBridge(connected = true, respond = { Done("") })` (main source set, ADR-0003):
     records `submitted`, answers `respond(job)` while connected and `NoBridge` after
     `setConnected(false)`.

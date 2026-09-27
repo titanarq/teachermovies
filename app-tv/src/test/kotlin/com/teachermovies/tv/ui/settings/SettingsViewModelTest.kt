@@ -332,62 +332,86 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun translationApiKeyIsEmptyWhenUnset() {
-        val viewModel = keyViewModel(CoreInMemorySettingsRepository())
+    fun noBridgePairedOrConnectedByDefault() {
+        val state = bridgeViewModel(CoreInMemorySettingsRepository()).uiState.value
 
-        assertEquals("", viewModel.uiState.value.translationApiKey)
+        assertFalse(state.bridgeConnected)
+        assertFalse(state.bridgePaired)
+        assertNull(state.bridgeName)
     }
 
     @Test
-    fun translationApiKeyReflectsThePersistedKey() {
-        val settings = CoreInMemorySettingsRepository(AppSettings(translationApiKey = "sk-ant-stored"))
-        val viewModel = keyViewModel(settings)
+    fun bridgeStateFollowsTheHubAndThePersistedTokens() {
+        val settings =
+            CoreInMemorySettingsRepository(
+                AppSettings(bridgeTokenHashes = setOf("hash-bridge"), bridgeDeviceName = "portatil-manuel"),
+            )
+        val connected = MutableStateFlow(false)
+        val viewModel = bridgeViewModel(settings, connected)
 
-        assertEquals("sk-ant-stored", viewModel.uiState.value.translationApiKey)
+        assertTrue(viewModel.uiState.value.bridgePaired)
+        assertFalse(viewModel.uiState.value.bridgeConnected)
+        assertEquals("portatil-manuel", viewModel.uiState.value.bridgeName)
+
+        connected.value = true
+        assertTrue(viewModel.uiState.value.bridgeConnected)
+
+        connected.value = false
+        assertFalse(viewModel.uiState.value.bridgeConnected)
     }
 
     @Test
-    fun changeTranslationApiKeyRoundTripsTrimmed() {
-        val settings = CoreInMemorySettingsRepository()
-        val viewModel = keyViewModel(settings)
+    fun forgetBridgeClearsTheBridgeTokensKeepsThePhonesAndThenDisconnects() {
+        val settings =
+            CoreInMemorySettingsRepository(
+                AppSettings(
+                    authTokenHashes = setOf("hash-phone"),
+                    bridgeTokenHashes = setOf("hash-bridge"),
+                    bridgeDeviceName = "portatil-manuel",
+                ),
+            )
+        val connected = MutableStateFlow(true)
+        var hashesWhenDisconnected: Set<String>? = null
+        val viewModel =
+            bridgeViewModel(settings, connected) {
+                hashesWhenDisconnected = settings.current.bridgeTokenHashes
+                connected.value = false
+            }
 
-        viewModel.changeTranslationApiKey("  sk-ant-new  ")
+        viewModel.forgetBridge()
 
-        assertEquals("sk-ant-new", settings.current.translationApiKey)
-        assertEquals("sk-ant-new", viewModel.uiState.value.translationApiKey)
+        assertEquals(emptySet<String>(), settings.current.bridgeTokenHashes)
+        assertNull(settings.current.bridgeDeviceName)
+        assertEquals(setOf("hash-phone"), settings.current.authTokenHashes)
+        // The tokens were already gone when the stream was dropped, so a reconnect is refused.
+        assertEquals(emptySet<String>(), hashesWhenDisconnected)
+        val state = viewModel.uiState.value
+        assertFalse(state.bridgePaired)
+        assertFalse(state.bridgeConnected)
+        assertNull(state.bridgeName)
     }
 
     @Test
-    fun blankTranslationApiKeyClearsTheStoredOne() {
-        val settings = CoreInMemorySettingsRepository(AppSettings(translationApiKey = "sk-ant-old"))
-        val viewModel = keyViewModel(settings)
+    fun uiStateToStringNeverContainsThePin() {
+        val text = bridgeViewModel(CoreInMemorySettingsRepository()).uiState.value.toString()
 
-        viewModel.changeTranslationApiKey("   ")
-
-        assertNull(settings.current.translationApiKey)
-        assertEquals("", viewModel.uiState.value.translationApiKey)
-    }
-
-    @Test
-    fun uiStateToStringNeverContainsTheKey() {
-        val settings = CoreInMemorySettingsRepository(AppSettings(translationApiKey = "sk-ant-secret"))
-        val viewModel = keyViewModel(settings)
-
-        val text = viewModel.uiState.value.toString()
-
-        assertFalse(text.contains("sk-ant-secret"))
         assertFalse(text.contains(pin))
     }
 
-    private fun keyViewModel(settings: SettingsRepository) =
-        SettingsViewModel(
-            settings,
-            FakeVolumeProvider(listOf(internal)),
-            space,
-            pin = { pin },
-            serverState = serverState,
-            pinTicks = pinTicks,
-        )
+    private fun bridgeViewModel(
+        settings: SettingsRepository,
+        connected: Flow<Boolean> = flowOf(false),
+        disconnect: () -> Unit = {},
+    ) = SettingsViewModel(
+        settings,
+        FakeVolumeProvider(listOf(internal)),
+        space,
+        pin = { pin },
+        serverState = serverState,
+        pinTicks = pinTicks,
+        bridgeConnected = connected,
+        disconnectBridge = disconnect,
+    )
 
     private fun volume(
         id: String,
@@ -435,6 +459,14 @@ class SettingsViewModelTest {
 
         override suspend fun addBridgeTokenHash(hash: String) {
             state.update { it.copy(bridgeTokenHashes = it.bridgeTokenHashes + hash) }
+        }
+
+        override suspend fun setBridgeDeviceName(name: String?) {
+            state.update { it.copy(bridgeDeviceName = name) }
+        }
+
+        override suspend fun clearBridgeTokenHashes() {
+            state.update { it.copy(bridgeTokenHashes = emptySet(), bridgeDeviceName = null) }
         }
 
         override suspend fun setFirstRunCompleted(done: Boolean) {

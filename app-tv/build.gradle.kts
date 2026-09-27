@@ -32,6 +32,11 @@ android {
     buildFeatures {
         compose = true
     }
+
+    // Robolectric (Compose UI focus tests, #289) needs the merged Android resources and manifest.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 kotlin {
@@ -71,4 +76,12 @@ dependencies {
     testImplementation(libs.junit)
     // `runTest`-free ViewModel tests still need `Dispatchers.setMain` for `viewModelScope`.
     testImplementation(libs.kotlinx.coroutines.test)
+
+    // D-pad focus order of Configuración (#289): a Compose UI test on the JVM under Robolectric.
+    // The test registers its empty host activity with Robolectric itself, so no `ui-test-manifest`
+    // (which would have to ship in the APK's manifest) is needed.
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 }

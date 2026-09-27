@@ -67,6 +67,8 @@ class MainActivity : ComponentActivity() {
             pin = container.pairingManager::currentPin,
             serverState = container.httpServerController.state,
             serverUrl = serverUrl(container),
+            bridgeConnected = container.bridgeJobHub.connected,
+            disconnectBridge = container.bridgeJobHub::disconnectBridge,
         )
     }
 
@@ -180,6 +182,7 @@ class MainActivity : ComponentActivity() {
             capture = container.lineCaptureController,
             speech = container.assistantSpeechController,
             streamingController = container.streamingPlaybackController,
+            spanishLines = container.alignedSpanishSource,
         )
     }
 

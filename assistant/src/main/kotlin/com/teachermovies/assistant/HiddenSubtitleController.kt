@@ -29,6 +29,12 @@ enum class SubtitleSource {
     EMBEDDED,
 }
 
+/** An embedded subtitle track extracted to [file], whose cues are [track]. */
+data class EmbeddedSubtitle(
+    val file: File,
+    val track: SubtitleTrack,
+)
+
 /** Outcome of asking a [HiddenSubtitleController] to enter hidden mode for a media file. */
 sealed interface HiddenModeResult {
     /** Cues were found and parsed from [source]; the engine has the track and subtitles are off. */
@@ -84,6 +90,14 @@ class HiddenSubtitleController(
     val active: StateFlow<Boolean> = mutableActive.asStateFlow()
 
     private var reassertJob: Job? = null
+
+    /**
+     * The cues hidden mode is reading right now, null outside it: what LEFT aligns the Spanish
+     * subtitles against (#288, ADR-0005 §6).
+     */
+    @Volatile
+    var track: SubtitleTrack? = null
+        private set
 
     /** Bumped by every [stop]: a [start] still in flight when it changes gives up. */
     private val generation = MutableStateFlow(0L)
@@ -142,6 +156,7 @@ class HiddenSubtitleController(
         if (generation.value != session) return HiddenModeResult.NoSubtitleFile
 
         engine.load(track)
+        this.track = track
         // The viewer's persisted choice may already be applied: selecting null here would both hide
         // it and let the session persist that null over it (#248).
         revertUnlessViewerChoice(player.selectedSubtitleId.value, viewerSubtitleId)
@@ -179,7 +194,25 @@ class HiddenSubtitleController(
         reassertJob?.cancel()
         reassertJob = null
         engine.load(null)
+        track = null
         mutableActive.value = false
+    }
+
+    /**
+     * The embedded text subtitle track in [language] of [mediaFile] -- the media open in [player] --
+     * as a cached file and its cues, or null when the player lists no such track (without waiting
+     * for it to publish its tracks) or it cannot be extracted and parsed. The file is the same
+     * `<cacheDir>/subtitles` one [start] uses, so later calls and sessions reuse it. It never
+     * touches playback or the subtitle selection; LEFT's Spanish lookup reads it (#288).
+     */
+    suspend fun embeddedSubtitle(
+        mediaFile: File,
+        language: String,
+    ): EmbeddedSubtitle? {
+        val candidate = EmbeddedSubtitleTracks.pick(player.subtitleTracks.value, language) ?: return null
+        val file = (embeddedFile(mediaFile, candidate) as? Extracting.Stored)?.file ?: return null
+        val parsed = parse(file) as? Parsing.Ok ?: return null
+        return EmbeddedSubtitle(file, parsed.track)
     }
 
     /**
@@ -225,17 +258,27 @@ class HiddenSubtitleController(
     private suspend fun embedded(
         mediaFile: File,
         candidate: Track,
-    ): Parsing {
+    ): Parsing =
+        when (val file = embeddedFile(mediaFile, candidate)) {
+            is Extracting.Stored -> parse(file.file)
+            is Extracting.Failed -> file.result
+        }
+
+    /** The cache file of the embedded [candidate], extracting it the first time. */
+    private suspend fun embeddedFile(
+        mediaFile: File,
+        candidate: Track,
+    ): Extracting {
         val dir = File(cacheDir, SUBTITLE_CACHE_DIR)
         val baseName = "${mediaFile.nameWithoutExtension}.${sanitise(candidate.id)}"
         val cached =
             SubtitleFormat.entries
                 .map { File(dir, "$baseName.${extensionOf(it)}") }
                 .firstOrNull { it.isFile && it.length() > 0 }
-        if (cached != null) return parse(cached)
+        if (cached != null) return Extracting.Stored(cached)
 
         if (!dir.isDirectory && !dir.mkdirs()) {
-            return unreadable("cannot create the subtitle cache directory")
+            return Extracting.Failed(unreadable("cannot create the subtitle cache directory"))
         }
         // The format is only known once extracted and the parser dispatches on the extension: write
         // to a scratch name, then move the result under its final `.srt`/`.ass` name.
@@ -243,20 +286,22 @@ class HiddenSubtitleController(
         val extracted =
             when (val result = player.extractTextSubtitle(candidate.id, scratch)) {
                 is SubtitleExtraction.Extracted -> result
-                is SubtitleExtraction.Failed -> return unreadable("embedded track extraction failed: ${result.reason}")
-                SubtitleExtraction.NotTextBased -> return unreadable("embedded track is image-based (not text)")
-                SubtitleExtraction.TrackNotFound -> return unreadable("embedded track not found in the open media")
+                is SubtitleExtraction.Failed -> return failed("embedded track extraction failed: ${result.reason}")
+                SubtitleExtraction.NotTextBased -> return failed("embedded track is image-based (not text)")
+                SubtitleExtraction.TrackNotFound -> return failed("embedded track not found in the open media")
             }
         val target = File(dir, "$baseName.${extensionOf(extracted.format)}")
         if (extracted.file != target) {
             target.delete()
             if (!extracted.file.renameTo(target)) {
                 extracted.file.delete()
-                return unreadable("cannot store the extracted subtitle track")
+                return failed("cannot store the extracted subtitle track")
             }
         }
-        return parse(target)
+        return Extracting.Stored(target)
     }
+
+    private fun failed(reason: String): Extracting = Extracting.Failed(unreadable(reason))
 
     private fun parse(file: File): Parsing =
         when (val result = SubtitleParsers.parse(file)) {
@@ -265,7 +310,17 @@ class HiddenSubtitleController(
             is ParseResult.Unsupported -> unreadable("unsupported subtitle format .${result.extension}")
         }
 
-    private fun unreadable(reason: String): Parsing = Parsing.Failed(HiddenModeResult.Unreadable(reason))
+    private fun unreadable(reason: String): Parsing.Failed = Parsing.Failed(HiddenModeResult.Unreadable(reason))
+
+    private sealed interface Extracting {
+        data class Stored(
+            val file: File,
+        ) : Extracting
+
+        data class Failed(
+            val result: Parsing.Failed,
+        ) : Extracting
+    }
 
     private sealed interface Parsing {
         data class Ok(
