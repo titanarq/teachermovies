@@ -11,6 +11,10 @@ ksp = "2.1.21-2.0.2"
 # Built with Kotlin 2.1, so it matches the toolchain above. ADR-0004's table has no row for it
 # yet and needs one.
 coroutines = "1.10.2"
+# :bridge-protocol (#269, ADR-0005 §1): the kotlinx JSON runtime the shared DTOs serialize with;
+# pinned to the version Ktor 3.1.3 already resolves for :http-server, so both share one copy.
+# ADR-0004's table has no row for it yet and needs one.
+serializationJson = "1.8.1"
 foojayResolver = "0.8.0" # applied from settings.gradle.kts, which cannot read this catalog
 coreKtx = "1.16.0"
 lifecycle = "2.9.4"
@@ -51,6 +55,9 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 # is what gives the JVM tests `runTest`.
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+# :bridge-protocol (#269): consumers encode/decode the DTOs themselves, so the module exposes the
+# JSON runtime as `api`.
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serializationJson" }
 
 # :core-model (Room metadata -- #40, DataStore settings -- #41)
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
@@ -95,6 +102,8 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+# Pure-JVM modules (:bridge-protocol #269, :laptop-bridge #271) -- ADR-0004 row "Kotlin JVM plugin".
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle" }

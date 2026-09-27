@@ -30,6 +30,8 @@ dependencies {
     // `api`: `ServerDeps` exposes `TorrentEngine` and `SpaceInfo` in its public constructor.
     api(project(":torrent"))
     api(project(":storage"))
+    // Shared wire DTOs of the log endpoints (#269, ADR-0005 §1); pure JVM, no Android types.
+    implementation(project(":bridge-protocol"))
 
     // ADR-0002: Ktor server with the CIO engine, JSON via kotlinx.serialization, JSON error pages.
     implementation(libs.ktor.server.core)
