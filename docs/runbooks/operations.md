@@ -188,6 +188,17 @@ generic `ci-host.yml` (agent-os#50).
   quoted; then close the stage with `git commit --allow-empty` and the `stage N/M:` subject; no
   rebase, reset or force push" (as #267's stage 3/3 now reads).
 
+- **The validator can approve a PR having run only the module test named in the Definition
+  of done, not the full `scripts/test.sh`.** Found on #294 / PR #307 (2026-09-27): the
+  validator approved with only `:assistant:test` green; the new `spokenOutput` setting
+  defaults all-off, and three `:app-tv` `PlayerViewModelTest` cases that never pass
+  `SpokenOutputSettings` expect speech, so CI on the head SHA came back red (AGENTS.md:
+  every PR must leave `scripts/test.sh` green). The control plane caught it at merge time
+  (Duty 4, condition 1) before merging, and added a second stage to #294's body instead.
+  Workaround until the validator itself runs the full `scripts/test.sh` rather than only the
+  module target named in the Definition of done: the control plane keeps reading CI on the
+  head SHA as the authority, never the validator's own narrower run, before merging.
+
 ## Refiner
 
 `config/agents.yaml`'s `refiner_unattended` is `true`: the refiner runs unattended. First
