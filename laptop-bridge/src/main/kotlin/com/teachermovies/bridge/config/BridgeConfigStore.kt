@@ -142,7 +142,7 @@ private val PERMISSION_TRIADS =
  * leading digit stands for the setuid, setgid and sticky bits, which [PosixFilePermission] cannot
  * express and a config file must never have, so it is always zero here.
  */
-private fun Set<PosixFilePermission>.toOctal(): String {
+internal fun Set<PosixFilePermission>.toOctal(): String {
     val ownerGroupOthers = PERMISSION_TRIADS.joinToString("") { triad -> triadDigit(this, triad).toString() }
     return NO_SPECIAL_BITS + ownerGroupOthers
 }

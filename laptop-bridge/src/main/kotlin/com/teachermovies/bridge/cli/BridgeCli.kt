@@ -2,6 +2,7 @@ package com.teachermovies.bridge.cli
 
 import com.teachermovies.bridge.config.BridgeConfigStore
 import com.teachermovies.bridge.config.ConfigLocation
+import com.teachermovies.bridge.opensubtitles.CredentialsFile
 import com.teachermovies.bridge.tv.TvApi
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -60,10 +61,22 @@ class BridgeCli(
         store: BridgeConfigStore,
     ): Int =
         when (command) {
-            is Command.Pair -> withTv { PairCommand(out, err, store, it).run(command) }
-            Command.Unpair -> UnpairCommand(out, err, store).run()
-            Command.Doctor -> withTv { DoctorCommand(out, store, it).run() }
-            is Command.Logs -> withTv { LogsCommand(out, err, store, it).run(command) }
+            is Command.Pair -> {
+                withTv { PairCommand(out, err, store, it).run(command) }
+            }
+
+            Command.Unpair -> {
+                UnpairCommand(out, err, store).run()
+            }
+
+            Command.Doctor -> {
+                val credentials = CredentialsFile(CredentialsFile.defaultPath(home, env))
+                withTv { DoctorCommand(out, store, it, credentials).run() }
+            }
+
+            is Command.Logs -> {
+                withTv { LogsCommand(out, err, store, it).run(command) }
+            }
         }
 }
 
