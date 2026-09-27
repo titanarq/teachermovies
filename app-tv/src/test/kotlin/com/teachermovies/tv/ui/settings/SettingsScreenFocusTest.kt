@@ -3,7 +3,6 @@ package com.teachermovies.tv.ui.settings
 import android.app.Application
 import android.content.ComponentName
 import androidx.activity.ComponentActivity
-import androidx.test.core.app.ApplicationProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -17,6 +16,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.requestFocus
+import androidx.test.core.app.ApplicationProvider
 import com.teachermovies.http.ServerState
 import com.teachermovies.tv.ui.TeacherMoviesTheme
 import org.junit.Assert.assertEquals
@@ -54,7 +54,14 @@ class SettingsScreenFocusTest {
     @get:Rule
     val rules: RuleChain = RuleChain.outerRule(hostActivity).around(compose)
 
-    private val volume = VolumeRow("primary", "Almacenamiento interno", 5_000_000_000, 16_000_000_000, removable = false)
+    private val volume =
+        VolumeRow(
+            "primary",
+            "Almacenamiento interno",
+            5_000_000_000,
+            16_000_000_000,
+            removable = false,
+        )
     private val paired =
         SettingsUiState(
             httpPort = 8787,

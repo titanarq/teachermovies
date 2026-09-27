@@ -82,7 +82,10 @@ class PairingManager(
             }
         val hash = sha256Hex(token)
         when (scope) {
-            TokenScope.PHONE -> settings.addAuthTokenHash(hash)
+            TokenScope.PHONE -> {
+                settings.addAuthTokenHash(hash)
+            }
+
             TokenScope.BRIDGE -> {
                 settings.addBridgeTokenHash(hash)
                 settings.setBridgeDeviceName(deviceName?.let(::cleanDeviceName))
