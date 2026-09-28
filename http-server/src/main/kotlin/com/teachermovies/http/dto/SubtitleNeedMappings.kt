@@ -20,7 +20,7 @@ internal fun SubtitleFetch.toNeedDto(title: String): SubtitleNeedDto =
         attempts = attempts,
     )
 
-private fun SubtitleFetchState.toWireValue(): String =
+internal fun SubtitleFetchState.toWireValue(): String =
     when (this) {
         SubtitleFetchState.Pending -> "pending"
         SubtitleFetchState.Searching -> "searching"

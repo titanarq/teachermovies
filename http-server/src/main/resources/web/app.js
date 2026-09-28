@@ -260,6 +260,11 @@
     subButton.type = 'button';
     subButton.className = 'btn';
     subButton.textContent = 'SUBIR SUBTÍTULO';
+    var searchButton = document.createElement('button');
+    searchButton.type = 'button';
+    searchButton.className = 'btn';
+    searchButton.textContent = 'BUSCAR SUBTÍTULOS';
+    searchButton.hidden = true;
     var delButton = document.createElement('button');
     delButton.type = 'button';
     delButton.className = 'btn btn-danger';
@@ -271,6 +276,8 @@
     subButton.addEventListener('click', function () { subInput.click(); });
     subInput.addEventListener('change', function () { uploadSubtitle(id, subInput, subButton, msg); });
     delButton.addEventListener('click', function () { askDelete(id, delButton, msg); });
+    searchButton.addEventListener('click', function () { searchSubtitles(id, searchButton, msg); });
+    actions.appendChild(searchButton);
     actions.appendChild(subButton);
     actions.appendChild(delButton);
     actions.appendChild(subInput);
@@ -280,7 +287,10 @@
     li.appendChild(button);
     li.appendChild(actions);
     li.appendChild(msg);
-    return { li: li, name: name, fill: fill, pct: p, speed: speed, size: size, button: button };
+    return {
+      li: li, name: name, fill: fill, pct: p, speed: speed, size: size, button: button,
+      searchButton: searchButton,
+    };
   }
 
   function render(torrents) {
@@ -299,6 +309,8 @@
       row.button.dataset.action = paused ? 'resume' : 'pause';
       row.button.textContent = paused ? 'REANUDAR' : 'PAUSAR';
       row.button.hidden = t.state === 'completed';
+      // Only a finished download is a library movie with subtitles to look for (#285).
+      row.searchButton.hidden = t.state !== 'completed';
       list.appendChild(row.li); // keeps server order; moving an existing node is cheap
     });
     Object.keys(rows).forEach(function (id) {
@@ -366,6 +378,72 @@
         button.disabled = false;
         input.value = '';
       });
+  }
+
+  // ---- per-movie "Buscar subtítulos" (#285, ADR-0005 §5) -----------------------------------
+
+  var SUBTITLE_SEARCH_POLL_MS = 3000;
+  var SUBTITLE_SEARCH_MAX_POLLS = 40; // two minutes, then the last state stays on screen
+
+  var SUBTITLE_LANGUAGES = { en: 'Inglés', es: 'Español' };
+  var SUBTITLE_STATES = {
+    pending: 'pendiente',
+    searching: 'buscando',
+    downloaded: 'encontrado',
+    not_found: 'no encontrado',
+    failed: 'error',
+  };
+  var SUBTITLE_SEARCH_TEXT = {
+    found: ['Subtítulos encontrados', 'ok'],
+    not_found: ['No se encontraron subtítulos', 'error'],
+    failed: ['La búsqueda de subtítulos falló', 'error'],
+    laptop_offline: ['Portátil no conectado: se buscarán cuando se conecte', 'error'],
+    searching: ['Buscando subtítulos…', ''],
+    no_needs: ['La TV aún no ha registrado qué subtítulos necesita esta película', ''],
+  };
+
+  /** One sentence for a SubtitleSearchDto: the overall result, then each language's state. */
+  function subtitleSearchText(dto) {
+    var head = SUBTITLE_SEARCH_TEXT[dto.status] || [dto.status, ''];
+    var parts = (dto.languages || []).map(function (l) {
+      var state = SUBTITLE_STATES[l.state] || l.state;
+      if (l.state === 'downloaded' && l.variant) state += ' (' + l.variant + ')';
+      return (SUBTITLE_LANGUAGES[l.language] || l.language) + ': ' + state;
+    });
+    return { text: head[0] + (parts.length ? ' · ' + parts.join(' · ') : '') + '.', kind: head[1] };
+  }
+
+  function showSubtitleSearch(msg, dto) {
+    var shown = subtitleSearchText(dto);
+    setMsg(msg, shown.text, shown.kind);
+  }
+
+  /** Asks the TV to retry the search now, then follows it until it ends or the polls run out. */
+  function searchSubtitles(id, button, msg) {
+    var path = '/api/library/' + encodeURIComponent(id) + '/subtitles';
+    var polls = 0;
+    button.disabled = true;
+    setMsg(msg, 'Pidiendo a la TV que busque subtítulos…', '');
+    function follow(res) {
+      if (res.status !== 200) {
+        return readApiError(res).then(function (err) {
+          setMsg(msg, failureText('No se pudieron buscar subtítulos', res, err), 'error');
+        });
+      }
+      return res.json().then(function (dto) {
+        showSubtitleSearch(msg, dto);
+        if (dto.status !== 'searching' || ++polls > SUBTITLE_SEARCH_MAX_POLLS) return;
+        return new Promise(function (resolve) { setTimeout(resolve, SUBTITLE_SEARCH_POLL_MS); })
+          .then(function () { return api(path); })
+          .then(follow);
+      });
+    }
+    api(path + '/search', { method: 'POST' })
+      .then(follow)
+      .catch(function (e) {
+        if (!(e instanceof Unauthorized)) setMsg(msg, 'No se pudo contactar con la TV.', 'error');
+      })
+      .then(function () { button.disabled = false; });
   }
 
   /** Confirm dialog with the `Borrar también los archivos` checkbox; resolves to null on cancel. */
