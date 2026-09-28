@@ -38,6 +38,9 @@ dependencies {
     // Official Anthropic Java SDK behind `AnthropicTranslationProvider` (#90). `implementation`: no
     // SDK type appears in this module's public API.
     implementation(libs.anthropic.java)
+    // Reads the explain handler's JSON document (#291) as a `JsonElement` tree in `Explanation.parse`;
+    // no serialization plugin and no serialization type in this module's public API.
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
