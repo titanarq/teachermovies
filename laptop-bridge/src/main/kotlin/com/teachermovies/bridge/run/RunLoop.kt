@@ -6,6 +6,9 @@ import com.teachermovies.bridge.config.ConfigSave
 import com.teachermovies.bridge.protocol.BridgeCancelDto
 import com.teachermovies.bridge.protocol.BridgeJobProtocol
 import com.teachermovies.bridge.protocol.BridgeJobResultDto
+import com.teachermovies.bridge.protocol.BridgeSubtitleProtocol
+import com.teachermovies.bridge.subtitles.SubtitleFetchLoop
+import com.teachermovies.bridge.subtitles.SubtitleTrigger
 import com.teachermovies.bridge.tv.ApiFailure
 import com.teachermovies.bridge.tv.ApiResult
 import com.teachermovies.bridge.tv.JobStreamEnd
@@ -40,6 +43,9 @@ import kotlin.time.TimeSource
  * switches to -- and saves in [store] -- the first one that passes. The public check comes first so
  * the token is only ever sent to something that answers like a teachermovies TV.
  *
+ * Every accepted stream and every `subtitles-needed` frame (#280) also go to [subtitles], the fetch
+ * loop of #282: a laptop that was off reads the whole needs list as soon as it reconnects.
+ *
  * [run] returns only when the TV refuses the token (401): that is a new pairing to do, not a
  * connection to retry. Everything worth knowing goes to [log].
  */
@@ -52,6 +58,7 @@ class RunLoop(
     private val backoff: Backoff = Backoff(),
     private val discoveryAfter: Int = DEFAULT_DISCOVERY_AFTER,
     private val sleep: suspend (Duration) -> Unit = { delay(it) },
+    private val subtitles: SubtitleTrigger = SubtitleTrigger.NONE,
 ) {
     /** How [run] ended; the only way out of the loop is a token the TV no longer accepts. */
     sealed interface End {
@@ -131,6 +138,7 @@ class RunLoop(
                         onOpen()
                         backoff.reset()
                         log.line("Conectado a la TV $url; esperando trabajos.")
+                        subtitles.request(SubtitleFetchLoop.CONNECT)
                     },
                     onEvent = { event -> onEvent(event, url, token, running) },
                 )
@@ -148,6 +156,7 @@ class RunLoop(
         when (event.event) {
             BridgeJobProtocol.JOB_EVENT -> startJob(event.data, url, token, running)
             BridgeJobProtocol.CANCEL_EVENT -> cancelJob(event.data, running)
+            BridgeSubtitleProtocol.SUBTITLES_NEEDED_EVENT -> subtitles.request(SubtitleFetchLoop.NUDGE)
             else -> Unit
         }
     }

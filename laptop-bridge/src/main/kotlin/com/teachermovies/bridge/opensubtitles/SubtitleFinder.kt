@@ -75,6 +75,16 @@ sealed interface SubtitleSearch {
 }
 
 /**
+ * What the fetch loop of #282 needs from OpenSubtitles: one search-and-download, and the daily
+ * download quota as last known, so it can stop before spending a request it would be refused.
+ */
+interface SubtitleSearcher {
+    suspend fun find(request: SubtitleRequest): SubtitleSearch
+
+    fun quota(): Quota
+}
+
+/**
  * Finds and downloads the best subtitle for one movie in one language (#281, ADR-0005 §5).
  *
  * Searches run in order -- moviehash, then IMDb id, then title and year -- skipping any the request
@@ -87,8 +97,10 @@ sealed interface SubtitleSearch {
  */
 class SubtitleFinder(
     private val api: OpenSubtitlesApi,
-) {
-    suspend fun find(request: SubtitleRequest): SubtitleSearch {
+) : SubtitleSearcher {
+    override fun quota(): Quota = api.quota.current
+
+    override suspend fun find(request: SubtitleRequest): SubtitleSearch {
         val codes = codesFor(request.language)
         val seen = mutableListOf<SubtitleCandidate>()
         for (query in queriesFor(request, codes)) {

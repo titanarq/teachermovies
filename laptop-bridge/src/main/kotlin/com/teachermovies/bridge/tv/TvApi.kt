@@ -1,7 +1,11 @@
 package com.teachermovies.bridge.tv
 
 import com.teachermovies.bridge.protocol.BridgeJobResultDto
+import com.teachermovies.bridge.protocol.BridgeSubtitleProtocol
 import com.teachermovies.bridge.protocol.LogsPageDto
+import com.teachermovies.bridge.protocol.SubtitleNeedDto
+import com.teachermovies.bridge.protocol.SubtitleStatusDto
+import com.teachermovies.bridge.protocol.SubtitleUploadedDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.NoTransformationFoundException
 import io.ktor.client.call.body
@@ -13,6 +17,8 @@ import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.forms.formData
+import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -22,6 +28,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
+import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
@@ -267,6 +274,86 @@ class TvApi(
         }
 
     /**
+     * `GET /api/bridge/subtitle-needs` (#280): every movie and language the TV wants a subtitle for
+     * and a search may act on now -- never one already served, in flight or waiting out its
+     * seven-day not-found retry.
+     */
+    suspend fun subtitleNeeds(
+        baseUrl: String,
+        token: String,
+    ): ApiResult<List<SubtitleNeedDto>> =
+        guarded({ ApiResult.Failure(it) }) {
+            val response = client.get(url(baseUrl, "/api/bridge/subtitle-needs")) { bearerAuth(token) }
+            when {
+                response.status.isSuccess() -> ApiResult.Success(response.body<List<SubtitleNeedDto>>())
+                response.status == HttpStatusCode.Unauthorized -> ApiResult.Failure(ApiFailure.Unauthorized)
+                else -> ApiResult.Failure(response.httpFailure())
+            }
+        }
+
+    /**
+     * `POST /api/bridge/subtitle-status` (#280): what became of one need -- `searching`,
+     * `not_found` or `failed`. 204 is [ApiResult.Success]; 404 `unknown_need` and 400 come back as
+     * [ApiFailure.Http].
+     */
+    suspend fun postSubtitleStatus(
+        baseUrl: String,
+        token: String,
+        status: SubtitleStatusDto,
+    ): ApiResult<Unit> =
+        guarded({ ApiResult.Failure(it) }) {
+            val response =
+                client.post(url(baseUrl, "/api/bridge/subtitle-status")) {
+                    bearerAuth(token)
+                    contentType(ContentType.Application.Json)
+                    setBody(status)
+                }
+            when {
+                response.status.isSuccess() -> ApiResult.Success(Unit)
+                response.status == HttpStatusCode.Unauthorized -> ApiResult.Failure(ApiFailure.Unauthorized)
+                else -> ApiResult.Failure(response.httpFailure())
+            }
+        }
+
+    /**
+     * `POST /api/bridge/subtitles` (#280): uploads one downloaded subtitle as multipart
+     * `torrentId`, `language`, optional `variant` and `file`. The TV names and places the file
+     * itself, so the part's file name is a fixed placeholder; the answer is where it landed.
+     */
+    suspend fun uploadSubtitle(
+        baseUrl: String,
+        token: String,
+        torrentId: String,
+        language: String,
+        variant: String?,
+        bytes: ByteArray,
+    ): ApiResult<SubtitleUploadedDto> =
+        guarded({ ApiResult.Failure(it) }) {
+            val response =
+                client.submitFormWithBinaryData(
+                    url(baseUrl, "/api/bridge/subtitles"),
+                    formData {
+                        append(BridgeSubtitleProtocol.TORRENT_ID_FIELD, torrentId)
+                        append(BridgeSubtitleProtocol.LANGUAGE_FIELD, language)
+                        if (variant != null) append(BridgeSubtitleProtocol.VARIANT_FIELD, variant)
+                        append(
+                            BridgeSubtitleProtocol.FILE_FIELD,
+                            bytes,
+                            Headers.build {
+                                append(HttpHeaders.ContentType, SUBRIP_CONTENT_TYPE)
+                                append(HttpHeaders.ContentDisposition, "filename=\"$UPLOAD_FILE_NAME\"")
+                            },
+                        )
+                    },
+                ) { bearerAuth(token) }
+            when {
+                response.status.isSuccess() -> ApiResult.Success(response.body<SubtitleUploadedDto>())
+                response.status == HttpStatusCode.Unauthorized -> ApiResult.Failure(ApiFailure.Unauthorized)
+                else -> ApiResult.Failure(response.httpFailure())
+            }
+        }
+
+    /**
      * Runs [block], turning any exception except cancellation into [onFailure] with an
      * [ApiFailure.Network]: no [TvApi] method throws.
      */
@@ -331,6 +418,10 @@ class TvApi(
         const val STREAM_SOCKET_TIMEOUT_MILLIS: Long = 45_000
 
         private const val WRONG_PIN_CODE = "wrong_pin"
+
+        /** The uploaded part's file name: the TV never reads it (#280), but a part needs one. */
+        private const val UPLOAD_FILE_NAME = "subtitle.srt"
+        private const val SUBRIP_CONTENT_TYPE = "application/x-subrip"
 
         private val JSON = Json { ignoreUnknownKeys = true }
 
