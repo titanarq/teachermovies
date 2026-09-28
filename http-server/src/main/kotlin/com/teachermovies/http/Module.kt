@@ -44,6 +44,7 @@ fun Application.module(deps: ServerDeps) {
         torrentWriteRoutes(deps)
         subtitleRoutes(deps)
         libraryRoutes(deps)
+        subtitleSearchRoutes(deps)
         eventsRoutes(deps)
         logRoutes(deps)
         bridgeRoutes(deps)

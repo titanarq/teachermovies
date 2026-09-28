@@ -126,6 +126,21 @@
   token) -> 200 `[LibraryItemDto(id, title, sizeBytes, completedAt, lastPositionMs)]`, newest
   completed first (the order of `ServerDeps.library.observeLibrary()`); `completedAt` is ISO-8601
   UTC (`2026-09-24T10:00:00Z`). No file system path is ever exposed. Mapped by `LibraryItem.toDto()`.
+- "Buscar subtítulos" (#285, ADR-0005 §5, `SubtitleSearchRoutes.kt`), phone tokens only (a bridge
+  token or none -> 401); both answer 200 `SubtitleSearchDto(torrentId, status, laptopConnected,
+  languages: [SubtitleLanguageStateDto(language, state, variant?, attempts)])` | 404
+  `unknown_torrent` (not in the library) | 400 `invalid_id`. `state` is the fetch row's own
+  snake_case state; `status` sums the movie up: `found` (every row downloaded), `laptop_offline`
+  (something missing and no bridge stream open), `searching` (a row pending or in flight),
+  `failed`, `not_found`, or `no_needs` (the TV has recorded no row for the movie yet). No path.
+  - `POST /api/library/{id}/subtitles/search` makes each of the movie's `not_found` and `failed`
+    rows `pending` now (retry clock and error cleared; attempts and moviehash kept), leaves a
+    `downloaded` row alone, and leaves a `searching` row alone while a bridge is connected -- with
+    none connected it is a search that died with its laptop and becomes `pending` too, so the
+    bridge picks it up on reconnect. Then `BridgeJobHub.notifySubtitlesNeeded(id)`.
+  - `GET /api/library/{id}/subtitles` reports the same without changing anything.
+  Creating rows (which languages a movie needs) stays with `SubtitleNeedsCoordinator`; the manual
+  `POST /api/subtitles` is unchanged.
 - Errors are JSON `{"error":"<code>","message":"..."}` (StatusPages); `ApiError.id` is present
   only on `already_exists`: unknown `/api/*` route -> 404
   `not_found`; any uncaught exception -> 500 `internal`, never with a stack trace or exception
@@ -247,7 +262,7 @@
   - `event: subtitles-needed` rides the bridge's own `GET /api/bridge/jobs` stream (its one
     connection), `data` = `SubtitlesNeededDto(torrentId?)`: a nudge to read the needs list again,
     not a payload. `BridgeJobHub.notifySubtitlesNeeded(torrentId?)` sends it -- from `AppContainer`'s
-    `SubtitleNeedsCoordinator` when a movie finishes downloading, and later from the phone's "Buscar
+    `SubtitleNeedsCoordinator` when a movie finishes downloading, and from the phone's "Buscar
     subtítulos" (#285). With no stream open it is dropped rather than queued: a bridge reads the
     whole list when it connects (#282), so nothing is lost.
 - Phone web UI (#63, `WebUiRoutes.kt`), public: `GET /` -> 200 `text/html` (`web/index.html`),
@@ -260,7 +275,11 @@
   (#64) also has `SUBIR SUBTÍTULO` (file input `.srt,.ass,.ssa,.vtt` -> multipart
   `POST /api/subtitles` with `torrentId` + `file`) and `BORRAR` (a `<dialog>` with the checkbox
   `Borrar también los archivos` -> `DELETE /api/torrents/{id}?deleteFiles=true|false`); results
-  are shown inline in Spanish, a 4xx shows the server's error `message`.
+  are shown inline in Spanish, a 4xx shows the server's error `message`. A finished (`completed`)
+  row also has `BUSCAR SUBTÍTULOS` (#285): `POST /api/library/{id}/subtitles/search`, then, while
+  the answer's `status` is `searching`, `GET /api/library/{id}/subtitles` every 3 s for at most two
+  minutes; each answer is shown inline ("Subtítulos encontrados", "No se encontraron subtítulos",
+  "Portátil no conectado: se buscarán cuando se conecte", ...) followed by each language's state.
 
 ## Boundaries
 - Talks to `TorrentEngine` and repositories through interfaces only. No UPnP, nothing exposed to the Internet. Never log tokens/PINs.
@@ -287,6 +306,10 @@ one sent with no stream open is dropped, not queued).
 what it filters out (downloaded, in flight, a not-found row inside its seven days, a movie gone from
 the library), the name and the fetch-state row an upload writes, every refusal, and the bridge-only
 auth of the three.
+`SubtitleSearchRoutesTest` (#285) runs the phone's retry and state routes in-process: which rows a
+retry resets (not-found, failed, a stale search with no laptop) and which it leaves alone
+(downloaded, a search in flight, another movie's), the `subtitles-needed` nudge on the hub's stream,
+every summary status, and the phone-only auth.
 `LogsRouteTest` (the page) and the 401/400 paths of `LogsStreamRouteTest` run in-process; the
 stream's happy paths drive a real loopback `embeddedServer` like `EventsRouteTest` (boot frame,
 backlog from `since`, live lines, level filter), and assert that `?token=` is 401 on
