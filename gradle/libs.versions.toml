@@ -32,7 +32,8 @@ junit = "4.13.2"
 # Room DAO tests on the JVM (#40). ADR-0004 has no row for these yet and needs one.
 robolectric = "4.14.1"
 androidxTestCore = "1.6.1"
-# Official Anthropic Java SDK for AnthropicTranslationProvider (#90, post-MVP).
+# Official Anthropic Java SDK for AnthropicTranslationProvider (#90, post-MVP; dormant since #290,
+# kept for a future extension per ADR-0005 §9 -- nothing wires it).
 anthropicJava = "2.65.0"
 # Formatting (#38): the ktlint Gradle plugin and the ktlint engine it runs. ADR-0004 needs rows.
 ktlintGradle = "14.2.0"

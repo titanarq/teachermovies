@@ -68,9 +68,11 @@
   `bridgeDeviceName` -- the name the paired bridge gave, set by `setBridgeDeviceName` (blank
   clears) -- while leaving the phone set alone ("Olvidar portátil", #289) -- first-run done,
   `autostartOnBoot` -- open the app when the TV powers on, off by default -- `translationApiKey` --
-  the user's own Anthropic API key for EN->ES translation, pasted in Configuración, null by default,
-  cleared by `setTranslationApiKey(null)` or a blank string, never logged and redacted from
-  `AppSettings.toString()` -- assistant preferences):
+  the user's own Anthropic API key for EN->ES translation, null by default, cleared by
+  `setTranslationApiKey(null)` or a blank string, never logged and redacted from
+  `AppSettings.toString()`; dormant since #290 (ADR-0005 §9): nothing sets or reads it any more
+  and `Context.settingsDataStore()` runs `ClearTranslationApiKeyMigration` on open, so a key stored
+  before the upgrade is removed from the file before the first read -- assistant preferences):
   `SettingsRepository` is the only read/write path -- `settings: Flow<AppSettings>` plus one setter
   per field -- and `DataStoreSettingsRepository` implements it over DataStore Preferences, with
   `Context.settingsDataStore()` creating the production store (file name `settings`). A rejected

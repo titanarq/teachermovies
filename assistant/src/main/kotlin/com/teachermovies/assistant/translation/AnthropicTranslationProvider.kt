@@ -32,6 +32,11 @@ import kotlin.coroutines.cancellation.CancellationException
  *
  * The subtitle text leaves the device: it is sent to Anthropic's API.
  *
+ * Dormant (#290, ADR-0005 §9): the app no longer wires this provider -- translation goes through the
+ * laptop bridge (`BridgeTranslationProvider`) and the TV stores no API key, so no settings field
+ * feeds [config] any more. The class, its tests and its SDK dependency are kept for a future
+ * extension, not deleted.
+ *
  * The API key is read from [config] on every request (the user can change it in Configuración at
  * any time). A missing or blank key is `Unavailable("no translation provider configured")` without
  * opening any connection. The key only ever travels in the SDK's `x-api-key` header: the SDK's own
