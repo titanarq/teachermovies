@@ -187,5 +187,41 @@ class TvApiTest {
             assertEquals(ApiResult.Failure(ApiFailure.Network("unexpected response body")), result)
         }
 
+    // --- logStream (#272) ---
+
+    @Test
+    fun `logStream sends since and the token in the header, and delivers the boot frame and the backlog after since`() =
+        runBlocking {
+            val events = mutableListOf<SseEvent>()
+            var opened = false
+
+            val end =
+                api.logStream(tv.baseUrl, tv.token, since = 7L, onOpen = { opened = true }) { event ->
+                    events += event
+                    event.event != "log"
+                }
+
+            assertEquals(JobStreamEnd.Closed, end)
+            assertTrue(opened)
+            val request = tv.received.last()
+            assertEquals("/api/logs/stream", request.path)
+            assertEquals("since=7", request.query)
+            assertEquals("Bearer ${tv.token}", request.authorization)
+            assertEquals(listOf("boot", "log"), events.map { it.event })
+            assertEquals("{\"bootId\":\"boot-1234abcd\"}", events[0].data)
+            assertTrue(events[1].data.contains("\"seq\":8"))
+        }
+
+    @Test
+    fun `logStream sends no since when it has none, and maps a refused token to NotOpened Unauthorized`() =
+        runBlocking {
+            tv.token = "otro-token"
+
+            val end = api.logStream(tv.baseUrl, "el-token-olvidado", since = null, onOpen = {}) { true }
+
+            assertEquals(JobStreamEnd.NotOpened(ApiFailure.Unauthorized), end)
+            assertEquals("", tv.received.last().query)
+        }
+
     private fun closedPort(): Int = ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { it.localPort }
 }
