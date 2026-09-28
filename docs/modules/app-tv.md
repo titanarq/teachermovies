@@ -230,7 +230,8 @@
   (`Ready`), `Sin conexión para traducir` (`Failed(OFFLINE)`), `Traducción no disponible`
   (`Failed(UNAVAILABLE)`), nothing (`Idle`) -- `translationLine(state)`; then the message, `Hablando…`
   while `speaking`, `Repitiendo…` while replaying, and the hint
-  `OK Repetir · DERECHA Escuchar · IZQUIERDA Traducir · ATRÁS Cerrar`. Focus behaviour is that of #86.
+  `OK Repetir · DERECHA Escuchar · IZQUIERDA Traducir · ATRÁS Cerrar` (superseded by #293 below).
+  Focus behaviour is that of #86.
 
 ## Asistente: IZQUIERDA = español, subtítulo alineado primero (#288, ADR-0005 §6)
 - `TranslateLine` (DPAD_LEFT, overlay open) no longer calls `translateAndSpeak`: nothing is spoken.
@@ -259,6 +260,27 @@
   `BridgeError`). `alignedSpanishSource` wires `SpanishLineLookup` over
   `RoomSubtitleAlignmentRepository` and is passed to `PlayerViewModel.Factory`. The Anthropic API
   key is no longer read by this wiring.
+
+## Asistente: DERECHA = Explicar (#293, ADR-0005 §7)
+- `AssistantAction.SpeakOriginal` ("Escuchar", #92) is gone: overlay open, DPAD_RIGHT ->
+  `ExplainLine`. DPAD_UP stays `Consumed` inside the open overlay; overlay closed, UP is still null
+  in `AssistantKeyMapper`, so `RemoteKeyMapper` opens the tracks panel. The transient overlay
+  `message` (`Voz no disponible`) went with it.
+- `PlayerViewModel(..., explanations: ExplanationController? = null)` (and `Factory`): `ExplainLine`
+  takes the aligned Spanish line LEFT already found, or asks `spanishLines.lineFor` itself, then
+  calls `explanations.explain(ExplanationContext.of(hidden.track, cue, title, spanish))`. The panel
+  reads `Thinking` from the key press on (while that lookup runs too). Another RIGHT while thinking or
+  once `Shown` does nothing; after `Unavailable` it asks again. Dismiss/exit/clear cancel the lookup
+  and call `explanations.dismiss()`. Nothing is spoken (no TTS call) and the movie stays paused.
+  Without a controller RIGHT does nothing.
+- `AssistantOverlayState.explanation: ExplanationUiState`; `AssistantOverlay` draws
+  `explanationLines(state)` under the Spanish line: `Pensando…` (`Thinking`), the summary then up to
+  3 points as `expresión: explicación` then the optional subtitle note (`Shown`),
+  `Explicación no disponible (enciende el portátil)` (`Unavailable`), nothing (`Idle`). Hint:
+  `OK Repetir · IZQUIERDA Español · DERECHA Explicar · ATRÁS Cerrar`.
+- `AppContainer.explanationController = ExplanationController(LineExplainer(HubBridgeExplainGateway(bridgeJobHub), RoomExplanationCacheRepository), assistantScope)`.
+  `HubBridgeExplainGateway` submits `BridgeJob.Explain` with the context field for field and maps
+  `BridgeOutcome` to `BridgeExplainOutcome` (`Replaced` -> `Disconnected`, `Rejected` -> `BridgeError`).
 
 ## Reproducir mientras descarga (#226)
 - Entry point: Descargas, OK on a row -> the action dialog starts with `Reproducir` (focused) when

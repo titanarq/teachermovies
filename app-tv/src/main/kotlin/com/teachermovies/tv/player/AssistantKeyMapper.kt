@@ -14,8 +14,11 @@ sealed interface AssistantAction {
     /** Play the captured line's original audio fragment again. */
     data object ReplayFragment : AssistantAction
 
-    /** Say the captured English line out loud again (#92). */
-    data object SpeakOriginal : AssistantAction
+    /**
+     * Ask Claude on the laptop to explain the captured line and show it, never spoken (#293,
+     * ADR-0005 §7); replaces the former "Escuchar" (#92).
+     */
+    data object ExplainLine : AssistantAction
 
     /**
      * Show the captured line in Spanish, never spoken (#288): the aligned Spanish subtitle, or the
@@ -35,9 +38,9 @@ sealed interface AssistantAction {
  *
  * With the overlay closed only the capture keys (DPAD_DOWN, CAPTIONS) are taken; every other key is
  * null so the transport mapping of [RemoteKeyMapper] keeps handling it. With the overlay open every
- * key is taken: OK/ENTER/PLAY_PAUSE replay, DPAD_RIGHT speaks the English line, DPAD_LEFT
- * shows it in Spanish (#92, #288), BACK/DPAD_DOWN/CAPTIONS dismiss, and the rest is
- * [AssistantAction.Consumed], so no transport action can run behind the overlay. The exception is
+ * key is taken: OK/ENTER/PLAY_PAUSE replay, DPAD_RIGHT explains the line (#293), DPAD_LEFT
+ * shows it in Spanish (#288), BACK/DPAD_DOWN/CAPTIONS dismiss, and the rest -- DPAD_UP included
+ * (ADR-0005 §7) -- is [AssistantAction.Consumed], so no transport action can run behind the overlay. The exception is
  * the volume keys (VOLUME_UP/DOWN/MUTE, #178): they are null in both modes so the system still
  * changes the TV volume while the overlay is open.
  */
@@ -53,7 +56,7 @@ object AssistantKeyMapper {
                 KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                 -> AssistantAction.ReplayFragment
 
-                KeyEvent.KEYCODE_DPAD_RIGHT -> AssistantAction.SpeakOriginal
+                KeyEvent.KEYCODE_DPAD_RIGHT -> AssistantAction.ExplainLine
 
                 KeyEvent.KEYCODE_DPAD_LEFT -> AssistantAction.TranslateLine
 

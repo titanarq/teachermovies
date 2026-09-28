@@ -183,6 +183,7 @@ class MainActivity : ComponentActivity() {
             speech = container.assistantSpeechController,
             streamingController = container.streamingPlaybackController,
             spanishLines = container.alignedSpanishSource,
+            explanations = container.explanationController,
         )
     }
 

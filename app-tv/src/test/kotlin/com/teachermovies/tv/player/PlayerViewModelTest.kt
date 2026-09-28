@@ -10,6 +10,13 @@ import com.teachermovies.assistant.LineCaptureController
 import com.teachermovies.assistant.SubtitleEngine
 import com.teachermovies.assistant.TranslationFailure
 import com.teachermovies.assistant.TranslationUiState
+import com.teachermovies.assistant.explanation.BridgeExplainOutcome
+import com.teachermovies.assistant.explanation.Explanation
+import com.teachermovies.assistant.explanation.ExplanationController
+import com.teachermovies.assistant.explanation.ExplanationPoint
+import com.teachermovies.assistant.explanation.ExplanationUiState
+import com.teachermovies.assistant.explanation.LineExplainer
+import com.teachermovies.assistant.explanation.fake.FakeBridgeExplainGateway
 import com.teachermovies.assistant.speech.SpeakerAvailability
 import com.teachermovies.assistant.speech.SpeechLanguage
 import com.teachermovies.assistant.speech.SpokenOutputSettings
@@ -19,6 +26,7 @@ import com.teachermovies.assistant.translation.fake.FakeTranslationProvider
 import com.teachermovies.core.model.DownloadState
 import com.teachermovies.core.model.Torrent
 import com.teachermovies.core.model.TorrentId
+import com.teachermovies.core.repo.fake.InMemoryExplanationCacheRepository
 import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.Track
@@ -27,6 +35,7 @@ import com.teachermovies.player.session.PlaybackSession
 import com.teachermovies.player.streaming.StreamPolicy
 import com.teachermovies.player.streaming.StreamingPlaybackController
 import com.teachermovies.torrent.fake.FakeTorrentEngine
+import com.teachermovies.tv.ui.player.explanationLines
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -67,6 +76,9 @@ class PlayerViewModelTest {
     private val speaker = FakeSpeaker()
     private val translations = FakeTranslationProvider()
 
+    /** RIGHT's "laptop" (#293): canned explain documents keyed by line; an unknown line fails. */
+    private val explainGateway = FakeBridgeExplainGateway()
+
     /** LEFT's aligned Spanish line (#288): [aligned] after [alignedDelayMs]; null sends LEFT to [translations]. */
     private var aligned: AlignedSpanishLine? = null
     private var alignedDelayMs = 0L
@@ -99,6 +111,7 @@ class PlayerViewModelTest {
     private lateinit var hidden: HiddenSubtitleController
     private lateinit var capture: LineCaptureController
     private lateinit var speech: AssistantSpeechController
+    private lateinit var explanations: ExplanationController
 
     /**
      * The real assistant controllers (#83, #85, #91) over [player], [speaker] and [translations],
@@ -109,6 +122,11 @@ class PlayerViewModelTest {
         hidden = HiddenSubtitleController(player, engine, backgroundScope, tmp.newFolder("cache"))
         capture = LineCaptureController(player, engine, backgroundScope)
         speech = AssistantSpeechController(speaker, translations, backgroundScope, allSpoken)
+        explanations =
+            ExplanationController(
+                LineExplainer(explainGateway, InMemoryExplanationCacheRepository(), clock = { 0L }),
+                backgroundScope,
+            )
         return PlayerViewModel(
             PlaybackSession(player, repo, backgroundScope, clock = { 0L }),
             player,
@@ -118,6 +136,7 @@ class PlayerViewModelTest {
             backgroundScope,
             prepareDispatcher = dispatcher,
             spanishLines = spanishLines,
+            explanations = explanations,
         )
     }
 
@@ -748,58 +767,134 @@ class PlayerViewModelTest {
         }
 
     @Test
-    fun speakOriginalSaysTheCapturedLineInEnglishAndSpeakingReachesTheUiState() =
+    fun explainLineShowsThinkingThenTheExplanationAndSaysNothing() =
         runTest(dispatcher) {
+            explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
+            explainGateway.delayMs = 500
+            val vm = captured()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            runCurrent()
+            assertEquals(
+                ExplanationUiState.Thinking("Hello there."),
+                vm.uiState.value.assistant!!
+                    .explanation,
+            )
+
+            advanceTimeBy(501)
+            runCurrent()
+
+            assertEquals(
+                ExplanationUiState.Shown("Hello there.", EXPLANATION, fromCache = false),
+                vm.uiState.value.assistant!!
+                    .explanation,
+            )
+            val asked = explainGateway.requests.single().context
+            assertEquals("Big Movie", asked.title)
+            assertEquals("Hello there.", asked.line)
+            assertNull("no aligned Spanish line", asked.spanishLine)
+            assertTrue("nothing is spoken", speaker.spoken.isEmpty())
+            assertEquals("the movie stays paused", PlayerState.Paused, player.state.value)
+            assertEquals(2_000L, player.positionMs.value)
+        }
+
+    @Test
+    fun explainLineSendsTheAlignedSpanishLineWithTheContext() =
+        runTest(dispatcher) {
+            aligned = AlignedSpanishLine("Hola, tú.", latino = false)
+            explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
             val vm = captured()
 
             vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
             runCurrent()
 
-            assertEquals(listOf("Hello there." to SpeechLanguage.EN), speaker.spoken)
-            assertTrue(
-                vm.uiState.value.assistant!!
-                    .speaking,
+            assertEquals(
+                "Hola, tú.",
+                explainGateway.requests
+                    .single()
+                    .context.spanishLine,
             )
-            assertNull(
+            assertEquals(
+                "LEFT's panel is untouched",
+                TranslationUiState.Idle,
                 vm.uiState.value.assistant!!
-                    .message,
-            )
-            assertEquals("the movie stays paused", PlayerState.Paused, player.state.value)
-
-            speaker.finishCurrentUtterance()
-            runCurrent()
-            assertFalse(
-                vm.uiState.value.assistant!!
-                    .speaking,
+                    .translation,
             )
         }
 
     @Test
-    fun speakOriginalWithoutAVoiceShowsTheMessageForThreeSecondsAndNothingElseChanges() =
+    fun explainLineWithoutALaptopShowsUnavailableAndAnotherRightAsksAgain() =
         runTest(dispatcher) {
-            speaker.nextAvailability = SpeakerAvailability.EngineUnavailable
+            explainGateway.nextOutcome = BridgeExplainOutcome.NoBridge
             val vm = captured()
 
             vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
             runCurrent()
 
-            val overlay = vm.uiState.value.assistant!!
-            assertEquals("Voz no disponible", overlay.message)
-            assertEquals("Hello there.", overlay.text)
-            assertFalse(overlay.speaking)
-            assertEquals(TranslationUiState.Idle, overlay.translation)
-            assertEquals(PlayerState.Paused, player.state.value)
-            assertTrue(speaker.spoken.isEmpty())
-
-            advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
-            assertNull(
+            val failed =
                 vm.uiState.value.assistant!!
-                    .message,
-            )
+                    .explanation
+            assertTrue(failed is ExplanationUiState.Unavailable)
             assertEquals(
-                "Hello there.",
+                listOf("Explicación no disponible (enciende el portátil)"),
+                explanationLines(failed),
+            )
+
+            explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            runCurrent()
+
+            assertEquals(2, explainGateway.requests.size)
+            assertEquals(
+                ExplanationUiState.Shown("Hello there.", EXPLANATION, fromCache = false),
                 vm.uiState.value.assistant!!
-                    .text,
+                    .explanation,
+            )
+        }
+
+    @Test
+    fun anotherRightWhileThinkingOrOnceExplainedAsksNothing() =
+        runTest(dispatcher) {
+            explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
+            explainGateway.delayMs = 500
+            val vm = captured()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            runCurrent()
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            runCurrent()
+            advanceTimeBy(501)
+            runCurrent()
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            runCurrent()
+
+            assertEquals(1, explainGateway.requests.size)
+            assertTrue(
+                vm.uiState.value.assistant!!
+                    .explanation is ExplanationUiState.Shown,
+            )
+        }
+
+    @Test
+    fun dismissWhileThinkingDropsTheExplanation() =
+        runTest(dispatcher) {
+            explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
+            explainGateway.delayMs = 500
+            val vm = captured()
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            runCurrent()
+
+            vm.press(KeyEvent.KEYCODE_BACK)
+            advanceTimeBy(501)
+            runCurrent()
+
+            assertEquals(ExplanationUiState.Idle, explanations.state.value)
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+            assertEquals(
+                "a new capture starts without the old explanation",
+                AssistantOverlayState("Hello there.", replaying = false),
+                vm.uiState.value.assistant,
             )
         }
 
@@ -1001,17 +1096,19 @@ class PlayerViewModelTest {
         runTest(dispatcher) {
             translations.translations["Hello there."] = "Hola."
             val vm = captured()
+            explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
             vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
             runCurrent()
-            assertTrue(speech.state.value.speaking)
+            assertEquals(TranslationUiState.Ready("Hola."), speech.state.value.translation)
+            assertTrue(explanations.state.value is ExplanationUiState.Shown)
 
             vm.press(KeyEvent.KEYCODE_BACK)
             runCurrent()
 
             assertNull(vm.uiState.value.assistant)
-            assertFalse(speech.state.value.speaking)
             assertEquals(TranslationUiState.Idle, speech.state.value.translation)
+            assertEquals(ExplanationUiState.Idle, explanations.state.value)
             assertEquals(PlayerState.Playing, player.state.value)
 
             vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
@@ -1024,7 +1121,7 @@ class PlayerViewModelTest {
         }
 
     @Test
-    fun theSpeechKeysNeverResumePlayback() =
+    fun theLeftAndRightKeysNeverResumePlayback() =
         runTest(dispatcher) {
             val vm = captured()
 
@@ -1191,4 +1288,17 @@ class PlayerViewModelTest {
             runCurrent()
             assertNull(player.lastOpen)
         }
+
+    private companion object {
+        const val EXPLANATION_DOCUMENT =
+            """{"resumen": "Un saludo informal.", "puntos": [{"expresion": "hello there", "explicacion": "saludo amistoso."}], "diferencia_subtitulo": null}"""
+
+        val EXPLANATION =
+            Explanation(
+                summary = "Un saludo informal.",
+                points = listOf(ExplanationPoint("hello there", "saludo amistoso.")),
+                subtitleNote = null,
+                promptVersion = null,
+            )
+    }
 }
