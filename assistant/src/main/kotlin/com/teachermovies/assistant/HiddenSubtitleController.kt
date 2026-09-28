@@ -1,5 +1,6 @@
 package com.teachermovies.assistant
 
+import com.teachermovies.assistant.subtitles.DownloadedSubtitles
 import com.teachermovies.assistant.subtitles.EmbeddedSubtitleTracks
 import com.teachermovies.assistant.subtitles.ParseResult
 import com.teachermovies.assistant.subtitles.SidecarSubtitles
@@ -27,6 +28,9 @@ enum class SubtitleSource {
 
     /** A text subtitle track embedded in the movie's container, extracted through [Player]. */
     EMBEDDED,
+
+    /** The file the laptop bridge downloaded from OpenSubtitles ([DownloadedSubtitles], #284). */
+    DOWNLOADED,
 }
 
 /** An embedded subtitle track extracted to [file], whose cues are [track]. */
@@ -42,10 +46,10 @@ sealed interface HiddenModeResult {
         val source: SubtitleSource,
     ) : HiddenModeResult
 
-    /** Neither a sidecar `.srt`/`.ass` nor an embedded text track for the requested language exists. */
+    /** No sidecar `.srt`/`.ass`, no embedded text track and no downloaded file for the language. */
     data object NoSubtitleFile : HiddenModeResult
 
-    /** A sidecar file or embedded track was found but could not be turned into cues; [reason] says why. */
+    /** A sidecar, embedded or downloaded source was found but yielded no cues; [reason] says why. */
     data class Unreadable(
         val reason: String,
     ) : HiddenModeResult
@@ -108,13 +112,17 @@ class HiddenSubtitleController(
      *
      * The sidecar subtitle file wins ([SubtitleSource.SIDECAR]); only without one is the player's
      * embedded subtitle track for [language] ([EmbeddedSubtitleTracks.pick] over
-     * [Player.subtitleTracks]) extracted into the cache and parsed ([SubtitleSource.EMBEDDED]).
+     * [Player.subtitleTracks]) extracted into the cache and parsed ([SubtitleSource.EMBEDDED]); only
+     * when the movie has neither is the file the laptop bridge downloaded for [language] parsed
+     * ([SubtitleSource.DOWNLOADED], [DownloadedSubtitles], #284).
      * [mediaFile] is expected to be the media currently open in [player]. libVLC publishes a media's
      * tracks only once it has parsed it, possibly after `PlaybackSession.open` returned: while
      * [Player.subtitleTracks] is still empty, this suspends (never blocks) until it publishes a
      * non-empty list, for at most [TRACKS_TIMEOUT_MS]; a list that is already known is used at once,
-     * even when it has no track for [language]. A [stop] while [start] is still waiting or extracting
-     * wins: that [start] returns [HiddenModeResult.NoSubtitleFile] at once and activates nothing.
+     * even when it has no track for [language]. A download being the last resort, a movie whose only
+     * English subtitle is a downloaded one spends that wait before hidden mode starts. A [stop]
+     * while [start] is still waiting or extracting wins: that [start] returns
+     * [HiddenModeResult.NoSubtitleFile] at once and activates nothing.
      *
      * [viewerSubtitleId] is the subtitle track the viewer chose for this movie in an earlier session
      * (the persisted id, null = none): selecting it is left alone -- at start and while [active] --
@@ -135,21 +143,9 @@ class HiddenSubtitleController(
         stop()
         val session = generation.value
 
-        val sidecar = SidecarSubtitles.findFor(mediaFile, language)
-        val parsed: Parsing
-        val source: SubtitleSource
-        if (sidecar != null) {
-            parsed = parse(sidecar)
-            source = SubtitleSource.SIDECAR
-        } else {
-            val candidate =
-                EmbeddedSubtitleTracks.pick(publishedSubtitleTracks(session), language)
-                    ?: return HiddenModeResult.NoSubtitleFile
-            parsed = embedded(mediaFile, candidate)
-            source = SubtitleSource.EMBEDDED
-        }
+        val resolved = resolve(mediaFile, language, session) ?: return HiddenModeResult.NoSubtitleFile
         val track =
-            when (parsed) {
+            when (val parsed = resolved.parsing) {
                 is Parsing.Ok -> parsed.track
                 is Parsing.Failed -> return parsed.result
             }
@@ -166,7 +162,7 @@ class HiddenSubtitleController(
                 player.selectedSubtitleId.collect { id -> revertUnlessViewerChoice(id, viewerSubtitleId) }
             }
 
-        return HiddenModeResult.Started(source)
+        return HiddenModeResult.Started(resolved.source)
     }
 
     /**
@@ -236,6 +232,30 @@ class HiddenSubtitleController(
             if (player.selectedSubtitleId.value == viewerSubtitleId) return
         }
         player.selectSubtitle(null)
+    }
+
+    /**
+     * Where the cues of [mediaFile] in [language] come from, in fallback order: the sidecar file the
+     * movie shipped with, else its embedded track, else the file the laptop bridge downloaded (#284);
+     * null when the movie has none of the three.
+     *
+     * The download is only looked for once the embedded track is ruled out, which is what makes it
+     * the last resort even while libVLC has yet to publish its tracks -- and it is not looked for at
+     * all when [stop] ended [session] meanwhile, so an abandoned [start] does no further work.
+     */
+    private suspend fun resolve(
+        mediaFile: File,
+        language: String,
+        session: Long,
+    ): Resolved? {
+        SidecarSubtitles.findFor(mediaFile, language)?.let {
+            return Resolved(SubtitleSource.SIDECAR, parse(it))
+        }
+        val candidate = EmbeddedSubtitleTracks.pick(publishedSubtitleTracks(session), language)
+        if (candidate != null) return Resolved(SubtitleSource.EMBEDDED, embedded(mediaFile, candidate))
+        if (generation.value != session) return null
+        val downloaded = DownloadedSubtitles.findFor(mediaFile, language) ?: return null
+        return Resolved(SubtitleSource.DOWNLOADED, parse(downloaded))
     }
 
     /**
@@ -311,6 +331,12 @@ class HiddenSubtitleController(
         }
 
     private fun unreadable(reason: String): Parsing.Failed = Parsing.Failed(HiddenModeResult.Unreadable(reason))
+
+    /** The source [resolve] settled on and what reading it gave. */
+    private data class Resolved(
+        val source: SubtitleSource,
+        val parsing: Parsing,
+    )
 
     private sealed interface Extracting {
         data class Stored(
