@@ -25,9 +25,10 @@ interface JobHandler {
 }
 
 /**
- * The job handlers of this bridge, keyed by `kind`. Empty until #286/#291 land, which is the reason
- * [dispatch] answers a kind nobody handles with an immediate [BridgeJobResultDto.Failed] -- code
- * [UNSUPPORTED_KIND] -- instead of leaving the TV to time out.
+ * The job handlers of this bridge, keyed by `kind`: `run` builds it from
+ * [com.teachermovies.bridge.cli.JobHandlers] (#291: explain; #286 adds translate). [dispatch] answers
+ * a kind nobody handles -- every kind, when the laptop has no usable Claude CLI -- with an immediate
+ * [BridgeJobResultDto.Failed], code [UNSUPPORTED_KIND], instead of leaving the TV to time out.
  */
 class JobHandlerRegistry(
     handlers: List<JobHandler>,
@@ -80,7 +81,7 @@ class JobHandlerRegistry(
         /** Result code for a handler that threw. */
         const val HANDLER_ERROR = "handler_error"
 
-        /** The handlers `run` ships with: none until #286/#291 add theirs. */
+        /** A registry with no handler at all, for tests of the loop itself. */
         fun default(): JobHandlerRegistry = JobHandlerRegistry(emptyList())
 
         private const val KIND_FIELD = "kind"

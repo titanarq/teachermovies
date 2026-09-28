@@ -18,8 +18,10 @@ import com.teachermovies.bridge.subtitles.SubtitleFetchLoop
 import com.teachermovies.bridge.subtitles.SubtitleTrigger
 import com.teachermovies.bridge.tv.TvApi
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.nio.file.Path
 
 /**
@@ -27,7 +29,9 @@ import java.nio.file.Path
  * Checks there is a pairing, then hands over to [RunLoop], which logs to [out] and to
  * `bridge.log` next to the config file, and alongside it to [TvLogMirror] (#272), which copies the
  * TV log into dated files in [logsDir], and -- when [credentials] loads -- [SubtitleFetchLoop] (#282)
- * over OpenSubtitles through [httpClient]. It returns -- [ExitCode.FAILED] -- only when there is no
+ * over OpenSubtitles through [httpClient]. The jobs are answered by what [jobHandlers] builds (#291:
+ * explain over Claude), whose Claude conversations are warmed up at once and closed when `run`
+ * ends. It returns -- [ExitCode.FAILED] -- only when there is no
  * usable pairing or the TV refuses the token; otherwise it runs until the process is stopped.
  */
 internal class RunCommand(
@@ -35,7 +39,7 @@ internal class RunCommand(
     private val err: Appendable,
     private val store: BridgeConfigStore,
     private val api: TvApi,
-    private val registry: JobHandlerRegistry,
+    private val jobHandlers: (RunLog) -> JobHandlers,
     private val discovery: TvDiscovery,
     private val logsDir: Path,
     private val credentials: CredentialsFile,
@@ -63,25 +67,33 @@ internal class RunCommand(
         if (!config.isPaired) return fail("Este portátil no está emparejado con ninguna TV. $PAIR_HINT")
         val log = RunLog(out, store.path.resolveSibling(RunLog.FILE_NAME))
         val token = checkNotNull(config.token)
+        val handlers = jobHandlers(log)
         val end =
-            coroutineScope {
-                val mirror =
-                    launch {
-                        TvLogMirror(
-                            LogStreamSource.of(api),
-                            TvLogFiles(logsDir),
-                            MirrorCursorStore(logsDir.resolve(MirrorCursorStore.FILE_NAME)),
-                            log,
-                        ).run({ currentTvUrl(config.tvUrl) }, token)
-                    }
-                val fetchLoop = subtitleLoop(log)
-                val fetcher = fetchLoop?.let { launch { it.run({ currentTvUrl(config.tvUrl) }, token) } }
-                RunLoop(api, store, registry, log, discovery, subtitles = fetchLoop ?: SubtitleTrigger.NONE)
-                    .run(config)
-                    .also {
-                        mirror.cancel()
-                        fetcher?.cancel()
-                    }
+            try {
+                coroutineScope {
+                    val warmUps = handlers.conversations.map { conversation -> launch { conversation.warmUp() } }
+                    val mirror =
+                        launch {
+                            TvLogMirror(
+                                LogStreamSource.of(api),
+                                TvLogFiles(logsDir),
+                                MirrorCursorStore(logsDir.resolve(MirrorCursorStore.FILE_NAME)),
+                                log,
+                            ).run({ currentTvUrl(config.tvUrl) }, token)
+                        }
+                    val fetchLoop = subtitleLoop(log)
+                    val fetcher = fetchLoop?.let { launch { it.run({ currentTvUrl(config.tvUrl) }, token) } }
+                    val registry = JobHandlerRegistry(handlers.handlers)
+                    RunLoop(api, store, registry, log, discovery, subtitles = fetchLoop ?: SubtitleTrigger.NONE)
+                        .run(config)
+                        .also {
+                            mirror.cancel()
+                            fetcher?.cancel()
+                            warmUps.forEach { it.cancel() }
+                        }
+                }
+            } finally {
+                withContext(NonCancellable) { handlers.conversations.forEach { it.close() } }
             }
         return when (end) {
             RunLoop.End.Unauthorized -> fail("La TV ya no acepta el token de este portátil. $PAIR_HINT")
