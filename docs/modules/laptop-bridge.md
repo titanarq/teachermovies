@@ -4,8 +4,8 @@
 
 ## Responsibility
 - The laptop-side half of ADR-0005: a Kotlin/JVM command-line program, `teachermovies-bridge`, that
-  runs on the machine holding the human's Claude Code subscription -- with the laptop on but no
-  desktop login, once #278 installs it as a systemd user service.
+  runs on the machine holding the human's Claude Code subscription -- with the laptop on and no
+  desktop login, as the systemd `--user` service #278 installs with `loginctl enable-linger`.
 - #271 is the skeleton: pair with the TV over its PIN, keep the resulting bridge-scoped token safely
   on disk, report its own health with `doctor`, and print one page of the TV's log ring buffer with
   `logs`. #281 adds the OpenSubtitles client (package `opensubtitles`), a library nothing calls
@@ -14,7 +14,9 @@
   a handler registry and reconnects (backoff, then an mDNS browse) for as long as the process is up.
   #272 adds the TV log mirror (package `logs`), which `run` keeps going alongside the job loop.
   #282 adds the subtitle fetch loop (package `subtitles`), which `run` keeps going too and which
-  drives the OpenSubtitles client against the TV's subtitle routes of #280.
+  drives the OpenSubtitles client against the TV's subtitle routes of #280. #278 adds the systemd
+  user unit (package `service`), the `install-service` subcommand that writes it, and the install
+  runbook `docs/runbooks/laptop-bridge.md`.
 - Pure JVM, never an Android library, so it depends only on `:bridge-protocol` and never on
   `:http-server` or any other Android module (ADR-0005 §1, AGENTS.md). The Ktor *server* artifacts
   are test-only here, for the in-test fake TV.
@@ -42,11 +44,11 @@
   No arguments at all is a usage error too, like an unknown subcommand or option. An option takes
   its value space-separated; `--name=value` is not understood.
 - `ArgsParser.parse(args)` returns `ParseResult`: `Help`, `Parsed(configSpec, command)` or
-  `UsageError(message)`. `Command` is `Pair(url, pin, deviceName)`, `Unpair`, `Doctor` or
-  `Logs(since, level, limit)` or `Run`. A URL must be an `http`/`https` URL with a host and loses its
-  trailing slash; `level` is lower-cased because that is how the TV compares it; an unusable
-  `--since`/`--limit` number, an unknown level or a repeated `--config` are usage errors. No usage
-  error ever quotes the value it refused, since that value may be the PIN.
+  `UsageError(message)`. `Command` is `Pair(url, pin, deviceName)`, `Unpair`, `Doctor`,
+  `Logs(since, level, limit)`, `Run` or `InstallService(exec)`. A URL must be an `http`/`https` URL
+  with a host and loses its trailing slash; `level` is lower-cased because that is how the TV
+  compares it; an unusable `--since`/`--limit` number, an unknown level or a repeated `--config` are
+  usage errors. No usage error ever quotes the value it refused, since that value may be the PIN.
 - `pair --url <url> --pin <pin> [--name <name>]`: asks the TV for a bridge-scoped token and stores
   it. `--url` and `--pin` are required; `--name` defaults to this laptop's host name
   (`InetAddress.getLocalHost().hostName`, a fixed fallback name when that is unavailable or blank).
@@ -85,6 +87,18 @@
   (so the JWT and the quota tracker survive between passes), sharing the CIO client with `TvApi`.
   A missing, incomplete or unreadable file is said once in the log (path and key names only) and
   `run` goes on without automatic subtitles; the file is read once, so adding it takes a restart.
+- `install-service [--exec <ruta>]` (#278): writes the systemd `--user` unit that keeps `run` up (see
+  "Systemd user unit") and prints the three commands that put it to work -- `daemon-reload`,
+  `enable --now` and `loginctl enable-linger` -- plus `doctor` and `journalctl` to check it. It
+  writes a unit and nothing else: it never enables, reloads or starts anything, so a mistake in
+  those is the human's to run and to see. `--exec` names the start script for `ExecStart` (`~`
+  expanded, a relative path resolved against the working directory); with no `--exec` the script of
+  the distribution this very process was launched from is derived, and a program run out of a build
+  directory derives none and is told to pass one (exit 1, no unit written). The report carries the
+  unit's path, its `ExecStart`, the `CLAUDE_BIN` it resolved or why there is none, the TV log
+  directory the unit points at, and the config file the token stays in -- never the token, and it
+  says so out loud. With no stored pairing it also says that `run` would end at once, so `pair`
+  comes first.
 
 ## Configuration (package `com.teachermovies.bridge.config`)
 - Default location `~/.config/teachermovies-bridge/config.json`, or
@@ -312,10 +326,54 @@
   with the bearer header only (the TV refuses `?token=` there): the same SSE reader and socket
   timeout as `jobStream`, except that `onEvent` returning false stops the stream (`Closed`).
 
+## Systemd user unit (package `com.teachermovies.bridge.service`, #278)
+- ADR-0005 §1: the bridge runs as a `systemd --user` service with `loginctl enable-linger`, so it is
+  up whenever the laptop is on and connected, with no desktop session behind it. Installing it and
+  operating it day to day is `docs/runbooks/laptop-bridge.md`; this section is what the code
+  guarantees.
+- The unit is a template on the classpath (`src/main/resources/teachermovies-bridge.service.tmpl`),
+  so an installed distribution carries its own. `ServiceUnit.render(UnitSpec)` substitutes the three
+  things only this laptop knows -- the absolute `ExecStart`, `WorkingDirectory` (the home directory)
+  and the `Environment=` lines -- and leaves the policy in the template's own text, which is why the
+  runbook can quote the unit verbatim: `Type=exec`, `Restart=on-failure` with `RestartSec=10`,
+  `StartLimitIntervalSec=300`/`StartLimitBurst=5`, `WantedBy=default.target`. There is no network
+  ordering, because `run` backs off and re-discovers the TV by itself: a unit that comes up before
+  the network does is retrying, not failed.
+- `ExecStart` is the start script `installDist` generated -- quoted, absolute, followed by `run`.
+  `BridgeLauncher.locate` takes it from `--exec`, or derives it from this process's own code source
+  (`<root>/lib/*.jar` -> `<root>/bin/teachermovies-bridge`); a program run out of a build directory
+  derives nothing and comes back `Underived(tried)`, since a unit pointing into `build/` would break
+  at the next `clean`. An `--exec` that is missing or cannot run is `Unusable(path, exists)`. No unit
+  is written in either case.
+- `Environment=` carries three names and nothing else (`ServiceUnit.ENVIRONMENT_KEYS`), each an
+  absolute path: `PATH`, `TEACHERMOVIES_TV_LOGS_DIR` and `CLAUDE_BIN`.
+  - `PATH` is `ServiceUnit.pathValue`: the running JDK's `bin`, the start script's directory, the
+    CLI's directory, then the installing shell's own `PATH`, duplicates dropped. A user manager comes
+    up with a minimal one and, with linger, has no session to inherit one from, so this is what lets
+    the start script find `java` and the Claude Code CLI find its own `node`.
+  - `TEACHERMOVIES_TV_LOGS_DIR` is `ServiceUnit.tvLogsDir`: the environment's own when set and
+    non-blank, else `tv-logs` inside the bridge's config directory -- never `TvLogFiles.defaultDir`'s
+    working-directory default, which a service's cwd would decide.
+  - `CLAUDE_BIN` is `ClaudeBinary.locate`'s answer: the environment's own `CLAUDE_BIN`, else the
+    first `claude` on `PATH`, else `~/.local/bin/claude`. The line is left out when there is none
+    (`Absent`) or when the named file cannot run (`Unusable`), and the report says which. It is the
+    override #276's Claude Code transport reads.
+- A value systemd would misread is refused rather than escaped around: `UnitRender.Refused(field,
+  character)` for a `"`, a `\`, a `$` or a line break in anything rendered, each of which would
+  forge a directive or an argument. A `%` is doubled instead, because a path may legitimately hold
+  one and `%%` is systemd's literal.
+- `ServiceInstaller` writes the text to `ServiceUnit.unitFile` -- `systemd/user` under
+  `ConfigLocation.configHome`, so `XDG_CONFIG_HOME` moves the unit along with everything else --
+  creating the directory `0700` when it has to, and setting the file to `0644` on every install, so
+  one whose permissions had been loosened is tightened back. Installing again replaces that one unit
+  and reports `replaced`; an `IOException` is `Failed(reason)` with the exception's class name, and a
+  filesystem with no POSIX permissions raises through to the JVM as everywhere else in this module.
+
 ## Boundaries
 - The bridge token and the PIN are never printed to stdout or stderr, and the module has no logging
   framework of its own for them to reach: `doctor` and `logs` say that a token is stored and valid,
-  never what it is. The TV's ring buffer arrives already redacted by the TV (`LogRedactor`,
+  never what it is, and `install-service` (#278) prints the path of the file the token stays in and
+  nothing from inside it. The TV's ring buffer arrives already redacted by the TV (`LogRedactor`,
   ADR-0006 §3) and this module prints those lines verbatim, adding no redaction of its own -- also
   in the mirror's files (#272), which is one reason they are `0600` in a `0700` directory.
 - Known noise, no secret involved: `slf4j-api` arrives transitively with the Ktor client and no
@@ -324,7 +382,7 @@
   `Appendable`s instead of the console.
 - Not here yet, each its own issue: the job handlers
   themselves (#286 translate, #291 explain, on #276's transport), the Claude Code CLI transport
-  (#276), the systemd user unit and `install-service` (#278), and the moviehash itself (#279: the TV
+  (#276, which is what reads the unit's `CLAUDE_BIN`), and the moviehash itself (#279: the TV
   computes it, this module only sends it). The seven-day not-found retry is the TV's
   (`SubtitleFetch.isDue`, #280): the bridge only reports `not_found` and never tracks it itself.
 - The OpenSubtitles credentials follow the token's rule: no command prints them, `doctor` reports
@@ -333,7 +391,7 @@
 - The `laptop-bridge` row in AGENTS.md's module table is the human's edit, not this module's.
 
 ## Tests
-`bash scripts/test.sh :laptop-bridge:test` (twenty test classes as of #282) and
+`bash scripts/test.sh :laptop-bridge:test` (twenty-four test classes as of #278) and
 `./gradlew :laptop-bridge:ktlintCheck` for style. No test touches the network or the real home
 directory: `tv.FakeTv` is a real Ktor CIO server on a loopback port standing in for the TV (the
 criterion "tests run against an in-test Ktor server"), serving `/api/pair`, `/api/status`,
@@ -400,6 +458,28 @@ test queues with `sendFrame`, until `closeStreams()` -- and `POST /api/bridge/jo
   `FakeTv` (whose `/api/logs/stream` sends `boot`, the `logsPage` entries after `since`, then what
   `sendLog` queues): backlog, a live line, and a TV restart. `TvApiTest` covers `logStream`'s query,
   header, frames, stop and 401.
+- `ServiceUnitTest` (#278) is the unit's text: an absolute, quoted `ExecStart` ending in `run`,
+  `Restart=on-failure` with its delay, the start limit, `WantedBy=default.target`, the three
+  `Environment=` names in order and their exact values, no `CLAUDE_BIN` line when there is no CLI,
+  `%%` for a `%` in a path, `Refused(field, character)` for a `"`, a `$` or a `\`, the unit and TV
+  log directories under `XDG_CONFIG_HOME`, and `pathValue`'s order and deduplication. Its last test
+  is the acceptance criterion's own: a unit rendered and installed for a home that holds both a
+  stored token and an OpenSubtitles credentials file carries no token, PIN, key, user or password,
+  none of the config file's own text, and none of the spellings a secret could hide behind
+  (`EnvironmentFile`, `PassEnvironment`, `Bearer`, `Authorization`, `TOKEN`, `API_KEY`, `PASSWORD`,
+  `SECRET`, `ANTHROPIC`, `--pin`); the template on the classpath is held to that same list and to its
+  own placeholder set.
+- `ServiceInstallerTest` (the file, `0644` in a `0700` directory, a loosened unit tightened back,
+  `replaced` on a second install, a directory that cannot exist as `Failed` with the exception's
+  name), `BridgeLauncherTest` (`--exec` absolute and `~`-expanded, missing, not executable, and no
+  derivation out of a build directory) and `ClaudeBinaryTest` (the override winning, `PATH` order,
+  the `~/.local/bin` fallback, an unusable override reported instead of replaced, `Absent`, a `claude`
+  that cannot run skipped) cover the rest of the package; `ArgsParserTest` and `BridgeCliTest` cover
+  `install-service`'s parsing and its whole report -- that the next steps it prints name
+  `daemon-reload`, `enable --now` and `loginctl enable-linger`, that it warns when there is no
+  pairing, that a second install says "sustituida", that nothing is written when the script cannot
+  run, and that neither stream carries a token, a PIN or a credential. `ConfigLocationTest` covers
+  the new `configHome` the unit directory hangs off.
 - No JVM test covers the JmDNS browse itself (it needs a LAN with multicast and a TV announcing on
   it), nor `run` against the real `:http-server` hub: `FakeTv` spells the #275 contract out from
   `docs/modules/http-server.md`.
@@ -407,3 +487,11 @@ test queues with `sendFrame`, until `closeStreams()` -- and `POST /api/bridge/jo
   `installDist` generates, or a real TV on the LAN -- those are manual checks, as elsewhere. For
   #271 they were done by driving the installed `teachermovies-bridge` against a stub of the TV's
   three routes, which is where the observed modes, exit codes and `~` expansion above come from.
+- Nothing runs systemd either: no test installs into the real `~/.config/systemd/user`, and none
+  enables, reloads, starts or verifies a unit. The unit's syntax was checked once by hand, with
+  `systemd-analyze verify --user` on this host's systemd 255 (exit 0 and no diagnostics for a unit
+  holding every setting the template fixes), which is where the confidence in `Type=exec`, in a
+  quoted `ExecStart` and in the start limit living in `[Unit]` comes from; that a user manager has no
+  `network*.target` to order itself after was read off `systemctl --user list-unit-files`, and that
+  `loginctl enable-linger` with no argument means the calling user off `loginctl(1)`. A real install,
+  a reboot with linger and a service that restarts itself are #295's end-to-end verification.

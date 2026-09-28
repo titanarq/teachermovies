@@ -91,4 +91,17 @@ class ConfigLocationTest {
         assertTrue(dir.isAbsolute)
         assertEquals(dir.resolve(ConfigLocation.FILE_NAME), ConfigLocation.configFile(null, home, noEnv))
     }
+
+    @Test
+    fun `the config home is what the config dir hangs off, so a sibling dir hangs off it too (#278)`() {
+        assertEquals(Paths.get("/home/alumno/.config"), ConfigLocation.configHome(home, noEnv))
+        assertEquals(Paths.get("/datos/config"), ConfigLocation.configHome(home, withXdg("/datos/config")))
+        assertEquals(
+            ConfigLocation.configHome(home, noEnv).resolve(ConfigLocation.DIR_NAME),
+            ConfigLocation.configDir(home, noEnv),
+        )
+    }
+
+    private fun withXdg(value: String): (String) -> String? =
+        { name -> if (name == ConfigLocation.CONFIG_HOME_VARIABLE) value else null }
 }

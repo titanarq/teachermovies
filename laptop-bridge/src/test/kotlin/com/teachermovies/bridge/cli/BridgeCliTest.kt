@@ -5,6 +5,7 @@ import com.teachermovies.bridge.config.BridgeConfigStore
 import com.teachermovies.bridge.config.ConfigLocation
 import com.teachermovies.bridge.opensubtitles.CredentialsFile
 import com.teachermovies.bridge.protocol.LogsPageDto
+import com.teachermovies.bridge.service.ServiceUnit
 import com.teachermovies.bridge.tv.FakeTv
 import com.teachermovies.bridge.tv.jsonField
 import org.junit.After
@@ -373,6 +374,97 @@ class BridgeCliTest {
         assertFalse(Files.exists(configPath))
         assertTrue(out.toString().contains("no era legible"))
         assertNoSecrets("esto no es json")
+    }
+
+    // --- install-service (#278) ---
+
+    /** A start script for the unit to launch: this test's environment derives none of its own. */
+    private fun startScript(): Path {
+        val path = home.resolve("bridge/bin/teachermovies-bridge")
+        Files.createDirectories(requireNotNull(path.parent))
+        Files.writeString(path, "#!/bin/sh\nexit 0\n")
+        Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rwxr-xr-x"))
+        return path
+    }
+
+    /** Where the CLI writes the unit with this test's empty environment. */
+    private fun unitFile(): Path = ServiceUnit.unitFile(home) { null }
+
+    private fun installService(): Int = run("install-service", "--exec", startScript().toString())
+
+    @Test
+    fun `install-service writes the unit and says how to put it to work`() {
+        val script = startScript()
+
+        assertEquals(0, run("install-service", "--exec", script.toString()))
+
+        val unit = Files.readString(unitFile())
+        assertTrue(unit.contains("ExecStart=\"${script}\" run"))
+        assertTrue(unit.contains("Restart=on-failure"))
+        assertTrue(unit.contains("WantedBy=default.target"))
+        assertTrue(out.toString().contains("systemctl --user daemon-reload"))
+        assertTrue(out.toString().contains("systemctl --user enable --now teachermovies-bridge.service"))
+        assertTrue(out.toString().contains("loginctl enable-linger"))
+        assertTrue(out.toString().contains("journalctl --user -u teachermovies-bridge"))
+        assertNoSecrets()
+    }
+
+    @Test
+    fun `install-service leaves the token, the PIN and the credentials out of the unit and of the report`() {
+        assertEquals(0, pair())
+
+        assertEquals(0, installService())
+
+        val unit = Files.readString(unitFile())
+        assertFalse(unit.contains(tv.token))
+        assertFalse(unit.contains(pin))
+        assertFalse(unit.contains(osApiKey))
+        assertFalse(unit.contains(osPassword))
+        assertFalse(unit.contains(Files.readString(configPath)))
+        // The report names the file the token stays in, and nothing else about it.
+        assertTrue(out.toString().contains(configPath.toString()))
+        assertNoSecrets(osApiKey, osPassword)
+    }
+
+    @Test
+    fun `install-service says when there is no pairing for the service to run with`() {
+        assertEquals(0, installService())
+        assertTrue(out.toString().contains("no hay emparejamiento"))
+
+        out.setLength(0)
+        assertEquals(0, pair())
+        assertEquals(0, installService())
+
+        assertFalse(out.toString().contains("no hay emparejamiento"))
+    }
+
+    @Test
+    fun `a second install-service replaces the unit instead of leaving two`() {
+        assertEquals(0, installService())
+        out.setLength(0)
+
+        assertEquals(0, installService())
+
+        assertTrue(out.toString().contains("sustituida"))
+        assertTrue(Files.readString(unitFile()).contains("ExecStart="))
+    }
+
+    @Test
+    fun `install-service with no --exec to derive from asks for one and writes no unit`() {
+        assertEquals(1, run("install-service"))
+
+        assertTrue(err.toString().contains("--exec"))
+        assertFalse(Files.exists(unitFile()))
+        assertEquals("", out.toString())
+    }
+
+    @Test
+    fun `an --exec that is not a runnable file fails without writing a unit`() {
+        assertEquals(1, run("install-service", "--exec", home.resolve("nada/bin/teachermovies-bridge").toString()))
+
+        assertTrue(err.toString().contains("no existe"))
+        assertFalse(Files.exists(unitFile()))
+        assertNoSecrets()
     }
 
     // --- the command line itself ---

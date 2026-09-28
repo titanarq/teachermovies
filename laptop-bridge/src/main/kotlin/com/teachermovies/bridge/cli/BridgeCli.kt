@@ -91,6 +91,11 @@ class BridgeCli(
                     RunCommand(out, err, store, TvApi(client), registry, discovery, logsDir, credentials, client).run()
                 }
             }
+
+            // The one subcommand that needs no TV and no HTTP client: it writes a unit file (#278).
+            is Command.InstallService -> {
+                InstallServiceCommand(out, err, home, env, store).run(command)
+            }
         }
 }
 
