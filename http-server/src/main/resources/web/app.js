@@ -1,7 +1,7 @@
 // Movie Assistant phone web UI (#63). Vanilla JS, no build step, no external resources.
 // Auth (ADR-0002): the pairing token lives in localStorage and goes as `Authorization: Bearer`
-// on every protected /api call; only the SSE stream passes it as `?token=` (EventSource cannot set
-// headers). A 401 anywhere clears it and shows the PIN form again. The token is never logged.
+// on every protected /api call; only the /api/events SSE stream passes it as `?token=` (EventSource
+// cannot set headers; the Registros log stream is read with fetch() and the header instead). A 401 anywhere clears it and shows the PIN form again. The token is never logged.
 'use strict';
 
 (function () {
@@ -100,6 +100,7 @@
 
   function showPairing(message) {
     stopLive();
+    stopLogs();
     $('app').hidden = true;
     $('pair').hidden = false;
     setMsg($('pair-msg'), message || '', message ? 'error' : '');
@@ -111,6 +112,7 @@
     $('pair').hidden = true;
     $('app').hidden = false;
     startLive();
+    selectTab(currentTab);
   }
 
   function onUnauthorized() {
@@ -548,12 +550,285 @@
     if (pollTimer) poll();
   }
 
+  // ---- Registros: the TV's log stream (#273, ADR-0006 §4) -----------------------------------
+  // Read with fetch() and the Authorization header (api()), never `?token=`: that exception is
+  // /api/events' alone. When the stream fails or ends, GET /api/logs is polled every
+  // LOG_POLL_EVERY_MS and the stream is retried now and then. The DOM holds at most
+  // LOG_MAX_DOM_LINES lines; `logEntries` keeps what was received (the .txt export) up to
+  // LOG_MAX_KEPT, so a long session cannot exhaust the phone's memory. The stream only runs while
+  // the tab is showing.
+
+  var LOG_MAX_DOM_LINES = 2000;
+  var LOG_MAX_KEPT = 20000;
+  var LOG_POLL_EVERY_MS = 3000;
+  var LOG_STREAM_RETRY_AFTER_MS = 30000;
+  var LOG_PAGE_LIMIT = 500;
+  var LOG_FLUSH_MS = 100;
+
+  var logEntries = [];      // oldest first: every line received at the selected level
+  var logPending = [];      // received but not yet rendered (always while paused)
+  var logUnseen = 0;        // lines received since the pause
+  var logBootId = null;
+  var logLastSeq = 0;
+  var logFollowing = true;
+  var logAbort = null;      // AbortController of the open stream, null when none is open
+  var logPollTimer = null;
+  var logFlushTimer = null;
+  var logStreamFailedAt = 0;
+  var logGeneration = 0;    // bumped by stopLogs(): a reader of an older generation drops its data
+
+  function logLevel() { return $('log-level').value; }
+
+  function pad(n, width) {
+    var s = String(n);
+    while (s.length < width) s = '0' + s;
+    return s;
+  }
+
+  /** `HH:MM:SS.mmm`, preceded by `YYYY-MM-DD ` when [withDate] (the .txt export). */
+  function logTime(ms, withDate) {
+    var d = new Date(ms);
+    var time = pad(d.getHours(), 2) + ':' + pad(d.getMinutes(), 2) + ':' + pad(d.getSeconds(), 2) +
+      '.' + pad(d.getMilliseconds(), 3);
+    if (!withDate) return time;
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1, 2) + '-' + pad(d.getDate(), 2) + ' ' + time;
+  }
+
+  function logText(entry, withDate) {
+    if (entry.note) return entry.note;
+    return logTime(entry.timeMs, withDate) + ' ' + String(entry.level).toUpperCase() + ' ' +
+      entry.module + ': ' + entry.message;
+  }
+
+  function logLineNode(entry) {
+    var div = document.createElement('div');
+    div.className = 'log-line ' + (entry.note ? 'log-note' : 'lv-' + entry.level);
+    div.textContent = logText(entry, false); // textContent: log lines are never parsed as HTML
+    return div;
+  }
+
+  function keepLog(entry) {
+    logEntries.push(entry);
+    if (logEntries.length > LOG_MAX_KEPT) logEntries.splice(0, logEntries.length - LOG_MAX_KEPT);
+    logPending.push(entry);
+    // Only the newest LOG_MAX_DOM_LINES pending lines can ever be rendered.
+    if (logPending.length > 2 * LOG_MAX_DOM_LINES) logPending.splice(0, logPending.length - LOG_MAX_DOM_LINES);
+    if (!logFollowing) logUnseen++;
+  }
+
+  /** One LogEntryDto; a seq at or below the cursor is a line already shown (stream + poll overlap). */
+  function acceptLog(entry) {
+    if (!entry || typeof entry.seq !== 'number' || entry.seq <= logLastSeq) return;
+    logLastSeq = entry.seq;
+    keepLog(entry);
+  }
+
+  /**
+   * Records [bootId]; false when the TV restarted while [since] was a cursor of the old boot, so
+   * the answer skipped the new boot's first lines and has to be asked again from 0.
+   */
+  function acceptBoot(bootId, since) {
+    if (logBootId === bootId) return true;
+    var restarted = logBootId !== null;
+    logBootId = bootId;
+    if (!restarted) return true;
+    logLastSeq = 0;
+    keepLog({ note: '— La TV se ha reiniciado: los registros empiezan de nuevo —' });
+    return since === 0;
+  }
+
+  function scheduleLogFlush() {
+    if (!logFollowing) {
+      setMsg($('log-msg'), 'En pausa · ' + logUnseen + ' líneas nuevas sin mostrar.', '');
+      return;
+    }
+    if (!logFlushTimer) logFlushTimer = setTimeout(flushLogs, LOG_FLUSH_MS);
+  }
+
+  /** Renders the pending lines and drops the oldest rendered ones beyond LOG_MAX_DOM_LINES. */
+  function flushLogs() {
+    logFlushTimer = null;
+    if (!logFollowing || !logPending.length) return;
+    var box = $('log-lines');
+    var batch = logPending.length > LOG_MAX_DOM_LINES ? logPending.slice(-LOG_MAX_DOM_LINES) : logPending;
+    logPending = [];
+    var fragment = document.createDocumentFragment();
+    batch.forEach(function (entry) { fragment.appendChild(logLineNode(entry)); });
+    box.appendChild(fragment);
+    while (box.childNodes.length > LOG_MAX_DOM_LINES) box.removeChild(box.firstChild);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  /** One SSE frame's text -> {event, data}; null for a comment-only frame (`: ping`). */
+  function parseSseFrame(text) {
+    var event = 'message';
+    var data = [];
+    text.split('\n').forEach(function (line) {
+      if (!line || line.charAt(0) === ':') return;
+      var colon = line.indexOf(':');
+      var field = colon < 0 ? line : line.slice(0, colon);
+      var value = colon < 0 ? '' : line.slice(colon + 1).replace(/^ /, '');
+      if (field === 'event') event = value;
+      else if (field === 'data') data.push(value);
+    });
+    return data.length ? { event: event, data: data.join('\n') } : null;
+  }
+
+  function startLogs() {
+    stopLogs();
+    openLogStream();
+  }
+
+  function stopLogs() {
+    logGeneration++;
+    if (logAbort) { logAbort.abort(); logAbort = null; }
+    if (logPollTimer) { clearInterval(logPollTimer); logPollTimer = null; }
+  }
+
+  function openLogStream() {
+    if (typeof AbortController === 'undefined' || typeof TextDecoder === 'undefined') {
+      startLogPolling();
+      return;
+    }
+    var generation = logGeneration;
+    var controller = new AbortController();
+    var since = logLastSeq;
+    logAbort = controller;
+    api('/api/logs/stream?since=' + since + '&level=' + encodeURIComponent(logLevel()),
+      { cache: 'no-store', signal: controller.signal })
+      .then(function (res) {
+        if (!res.ok || !res.body || typeof res.body.getReader !== 'function') throw new Error('no_stream');
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = '';
+        function pump() {
+          return reader.read().then(function (chunk) {
+            if (generation !== logGeneration) return;
+            if (chunk.done) throw new Error('stream_ended');
+            buffer += decoder.decode(chunk.value, { stream: true }).replace(/\r\n?/g, '\n');
+            var frames = buffer.split('\n\n');
+            buffer = frames.pop();
+            for (var i = 0; i < frames.length; i++) {
+              var frame = parseSseFrame(frames[i]);
+              if (!frame) continue;
+              if (frame.event === 'boot') {
+                // The stream works: it replaces polling until it fails again.
+                if (logPollTimer) { clearInterval(logPollTimer); logPollTimer = null; }
+                if (logFollowing) setMsg($('log-msg'), 'En directo.', '');
+                if (!acceptBoot(JSON.parse(frame.data).bootId, since)) {
+                  startLogs(); // the TV restarted: ask again from seq 0
+                  return;
+                }
+              } else if (frame.event === 'log') {
+                acceptLog(JSON.parse(frame.data));
+              }
+            }
+            scheduleLogFlush();
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .catch(function (e) {
+        if (e instanceof Unauthorized || generation !== logGeneration) return;
+        if (logAbort === controller) logAbort = null;
+        logStreamFailedAt = Date.now();
+        setMsg($('log-msg'), 'Sin conexión en directo: consultando cada ' +
+          (LOG_POLL_EVERY_MS / 1000) + ' s.', 'error');
+        startLogPolling();
+      });
+  }
+
+  function startLogPolling() {
+    if (logPollTimer) return;
+    pollLogs();
+    logPollTimer = setInterval(pollLogs, LOG_POLL_EVERY_MS);
+  }
+
+  function pollLogs() {
+    var generation = logGeneration;
+    var since = logLastSeq;
+    api('/api/logs?since=' + since + '&level=' + encodeURIComponent(logLevel()) + '&limit=' + LOG_PAGE_LIMIT,
+      { cache: 'no-store' })
+      .then(function (res) {
+        if (!res.ok) return;
+        return res.json().then(function (page) {
+          if (generation !== logGeneration) return;
+          if (!acceptBoot(page.bootId, since)) { pollLogs(); return; } // restarted: page from 0
+          page.entries.forEach(acceptLog);
+          scheduleLogFlush();
+          if (page.entries.length >= LOG_PAGE_LIMIT) { pollLogs(); return; } // more backlog waiting
+          // Give the stream another chance now and then; its boot frame stops polling.
+          if (!logAbort && Date.now() - logStreamFailedAt > LOG_STREAM_RETRY_AFTER_MS) openLogStream();
+        });
+      })
+      .catch(function () { /* next tick retries; a 401 already re-opened pairing */ });
+  }
+
+  /** A new level is a new stream: the lines of the old one are cleared, not filtered. */
+  function changeLogLevel() {
+    stopLogs();
+    logEntries = [];
+    logPending = [];
+    logUnseen = 0;
+    logBootId = null;
+    logLastSeq = 0;
+    $('log-lines').textContent = '';
+    startLogs();
+  }
+
+  function toggleLogFollow() {
+    logFollowing = !logFollowing;
+    var button = $('log-follow');
+    button.textContent = logFollowing ? 'PAUSAR' : 'SEGUIR';
+    button.setAttribute('aria-pressed', String(!logFollowing));
+    logUnseen = 0;
+    if (logFollowing) {
+      setMsg($('log-msg'), logAbort ? 'En directo.' : '', '');
+      flushLogs();
+    } else {
+      setMsg($('log-msg'), 'En pausa · 0 líneas nuevas sin mostrar.', '');
+    }
+  }
+
+  /** Every kept line (not only the rendered ones) as a plain-text file. */
+  function downloadLogs() {
+    var text = logEntries.map(function (entry) { return logText(entry, true); }).join('\n') + '\n';
+    var url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = 'teachermovies-registros-' + logTime(Date.now(), true).replace(/[ :.]/g, '-') + '.txt';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  // ---- tabs: DESCARGAS | REGISTROS ----------------------------------------------------------
+
+  var currentTab = 'downloads';
+
+  function selectTab(name) {
+    currentTab = name;
+    var logs = name === 'logs';
+    $('view-downloads').hidden = logs;
+    $('view-logs').hidden = !logs;
+    $('tab-downloads').setAttribute('aria-selected', String(!logs));
+    $('tab-logs').setAttribute('aria-selected', String(logs));
+    if (logs) startLogs(); else stopLogs();
+  }
+
   // ---- boot ----------------------------------------------------------------------------------
 
   $('pair-form').addEventListener('submit', pair);
   $('send').addEventListener('click', sendMagnet);
   $('upload').addEventListener('click', function () { $('file').click(); });
   $('file').addEventListener('change', uploadTorrent);
+  $('tab-downloads').addEventListener('click', function () { selectTab('downloads'); });
+  $('tab-logs').addEventListener('click', function () { selectTab('logs'); });
+  $('log-level').addEventListener('change', changeLogLevel);
+  $('log-follow').addEventListener('click', toggleLogFollow);
+  $('log-download').addEventListener('click', downloadLogs);
 
   checkStatus();
   setInterval(checkStatus, STATUS_EVERY_MS);

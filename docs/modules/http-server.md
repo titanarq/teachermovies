@@ -280,6 +280,17 @@
   the answer's `status` is `searching`, `GET /api/library/{id}/subtitles` every 3 s for at most two
   minutes; each answer is shown inline ("Subtítulos encontrados", "No se encontraron subtítulos",
   "Portátil no conectado: se buscarán cuando se conecte", ...) followed by each language's state.
+  Two tabs, `DESCARGAS` (all of the above) and `REGISTROS` (#273, ADR-0006 §4): the TV's log
+  stream, read with `fetch('/api/logs/stream?since=&level=')` plus the `Authorization` header
+  (never `?token=`) and parsed as SSE from the response body, only while the tab is showing. A
+  level selector (`debug`|`info`|`warn`|`error`, default `info`) reopens the stream at that level
+  and clears the view; `PAUSAR`/`SEGUIR` freezes the view while lines keep arriving (it counts the
+  unseen ones) and resumes following at the bottom; `DESCARGAR .TXT` exports every kept line
+  (not only the rendered ones) with its date. The DOM keeps at most 2000 lines (`LOG_MAX_DOM_LINES`,
+  oldest removed); the page keeps up to 20000 received lines for the export. Lines are deduplicated
+  by `seq`; a changed `bootId` adds a "La TV se ha reiniciado" note and pages again from 0. When the
+  stream fails or ends it polls `GET /api/logs?since=&level=&limit=500` every 3 s and retries the
+  stream after 30 s; a 401 on either clears the token and shows the PIN form, as everywhere else.
 
 ## Boundaries
 - Talks to `TorrentEngine` and repositories through interfaces only. No UPnP, nothing exposed to the Internet. Never log tokens/PINs.
