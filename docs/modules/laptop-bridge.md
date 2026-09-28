@@ -55,7 +55,7 @@
   Prints the TV URL, the scope and the config path -- never the token, never the PIN.
 - `unpair`: deletes the config file. With nothing stored it is not an error (exit 0) and says so.
   The TV keeps its own copy of the token's hash until the human forgets this laptop from the TV.
-- `doctor`: seven checks in order, each printing `OK`/`FALLO` plus a one-line fix hint, then a count
+- `doctor`: checks in order, each printing `OK`/`FALLO` plus a one-line fix hint, then a count
   of the problems (exit 1 if there is any): the config file exists, its permissions are `0600`, it
   holds a pairing, the TV answers the public `GET /api/status`, the stored token still
   authenticates against `GET /api/logs` (probed cheaply with `since=0&limit=1`), and -- always,
@@ -64,7 +64,12 @@
   even whether it is complete. A token the TV no
   longer accepts is reported as such, without printing it. The permission check reads the file's
   mode only: the directory is created `0700` but never re-checked, and `Files.createDirectories`
-  does not tighten one that already existed.
+  does not tighten one that already existed. Then, also always (#276): the Claude Code binary
+  (`ClaudeBinary.locate`: `CLAUDE_BIN`, else `claude` on `PATH`, else `~/.local/bin/claude`), when
+  there is one `claude auth status --json` -- a login check, never a model call -- reporting the
+  auth method and plan or "no hay sesión iniciada" with `claude auth login` as the hint, and whether
+  `claude.json` is usable (see "Claude Code transport"). Last, as `INFO` lines that are not checks,
+  the stderr tail each job kind's last dead Claude process left behind.
 - `logs [--since <n>] [--level <debug|info|warn|error>] [--limit <n>]`: prints one page of the TV's
   ring buffer -- `YYYY-MM-DD HH:MM:SS.mmm LEVEL [module] message` per line, verbatim -- then the
   number of lines, the boot id and the `--since` cursor to continue from. Filtering is the TV's job
@@ -255,6 +260,61 @@
   config file, created `0600`. A job's text or result never reaches it, nor the token. When the
   file cannot be written it says so once on stdout and carries on without it; there is no rotation.
 
+## Claude Code transport (package `com.teachermovies.bridge.claude`, #276)
+- ADR-0005 §3: Claude runs on the human's subscription through the Claude Code CLI on this laptop,
+  never an API key. `interface ClaudeCli { kind; warmUp(); ask(prompt): ClaudeOutcome; close() }` is
+  what the translate and explain handlers of #286/#291 hold, one per job kind with that kind's own
+  system prompt; `ClaudeCliTransport` is the real one and `FakeClaudeCli` (main source set,
+  ADR-0003: a queue of outcomes, the prompts it received) the one their tests use. Nothing builds a
+  transport yet -- `run` ships no handler -- so no Claude process is started by this task alone.
+- `ClaudeCliTransport(kind, systemPrompt, executable, settings, dirs, cap, log, baseEnvironment)`
+  keeps one long-lived process per kind, started with `ClaudeCommandLine.argv`: `claude -p
+  --input-format stream-json --output-format stream-json --verbose --model <m> --effort <e>
+  --system-prompt-file <abs> --tools "" --strict-mcp-config --setting-sources ""
+  --disable-slash-commands --no-session-persistence`. `executable` and the prompt file must be
+  absolute; the working directory is a fresh empty `0700` directory of its own under
+  `ClaudeDirs.workDirs`, and the prompt file (`0600`) lives outside it under `ClaudeDirs.prompts`;
+  both are deleted when the process ends. `ClaudeDirs.default` is `teachermovies-bridge/claude`
+  under `$XDG_CACHE_HOME` or `~/.cache`. The child's environment is `baseEnvironment` minus
+  `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN`, replaced rather than inherited.
+- One stdin line per turn (`ClaudeEvents.userTurn`: a user message with one text block), stdout
+  read line by line until the turn's `result` (`ClaudeEvents.parse`: `system/init`, `assistant`
+  text blocks, `result`; everything else ignored), stderr drained all along into a 40-line
+  `StderrTail`. Turns are serialised: one job at a time per kind.
+- Warm-up: every process's first turn is `WARM_UP_PROMPT`, whose answer is dropped, so a job never
+  pays for a cold start. The `init` of that turn must report `apiKeySource` `none` -- and any later
+  `init` too; any other value, or no `init` at all on the first turn, kills the process and makes
+  the transport answer `Refused(source)` to every job until the bridge restarts, without starting
+  another process (the source name is logged; it is a name such as `ANTHROPIC_API_KEY`, not a key).
+- Spare and rotation: as soon as a process is ready, a replacement is started and warmed up in the
+  background. The current process is replaced -- the next job goes to the spare, already waiting --
+  after `rotateAfterTurns` jobs (closed gracefully: stdin closed, then killed after 2 s), when a turn
+  outlives `turnTimeoutSeconds` (killed at once: `TimedOut`), and when it dies (`Failed` with the
+  exit code and its last stderr line; the whole tail is written `0600` to
+  `ClaudeDirs.stderrTail(kind)`, which `doctor` shows). A failed turn the CLI answered cleanly keeps
+  its process: a `429` (`api_error_status`, number or string, or a `429` in the text when there is
+  no status) is `RateLimited`; any other error result is `Failed`.
+- Cost: `total_cost_usd` is the process's running total, so each turn logs its delta to the
+  `RunLog` -- `claude <kind>: trabajo en <ms> ms, coste 0.0125 USD billing=subscription` (warm-ups
+  too, as `proceso <pid> listo, calentamiento ...`) -- and `Answered` carries it. Under the
+  subscription it is Claude Code's list-price equivalent, not money charged. No prompt or reply text
+  ever reaches the log.
+- `DailyCap(limit)`, one instance shared by every transport of a bridge: jobs per calendar day in
+  the laptop's time zone; checked before a job reaches Claude (`DailyCapReached`), warm-ups not
+  counted. The count is in memory, so a restarted bridge starts the day over.
+- `ClaudeOutcome` is `Answered(text, costUsd, elapsedMs)`, `RateLimited`, `TimedOut`,
+  `DailyCapReached(limit)`, `Refused(apiKeySource)` or `Failed(reason)`; `failureResult()` gives
+  the `BridgeJobResultDto.Failed` a handler posts for a non-answer -- codes `rate_limited`,
+  `timeout`, `daily_cap`, `api_key_billing`, `claude_error`. Extracting and validating JSON from
+  `Answered.text` (and the one re-ask) is the handler's job.
+- Settings: `claude.json` next to the config file (`ClaudeSettingsFile.besideConfig`), every field
+  optional: `model` (`sonnet`), `effort` (`low`), `dailyJobCap` (300), `turnTimeoutSeconds` (60),
+  `rotateAfterTurns` (25). Unknown keys are ignored; a model or effort that is blank, holds
+  whitespace or starts with `-` (it would be read as a flag), or a number below 1, is `Corrupt`.
+- `ClaudeAuth.status(executable)` runs `claude auth status --json` with the same stripped
+  environment and a 10 s timeout, and reads `loggedIn`/`authMethod`/`subscriptionType` from its
+  JSON whatever the exit code: `LoggedIn`, `LoggedOut` or `Failed(reason, stderr)`.
+
 ## Subtitle fetch loop (package `com.teachermovies.bridge.subtitles`, #282)
 - ADR-0005 §5: the bridge works through the TV's subtitle needs, searching OpenSubtitles and
   reporting each result back, without the laptop having to be on all the time.
@@ -381,8 +441,8 @@
   `SLF4J(W)` lines to the real stderr. The tests cannot see them, because they capture the injected
   `Appendable`s instead of the console.
 - Not here yet, each its own issue: the job handlers
-  themselves (#286 translate, #291 explain, on #276's transport), the Claude Code CLI transport
-  (#276, which is what reads the unit's `CLAUDE_BIN`), and the moviehash itself (#279: the TV
+  themselves (#286 translate, #291 explain, each building its `ClaudeCliTransport` of #276 from the
+  unit's `CLAUDE_BIN` via `ClaudeBinary.locate`), and the moviehash itself (#279: the TV
   computes it, this module only sends it). The seven-day not-found retry is the TV's
   (`SubtitleFetch.isDue`, #280): the bridge only reports `not_found` and never tracks it itself.
 - The OpenSubtitles credentials follow the token's rule: no command prints them, `doctor` reports
@@ -391,7 +451,7 @@
 - The `laptop-bridge` row in AGENTS.md's module table is the human's edit, not this module's.
 
 ## Tests
-`bash scripts/test.sh :laptop-bridge:test` (twenty-four test classes as of #278) and
+`bash scripts/test.sh :laptop-bridge:test` (twenty-six test classes as of #276) and
 `./gradlew :laptop-bridge:ktlintCheck` for style. No test touches the network or the real home
 directory: `tv.FakeTv` is a real Ktor CIO server on a loopback port standing in for the TV (the
 criterion "tests run against an in-test Ktor server"), serving `/api/pair`, `/api/status`,
@@ -495,3 +555,12 @@ test queues with `sendFrame`, until `closeStreams()` -- and `POST /api/bridge/jo
   `network*.target` to order itself after was read off `systemctl --user list-unit-files`, and that
   `loginctl enable-linger` with no argument means the calling user off `loginctl(1)`. A real install,
   a reboot with linger and a service that restarts itself are #295's end-to-end verification.
+- The Claude transport (#276) never runs the real CLI: `claude.FakeClaudeMain` is a small Kotlin
+  `main` speaking the `stream-json` subset the transport reads, started through a `/bin/sh` wrapper
+  script (`claude.FakeClaude`) on the test JVM's own `java` and classpath, so the tests drive real
+  processes -- argv, environment, working directory, timeouts, deaths and rotation -- and assert on
+  the fake's own logs of what it was started with and what each turn received. It refuses a
+  relative or missing `--system-prompt-file` like the real CLI. `BridgeCliTest` installs a copy as
+  `~/.local/bin/claude` in its temporary home for `doctor`. What the real CLI emits was taken from
+  the research note behind ADR-0005 (`init.apiKeySource`, `result.api_error_status`,
+  `total_cost_usd` as a running total), not observed in this task: #295 is where the real CLI meets it.

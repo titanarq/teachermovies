@@ -1,5 +1,9 @@
 package com.teachermovies.bridge.cli
 
+import com.teachermovies.bridge.claude.AuthStatus
+import com.teachermovies.bridge.claude.ClaudeAuth
+import com.teachermovies.bridge.claude.ClaudeDirs
+import com.teachermovies.bridge.claude.ClaudeSettingsFile
 import com.teachermovies.bridge.config.BridgeConfigStore
 import com.teachermovies.bridge.config.ConfigLocation
 import com.teachermovies.bridge.logs.TvLogFiles
@@ -7,6 +11,7 @@ import com.teachermovies.bridge.opensubtitles.CredentialsFile
 import com.teachermovies.bridge.run.JmDnsDiscovery
 import com.teachermovies.bridge.run.JobHandlerRegistry
 import com.teachermovies.bridge.run.TvDiscovery
+import com.teachermovies.bridge.service.ClaudeBinary
 import com.teachermovies.bridge.tv.TvApi
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -33,6 +38,7 @@ class BridgeCli(
     private val env: (String) -> String? = { System.getenv(it) },
     private val registry: JobHandlerRegistry = JobHandlerRegistry.default(),
     private val discovery: TvDiscovery = JmDnsDiscovery(),
+    private val claudeAuth: (Path) -> AuthStatus = { ClaudeAuth.status(it) },
 ) {
     /** Runs one invocation and returns the exit code; it never throws for a foreseeable mistake. */
     fun run(args: Array<String>): Int {
@@ -77,7 +83,14 @@ class BridgeCli(
 
             Command.Doctor -> {
                 val credentials = CredentialsFile(CredentialsFile.defaultPath(home, env))
-                withTv { DoctorCommand(out, store, it, credentials).run() }
+                val claude =
+                    ClaudeChecks(
+                        location = ClaudeBinary.locate(home, env),
+                        settings = ClaudeSettingsFile.besideConfig(store.path),
+                        dirs = ClaudeDirs.default(home, env),
+                        auth = claudeAuth,
+                    )
+                withTv { DoctorCommand(out, store, it, credentials, claude).run() }
             }
 
             is Command.Logs -> {
