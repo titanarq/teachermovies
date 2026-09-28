@@ -151,7 +151,8 @@ class WebUiRouteTest {
             val body = lanClient().get("/static/app.js").bodyAsText()
 
             assertTrue(body.contains("LOG_MAX_DOM_LINES = 2000"))
-            assertTrue(body.contains("while (box.childNodes.length > LOG_MAX_DOM_LINES) box.removeChild(box.firstChild)"))
+            val domCap = "while (box.childNodes.length > LOG_MAX_DOM_LINES) box.removeChild(box.firstChild)"
+            assertTrue(body.contains(domCap))
             assertTrue(body.contains("api('/api/logs?since=' + since + '&level='"))
             assertTrue(body.contains("LOG_POLL_EVERY_MS = 3000"))
             assertTrue(body.contains("startLogPolling();"))
