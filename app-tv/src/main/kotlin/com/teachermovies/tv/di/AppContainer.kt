@@ -315,13 +315,16 @@ class AppContainer(
         )
 
     /**
-     * Tells the paired laptop bridge that a movie just finished downloading (#280, ADR-0005 §5), so
-     * it looks for its subtitles now instead of on its next timer pass. Started here, after the
-     * server that holds the bridge's stream; it only ever nudges [bridgeJobHub].
+     * Writes the subtitle needs of every stored movie and tells the paired laptop bridge that one
+     * just finished downloading (#280, ADR-0005 §5), so it looks for its subtitles now instead of on
+     * its next timer pass. Started here, after the server that holds the bridge's stream; it stores
+     * into [subtitleFetchRepository] -- the very rows `/api/bridge/subtitle-needs` publishes -- and
+     * only ever nudges [bridgeJobHub].
      */
     val subtitleNeedsCoordinator: SubtitleNeedsCoordinator =
         SubtitleNeedsCoordinator(
             library = torrentRepository,
+            fetches = subtitleFetchRepository,
             notify = { id -> bridgeJobHub.notifySubtitlesNeeded(id) },
             scope = applicationScope,
         ).also { it.start() }

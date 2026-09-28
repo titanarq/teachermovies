@@ -364,22 +364,33 @@
   ERROR (module `app-tv`, thread name and stack trace) and then always chains to the handler that
   was there before, so the platform still reports the crash and kills the process.
 
-## Subtitle needs nudge (#280, ADR-0005 §5)
+## Subtitle needs (#280, ADR-0005 §5)
 - `AppContainer.subtitleFetchRepository: SubtitleFetchRepository` is
   `RoomSubtitleFetchRepository(torrentDatabase.subtitleFetchStateDao())`, the automatic-subtitle
   fetch state of #274, and is what `ServerDeps.subtitleFetches` hands to the bridge's subtitle
   routes. `AppContainer` now also owns the one `BridgeJobHub`, so the server's `/api/bridge/jobs`
   routes and the nudge below act on the same instance instead of one hub each.
-- `tv.subtitles.SubtitleNeedsCoordinator(library: TorrentRepository, notify: (TorrentId) -> Unit,
-  scope)` (no Android types): `start()` collects `observeLibrary()` and calls `notify` once per
-  movie that appears in it, wired to `bridgeJobHub.notifySubtitlesNeeded(id)`, so a download that
-  completes puts a `subtitles-needed` frame on the bridge's stream. The library already there when
-  it starts is only recorded, never replayed -- a bridge that was off reads the whole needs list when
-  it connects (#282) -- and a movie that leaves the library and comes back counts as new again.
-- What is *not* wired yet: deciding which languages a completed movie needs and computing its
-  moviehash (`:assistant`'s `OpenSubtitlesHash`, #279). Nothing in production calls
-  `SubtitleFetchRepository.ensurePending`, so the needs list the bridge reads stays empty until that
-  detection exists; the nudge, the routes and the stored state are in place for it.
+- `tv.subtitles.SubtitleNeedsCoordinator(library: TorrentRepository, fetches:
+  SubtitleFetchRepository, notify: (TorrentId) -> Unit, scope)` (no Android types; `embeddedLanguages`,
+  `nowMs` and `dispatcher` are injectable and default to `:player`'s `EmbeddedTextTracks.languagesOf`,
+  the wall clock and `Dispatchers.IO`): `start()` collects `observeLibrary()` and, for every movie of
+  every emission -- the ones already stored when it starts as well as each one that completes later --
+  writes that movie's fetch-state rows through `ensurePending`. `"es"` always; `"en"` only when the
+  movie has no English subtitle of its own, which is `SidecarSubtitles.findFor(file, "en")`
+  (`:assistant`) finding a sidecar next to it or the container carrying an English text track (a
+  language of `en`, `eng` or any `en-` variant). Both rows carry the moviehash of
+  `OpenSubtitlesHash.of` (`:assistant`, #279) when the file can be hashed, and null when it is too
+  short or unreadable. `ensurePending` leaves an existing row's state, attempts and retry clock
+  alone, so passing over the whole library on each emission is what fills in a hash that could not be
+  computed the first time and otherwise changes nothing. The rows are written on the IO dispatcher,
+  and a movie whose rows cannot be stored is logged and skipped so the coordinator keeps following
+  the library -- that is the only thing that publishes later downloads.
+- `notify` then fires once per id that is new since the previous emission, wired to
+  `bridgeJobHub.notifySubtitlesNeeded(id)`, so a download that completes puts a `subtitles-needed`
+  frame on the bridge's stream, always after that movie's own rows are stored and therefore already
+  visible to `GET /api/bridge/subtitle-needs`. The library already there when it starts is only
+  recorded, never replayed -- a bridge that was off reads the whole needs list when it connects
+  (#282) -- and a movie that leaves the library and comes back counts as new again.
 
 ## Boundaries
 - Depends on feature modules' public interfaces only; contains no torrent, HTTP or VLC logic itself.
