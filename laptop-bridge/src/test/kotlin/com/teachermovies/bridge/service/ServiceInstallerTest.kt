@@ -28,10 +28,7 @@ class ServiceInstallerTest {
 
     private val text = "[Unit]\nDescription=prueba\n"
 
-    private fun install(
-        target: Path = unitFile,
-        content: String = text,
-    ): ServiceInstall = ServiceInstaller(target).install(content)
+    private fun install(content: String = text): ServiceInstall = ServiceInstaller(unitFile).install(content)
 
     private fun mode(path: Path): String = Files.getPosixFilePermissions(path).toOctal()
 
@@ -71,10 +68,13 @@ class ServiceInstallerTest {
 
     @Test
     fun `a unit directory that cannot exist is a failure with the exception's own name`() {
-        val blocking = home.resolve("bloqueo")
+        // A regular file where the unit's own directory goes. That is the JDK's documented
+        // FileAlreadyExistsException; blocking a directory above it instead raises FileSystemException.
+        val blocking = requireNotNull(unitFile.parent)
+        Files.createDirectories(requireNotNull(blocking.parent))
         Files.writeString(blocking, "no soy un directorio")
 
-        val installed = install(target = blocking.resolve("systemd/user/teachermovies-bridge.service"))
+        val installed = install()
 
         assertTrue(installed is ServiceInstall.Failed)
         assertEquals("FileAlreadyExistsException", (installed as ServiceInstall.Failed).reason)

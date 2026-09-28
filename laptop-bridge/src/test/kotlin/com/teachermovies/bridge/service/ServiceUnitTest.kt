@@ -115,7 +115,9 @@ class ServiceUnitTest {
         val text = rendered(spec(claude = null))
         val keys = environmentLines(text).map { environmentKey(it) }
 
-        assertFalse(text.contains(ClaudeBinary.VARIABLE))
+        // The template's own prose names CLAUDE_BIN to state the invariant; what must not appear is
+        // a directive that sets it.
+        assertFalse(text.contains("Environment=\"${ClaudeBinary.VARIABLE}="))
         assertEquals(listOf(ServiceUnit.PATH_VARIABLE, TvLogFiles.DIR_VARIABLE), keys)
     }
 

@@ -1,6 +1,7 @@
 package com.teachermovies.bridge.service
 
 import com.teachermovies.bridge.config.ConfigLocation
+import java.net.URI
 import java.net.URISyntaxException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -43,8 +44,8 @@ internal object BridgeLauncher {
      */
     private fun derivedScript(): Path? =
         try {
-            val location = BridgeLauncher::class.java.protectionDomain?.codeSource?.location?.toURI()
-            location?.let { Paths.get(it).parent?.resolveSibling(BIN_DIR)?.resolve(SCRIPT_NAME) }
+            val location = codeSourceLocation()
+            if (location == null) null else scriptInSiblingBin(Paths.get(location))
         } catch (e: URISyntaxException) {
             null
         } catch (e: IllegalArgumentException) {
@@ -52,6 +53,19 @@ internal object BridgeLauncher {
         } catch (e: SecurityException) {
             null
         }
+
+    /** This process's own code source as a URI, or null when the JVM will not say. */
+    private fun codeSourceLocation(): URI? =
+        BridgeLauncher::class.java.protectionDomain
+            ?.codeSource
+            ?.location
+            ?.toURI()
+
+    /** [codeSource]'s sibling `bin/` + [SCRIPT_NAME], or null when it has no directory to be a sibling of. */
+    private fun scriptInSiblingBin(codeSource: Path): Path? =
+        codeSource.parent
+            ?.resolveSibling(BIN_DIR)
+            ?.resolve(SCRIPT_NAME)
 
     private fun verdict(path: Path): LauncherLocation =
         when {
