@@ -527,7 +527,10 @@ internal object Mp4Subtitles {
     private const val STSC = "stsc"
     private const val STCO = "stco"
     private const val CO64 = "co64"
-    private const val TX3G = "tx3g"
+
+    /** The mov_text sample entry: the only MP4 subtitle track that carries text we can read. */
+    internal const val TX3G = "tx3g"
+
     private const val HANDLER_SUBPICTURE = "subp"
 
     /** `hdlr` types whose tracks libVLC lists as subtitles. */
