@@ -1,6 +1,13 @@
 package com.teachermovies.core.settings
 
+import androidx.datastore.core.DataMigration
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -10,6 +17,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 class DataStoreSettingsRepositoryTest {
     @get:Rule val tmpFolder = TemporaryFolder()
@@ -336,6 +344,67 @@ class DataStoreSettingsRepositoryTest {
             repository.setTranslationApiKey(null)
             assertEquals(before, repository.settings.first())
         }
+
+    @Test
+    fun upgradingClearsAStoredTranslationApiKeyAndLeavesTheOtherSettingsAlone() =
+        runTest {
+            val storeFile = tmpFolder.newFile("upgrade.preferences_pb")
+            // The app before #290: no migrations, and a key pasted in Configuración.
+            val before =
+                withStore(storeFile, migrations = emptyList()) { repository ->
+                    repository.setHttpPort(9000)
+                    repository.setDownloadVolumeId("usb-1")
+                    repository.addAuthTokenHash("hash-a")
+                    repository.addBridgeTokenHash("bridge-a")
+                    repository.setBridgeDeviceName("portatil")
+                    repository.setFirstRunCompleted(true)
+                    repository.setAutostartOnBoot(true)
+                    repository.setTranslationApiKey("sk-ant-test-key")
+                    repository.settings.first()
+                }
+            assertEquals("sk-ant-test-key", before.translationApiKey)
+
+            // The upgraded app opens the same file with the production migrations.
+            val upgraded = withStore(storeFile, SETTINGS_MIGRATIONS) { it.settings.first() }
+            assertEquals(before.copy(translationApiKey = null), upgraded)
+
+            // The removal was written back, not only hidden from the first read.
+            val reopened = withStore(storeFile, migrations = emptyList()) { it.settings.first() }
+            assertEquals(upgraded, reopened)
+            assertFalse(storeFile.readBytes().decodeToString().contains("sk-ant-test-key"))
+        }
+
+    @Test
+    fun theKeyMigrationIsANoOpOnAStoreWithoutAKey() =
+        runTest {
+            val storeFile = tmpFolder.newFile("nokey.preferences_pb")
+            val before =
+                withStore(storeFile, migrations = emptyList()) { repository ->
+                    repository.setHttpPort(9000)
+                    repository.settings.first()
+                }
+
+            assertEquals(before, withStore(storeFile, SETTINGS_MIGRATIONS) { it.settings.first() })
+        }
+
+    /**
+     * Opens a store over [file] on its own scope, runs [block] and closes the store again, so the
+     * next call can open the same file the way a restarted app would.
+     */
+    private suspend fun <T> withStore(
+        file: File,
+        migrations: List<DataMigration<Preferences>>,
+        block: suspend (DataStoreSettingsRepository) -> T,
+    ): T {
+        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        try {
+            val store =
+                PreferenceDataStoreFactory.create(migrations = migrations, scope = scope) { file }
+            return block(DataStoreSettingsRepository(store))
+        } finally {
+            scope.coroutineContext[Job]!!.cancelAndJoin()
+        }
+    }
 
     @Test
     fun toStringNeverPrintsTheTranslationApiKey() {

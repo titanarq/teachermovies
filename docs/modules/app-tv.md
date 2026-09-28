@@ -223,7 +223,9 @@
   `CachingTranslationProvider(AnthropicTranslationProvider(config))`, where `config` is an
   `AnthropicApiConfigSource` reading `settingsRepository.settings.first().translationApiKey` (blank
   -> null) on every request (#212); with no key the provider answers `Unavailable` and the overlay
-  shows `Traducción no disponible`. No key is ever compiled into the app. `assistantSpeechController` on the assistant's main-thread scope.
+  shows `Traducción no disponible`. No key is ever compiled into the app. Superseded: the
+  Anthropic provider is unwired since #290 (ADR-0005 §9) -- see the bridge wiring below; its code
+  stays dormant in `:assistant` and `:core-model` clears the stored key on upgrade. `assistantSpeechController` on the assistant's main-thread scope.
 - `AssistantOverlay` under the English line: `Traduciendo…` (`Loading`), the Spanish text in amber
   (`Ready`), `Sin conexión para traducir` (`Failed(OFFLINE)`), `Traducción no disponible`
   (`Failed(UNAVAILABLE)`), nothing (`Idle`) -- `translationLine(state)`; then the message, `Hablando…`
