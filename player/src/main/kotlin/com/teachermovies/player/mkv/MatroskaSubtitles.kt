@@ -431,7 +431,7 @@ internal object MatroskaSubtitles {
     private fun classify(track: TrackInfo): SubtitleExtraction? {
         val codec = track.codecId
         return when {
-            codec == CODEC_UTF8 || codec in WEBVTT_CODECS || codec == CODEC_ASS || codec == CODEC_SSA -> {
+            codec in TEXT_CODEC_IDS -> {
                 when {
                     track.encodings.any { it.encrypted } -> {
                         SubtitleExtraction.Failed("encrypted subtitle track")
@@ -590,6 +590,12 @@ internal object MatroskaSubtitles {
 
     private const val CODEC_ASS = "S_TEXT/ASS"
     private const val CODEC_SSA = "S_TEXT/SSA"
+
+    /**
+     * Every codec id whose blocks carry subtitle text -- the tracks [extract] can
+     * extract, and the only ones `EmbeddedTextTracks.languagesOf` counts.
+     */
+    internal val TEXT_CODEC_IDS = setOf(CODEC_UTF8, CODEC_ASS, CODEC_SSA) + WEBVTT_CODECS
     private val IMAGE_CODECS = setOf("S_HDMV/PGS", "S_VOBSUB", "S_DVBSUB")
     private const val IMAGE_CODEC_PREFIX = "S_IMAGE/"
 

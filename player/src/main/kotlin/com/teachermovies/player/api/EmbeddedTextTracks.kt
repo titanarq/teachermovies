@@ -33,22 +33,34 @@ object EmbeddedTextTracks {
      * reports its container's default: `eng` for Matroska, `und` for an MP4 `mdhd` left unset or
      * holding a QuickTime code.
      *
-     * Despite the name of this object, every subtitle track the container declares is listed,
-     * image-based ones (PGS, VobSub) included, exactly as the readers list them: it is
-     * [Player.extractTextSubtitle] that reports those as [SubtitleExtraction.NotTextBased], so a
-     * caller that needs a language to be readable has to try that call rather than trust this one.
+     * Only subtitle tracks the assistant can read as text are listed: a Matroska track whose codec
+     * id is a text codec (`S_TEXT/UTF8`, `S_TEXT/ASS`, `S_TEXT/SSA`, `S_TEXT/WEBVTT`,
+     * `D_WEBVTT/SUBTITLES`, `D_WEBVTT/CAPTIONS`) and an MP4 track whose sample entry is `tx3g`
+     * (mov_text). Image-based tracks (PGS, VobSub, DVB) and any other codec are skipped, so a movie
+     * whose only English track is a picture answers without `eng`, exactly as if it declared no
+     * English subtitle at all -- which is what #280 needs to know to ask the bridge for one.
      */
     fun languagesOf(file: File): List<String> =
         when (val matroska = MatroskaSubtitles.textTracks(file)) {
-            is MkvTracksResult.Tracks -> matroska.tracks.map { it.languageIetf ?: it.language }
-            MkvTracksResult.NotMatroska -> mp4Languages(file)
-            is MkvTracksResult.Failed -> emptyList()
+            is MkvTracksResult.Tracks -> {
+                matroska.tracks
+                    .filter { it.codecId in MatroskaSubtitles.TEXT_CODEC_IDS }
+                    .map { it.languageIetf ?: it.language }
+            }
+
+            MkvTracksResult.NotMatroska -> {
+                mp4Languages(file)
+            }
+
+            is MkvTracksResult.Failed -> {
+                emptyList()
+            }
         }
 
     /** The other reader, for a file whose first bytes are not the EBML magic. */
     private fun mp4Languages(file: File): List<String> =
         when (val mp4 = Mp4Subtitles.textTracks(file)) {
-            is Mp4TracksResult.Tracks -> mp4.tracks.map { it.language }
+            is Mp4TracksResult.Tracks -> mp4.tracks.filter { it.sampleEntry == Mp4Subtitles.TX3G }.map { it.language }
             Mp4TracksResult.NotMp4, is Mp4TracksResult.Failed -> emptyList()
         }
 }
