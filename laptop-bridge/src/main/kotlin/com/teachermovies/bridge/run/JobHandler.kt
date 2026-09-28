@@ -26,7 +26,7 @@ interface JobHandler {
 
 /**
  * The job handlers of this bridge, keyed by `kind`: `run` builds it from
- * [com.teachermovies.bridge.cli.JobHandlers] (#291: explain; #286 adds translate). [dispatch] answers
+ * [com.teachermovies.bridge.cli.JobHandlers] (#286: translate; #291: explain). [dispatch] answers
  * a kind nobody handles -- every kind, when the laptop has no usable Claude CLI -- with an immediate
  * [BridgeJobResultDto.Failed], code [UNSUPPORTED_KIND], instead of leaving the TV to time out.
  */

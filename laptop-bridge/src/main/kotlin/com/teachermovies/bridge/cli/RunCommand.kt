@@ -29,9 +29,9 @@ import java.nio.file.Path
  * Checks there is a pairing, then hands over to [RunLoop], which logs to [out] and to
  * `bridge.log` next to the config file, and alongside it to [TvLogMirror] (#272), which copies the
  * TV log into dated files in [logsDir], and -- when [credentials] loads -- [SubtitleFetchLoop] (#282)
- * over OpenSubtitles through [httpClient]. The jobs are answered by what [jobHandlers] builds (#291:
- * explain over Claude), whose Claude conversations are warmed up at once and closed when `run`
- * ends. It returns -- [ExitCode.FAILED] -- only when there is no
+ * over OpenSubtitles through [httpClient]. The jobs are answered by what [jobHandlers] builds (#286:
+ * translate, #291: explain, each over Claude), whose Claude conversations are warmed up at once and
+ * closed when `run` ends. It returns -- [ExitCode.FAILED] -- only when there is no
  * usable pairing or the TV refuses the token; otherwise it runs until the process is stopped.
  */
 internal class RunCommand(
