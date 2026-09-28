@@ -27,23 +27,49 @@
   </section>
 
   <section id="app" hidden>
-    <div class="card">
-      <label for="magnet" class="visually-hidden">Magnet</label>
-      <textarea id="magnet" rows="3" placeholder="Pega aquí magnet o enlace" spellcheck="false"
-                autocapitalize="off" autocomplete="off"></textarea>
-      <div class="actions">
-        <button id="send" type="button" class="btn btn-primary">ENVIAR A LA TV</button>
-        <span class="or">o</span>
-        <button id="upload" type="button" class="btn">SUBIR .TORRENT</button>
-        <input id="file" type="file" accept=".torrent,application/x-bittorrent" hidden>
+    <nav class="tabs" role="tablist" aria-label="Secciones">
+      <button id="tab-downloads" type="button" class="tab" role="tab" aria-selected="true"
+              aria-controls="view-downloads">DESCARGAS</button>
+      <button id="tab-logs" type="button" class="tab" role="tab" aria-selected="false"
+              aria-controls="view-logs">REGISTROS</button>
+    </nav>
+
+    <div id="view-downloads" role="tabpanel" aria-labelledby="tab-downloads">
+      <div class="card">
+        <label for="magnet" class="visually-hidden">Magnet</label>
+        <textarea id="magnet" rows="3" placeholder="Pega aquí magnet o enlace" spellcheck="false"
+                  autocapitalize="off" autocomplete="off"></textarea>
+        <div class="actions">
+          <button id="send" type="button" class="btn btn-primary">ENVIAR A LA TV</button>
+          <span class="or">o</span>
+          <button id="upload" type="button" class="btn">SUBIR .TORRENT</button>
+          <input id="file" type="file" accept=".torrent,application/x-bittorrent" hidden>
+        </div>
+        <p id="send-msg" class="msg" role="status" aria-live="polite"></p>
       </div>
-      <p id="send-msg" class="msg" role="status" aria-live="polite"></p>
+
+      <section class="card">
+        <h2>DESCARGANDO</h2>
+        <ul id="list" class="list"></ul>
+        <p id="empty" class="hint">No hay descargas.</p>
+      </section>
     </div>
 
-    <section class="card">
-      <h2>DESCARGANDO</h2>
-      <ul id="list" class="list"></ul>
-      <p id="empty" class="hint">No hay descargas.</p>
+    <section id="view-logs" class="card" role="tabpanel" aria-labelledby="tab-logs" hidden>
+      <h2>REGISTROS DE LA TV</h2>
+      <div class="actions logs-actions">
+        <label for="log-level" class="visually-hidden">Nivel</label>
+        <select id="log-level">
+          <option value="debug">Todo (debug)</option>
+          <option value="info" selected>Info y superior</option>
+          <option value="warn">Avisos y errores</option>
+          <option value="error">Solo errores</option>
+        </select>
+        <button id="log-follow" type="button" class="btn" aria-pressed="false">PAUSAR</button>
+        <button id="log-download" type="button" class="btn">DESCARGAR .TXT</button>
+      </div>
+      <p id="log-msg" class="msg" role="status" aria-live="polite"></p>
+      <div id="log-lines" class="log-lines" tabindex="0" role="log" aria-label="Registros"></div>
     </section>
   </section>
   <dialog id="del-dialog" class="card dialog" aria-labelledby="del-title">

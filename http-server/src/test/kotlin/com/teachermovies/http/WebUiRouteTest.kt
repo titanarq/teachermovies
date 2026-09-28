@@ -12,6 +12,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.SecureRandom
@@ -107,6 +108,58 @@ class WebUiRouteTest {
 
             assertTrue(body.contains("id=\"del-dialog\""))
             assertTrue(body.contains("Borrar también los archivos"))
+        }
+
+    @Test
+    fun `index html has the registros tab with level, follow and download controls`() =
+        testApplication {
+            application { module(deps()) }
+            val body = lanClient().get("/").bodyAsText()
+
+            assertTrue(body.contains("id=\"tab-logs\""))
+            assertTrue(body.contains(">REGISTROS</button>"))
+            assertTrue(body.contains("id=\"view-logs\""))
+            for (level in listOf("debug", "info", "warn", "error")) {
+                assertTrue("level $level", body.contains("<option value=\"$level\""))
+            }
+            assertTrue(body.contains("id=\"log-follow\""))
+            assertTrue(body.contains("DESCARGAR .TXT"))
+            assertTrue(body.contains("id=\"log-lines\""))
+        }
+
+    @Test
+    fun `app js reads the log stream with fetch and the bearer header, never a token query`() =
+        testApplication {
+            application { module(deps()) }
+            val body = lanClient().get("/static/app.js").bodyAsText()
+
+            // Through api(): Authorization header, and a 401 clears the token and shows the PIN form.
+            assertTrue(body.contains("api('/api/logs/stream?since=' + since + '&level='"))
+            assertTrue(body.contains("res.body.getReader()"))
+            assertTrue(body.contains("if (res.status === 401) {\n        onUnauthorized();"))
+            assertTrue(body.contains("function onUnauthorized() {\n    clearToken();"))
+            assertFalse(body.contains("/api/logs/stream?token="))
+            assertFalse(Regex("""/api/logs[^']*token=""").containsMatchIn(body))
+            // The only EventSource is /api/events'.
+            assertEquals(1, Regex("new EventSource\\(").findAll(body).count())
+        }
+
+    @Test
+    fun `app js polls the log page when the stream drops and keeps at most 2000 rendered lines`() =
+        testApplication {
+            application { module(deps()) }
+            val body = lanClient().get("/static/app.js").bodyAsText()
+
+            assertTrue(body.contains("LOG_MAX_DOM_LINES = 2000"))
+            val domCap = "while (box.childNodes.length > LOG_MAX_DOM_LINES) box.removeChild(box.firstChild)"
+            assertTrue(body.contains(domCap))
+            assertTrue(body.contains("api('/api/logs?since=' + since + '&level='"))
+            assertTrue(body.contains("LOG_POLL_EVERY_MS = 3000"))
+            assertTrue(body.contains("startLogPolling();"))
+            // Pause/follow and the .txt export of every kept line, not only the rendered ones.
+            assertTrue(body.contains("button.textContent = logFollowing ? 'PAUSAR' : 'SEGUIR'"))
+            assertTrue(body.contains("logEntries.map(function (entry) { return logText(entry, true); })"))
+            assertTrue(body.contains("'.txt'"))
         }
 
     @Test

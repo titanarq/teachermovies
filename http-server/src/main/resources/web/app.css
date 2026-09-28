@@ -189,3 +189,53 @@ textarea { resize: vertical; word-break: break-all; }
 }
 
 [hidden] { display: none !important; }
+
+/* Tabs (#273): DESCARGAS | REGISTROS. */
+.tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+
+.tab {
+  flex: 1 1 0;
+  min-height: var(--tap);
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: var(--card);
+  border-radius: 8px 8px 0 0;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.tab:focus-visible, select:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+
+/* Registros (#273): the TV's log stream, at most LOG_MAX_DOM_LINES rendered lines. */
+.logs-actions select {
+  flex: 1 1 140px;
+  min-height: var(--tap);
+  padding: 8px 12px;
+  border: 1px solid var(--bar);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.log-lines {
+  height: 60vh;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--bg);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.log-line { white-space: pre-wrap; overflow-wrap: anywhere; }
+.log-line.lv-debug { color: var(--muted); }
+.log-line.lv-warn { color: #ffcc00; }
+.log-line.lv-error { color: var(--bad); }
+.log-line.log-note { color: var(--accent); font-style: italic; }
