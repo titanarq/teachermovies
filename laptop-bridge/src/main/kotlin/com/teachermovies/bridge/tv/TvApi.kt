@@ -1,24 +1,35 @@
 package com.teachermovies.bridge.tv
 
+import com.teachermovies.bridge.protocol.BridgeJobResultDto
 import com.teachermovies.bridge.protocol.LogsPageDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.NoTransformationFoundException
 import io.ktor.client.call.body
+import io.ktor.client.network.sockets.ConnectTimeoutException
+import io.ktor.client.network.sockets.SocketTimeoutException
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.prepareGet
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLPathPart
 import io.ktor.http.isSuccess
 import io.ktor.serialization.ContentConvertException
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -139,6 +150,88 @@ class TvApi(
         }
 
     /**
+     * `GET /api/bridge/jobs` with the bridge token (#275, ADR-0005 §2): holds the job stream open and
+     * hands every complete SSE frame to [onEvent], in order, until the stream ends. [onOpen] runs
+     * once the TV has accepted the stream (a 2xx), before the first frame. [onEvent] runs on the
+     * reading coroutine, so it must return quickly: a job's work belongs in a coroutine of its own,
+     * or a `cancel` frame behind it would wait.
+     *
+     * The stream has no whole-request timeout, but a [STREAM_SOCKET_TIMEOUT_MILLIS] socket timeout:
+     * the TV writes a `: ping` every 15 s, so that much silence means the TV vanished without closing
+     * the socket. Like every other call it never throws; how the stream ended is the result.
+     */
+    suspend fun jobStream(
+        baseUrl: String,
+        token: String,
+        onOpen: suspend () -> Unit,
+        onEvent: suspend (SseEvent) -> Unit,
+    ): JobStreamEnd {
+        var opened = false
+        return try {
+            client
+                .prepareGet(url(baseUrl, "/api/bridge/jobs")) {
+                    bearerAuth(token)
+                    header(HttpHeaders.Accept, ContentType.Text.EventStream.toString())
+                    timeout {
+                        requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                        socketTimeoutMillis = STREAM_SOCKET_TIMEOUT_MILLIS
+                    }
+                }.execute { response ->
+                    when {
+                        response.status.isSuccess() -> {
+                            opened = true
+                            onOpen()
+                            val channel = response.bodyAsChannel()
+                            val parser = SseParser()
+                            while (true) {
+                                val line = channel.readUTF8Line() ?: break
+                                parser.feed(line)?.let { onEvent(it) }
+                            }
+                            JobStreamEnd.Closed
+                        }
+
+                        response.status == HttpStatusCode.Unauthorized -> {
+                            JobStreamEnd.NotOpened(ApiFailure.Unauthorized)
+                        }
+
+                        else -> {
+                            JobStreamEnd.NotOpened(response.httpFailure())
+                        }
+                    }
+                }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (opened) JobStreamEnd.Broken(reasonFor(e)) else JobStreamEnd.NotOpened(ApiFailure.Network(reasonFor(e)))
+        }
+    }
+
+    /**
+     * `POST /api/bridge/jobs/{id}/result` (#275): the bridge's one answer to job [jobId]. 204 is
+     * [ApiResult.Success]; 404 `unknown_job`, 409 `job_closed` and 400 come back as
+     * [ApiFailure.Http] with the TV's code.
+     */
+    suspend fun postJobResult(
+        baseUrl: String,
+        token: String,
+        jobId: String,
+        result: BridgeJobResultDto,
+    ): ApiResult<Unit> =
+        guarded({ ApiResult.Failure(it) }) {
+            val response =
+                client.post(url(baseUrl, "/api/bridge/jobs/${jobId.encodeURLPathPart()}/result")) {
+                    bearerAuth(token)
+                    contentType(ContentType.Application.Json)
+                    setBody<BridgeJobResultDto>(result)
+                }
+            when {
+                response.status.isSuccess() -> ApiResult.Success(Unit)
+                response.status == HttpStatusCode.Unauthorized -> ApiResult.Failure(ApiFailure.Unauthorized)
+                else -> ApiResult.Failure(response.httpFailure())
+            }
+        }
+
+    /**
      * Runs [block], turning any exception except cancellation into [onFailure] with an
      * [ApiFailure.Network]: no [TvApi] method throws.
      */
@@ -199,6 +292,9 @@ class TvApi(
         /** Per-request timeout: connect, socket and whole request. */
         const val TIMEOUT_MILLIS: Long = 10_000
 
+        /** Longest silence on the job stream before it counts as broken: three missed 15 s pings. */
+        const val STREAM_SOCKET_TIMEOUT_MILLIS: Long = 45_000
+
         private const val WRONG_PIN_CODE = "wrong_pin"
 
         private val JSON = Json { ignoreUnknownKeys = true }
@@ -211,7 +307,7 @@ class TvApi(
         /** A short diagnostic that never includes a response body or a request's contents. */
         private fun reasonFor(e: Exception): String =
             when (e) {
-                is HttpRequestTimeoutException -> {
+                is HttpRequestTimeoutException, is SocketTimeoutException, is ConnectTimeoutException -> {
                     "timeout"
                 }
 

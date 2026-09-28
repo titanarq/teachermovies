@@ -13,15 +13,20 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.server.request.receiveText
+import io.ktor.server.response.header
+import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
+import io.ktor.server.response.respondTextWriter
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import java.io.Closeable
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * A real Ktor CIO server on a loopback port standing in for the TV (#271): `POST /api/pair` with
@@ -78,6 +83,28 @@ class FakeTv : Closeable {
 
     val received: MutableList<Received> = CopyOnWriteArrayList()
 
+    /** What `POST /api/bridge/jobs/{id}/result` answers (after the token check); 204 by default. */
+    @Volatile
+    var resultAnswer: Answer? = null
+
+    /** Frames still to write on each open `GET /api/bridge/jobs` stream, newest last. */
+    private val streams: MutableList<Channel<String>> = CopyOnWriteArrayList()
+
+    /** How many job streams the TV has accepted so far. */
+    val streamsOpened = AtomicInteger()
+
+    /** Queues one SSE frame on the newest open job stream; false when none is open. */
+    fun sendFrame(
+        event: String,
+        data: String,
+    ): Boolean = streams.lastOrNull()?.trySend("event: $event\ndata: $data\n\n")?.isSuccess ?: false
+
+    /** Ends every open job stream from the TV side, the way a restart or a newer stream would. */
+    fun closeStreams() {
+        streams.forEach { it.close() }
+        streams.clear()
+    }
+
     private val server: EmbeddedServer<*, *> =
         embeddedServer(CIO, host = HOST, port = 0) {
             routing {
@@ -105,6 +132,34 @@ class FakeTv : Closeable {
                     }
                     call.answer(JSON.encodeToString(LogsPageDto.serializer(), logsPage), HttpStatusCode.OK)
                 }
+                get("/api/bridge/jobs") {
+                    call.record()
+                    if (call.refuse()) return@get
+                    if (!call.authorized()) return@get
+                    val frames = Channel<String>(Channel.UNLIMITED)
+                    streams += frames
+                    streamsOpened.incrementAndGet()
+                    call.response.header(HttpHeaders.CacheControl, "no-cache")
+                    call.respondTextWriter(ContentType.Text.EventStream) {
+                        write(": ping\n\n")
+                        flush()
+                        for (frame in frames) {
+                            write(frame)
+                            flush()
+                        }
+                    }
+                }
+                post("/api/bridge/jobs/{id}/result") {
+                    call.record()
+                    if (call.refuse()) return@post
+                    if (!call.authorized()) return@post
+                    val answer = resultAnswer
+                    if (answer != null) {
+                        call.error(answer.status, answer.code, "refused by the fake TV")
+                    } else {
+                        call.respond(HttpStatusCode.NoContent)
+                    }
+                }
                 route("{...}") {
                     handle {
                         call.record()
@@ -127,6 +182,7 @@ class FakeTv : Closeable {
     }
 
     override fun close() {
+        closeStreams()
         server.stop(gracePeriodMillis = 0, timeoutMillis = STOP_TIMEOUT_MILLIS)
     }
 
@@ -142,6 +198,13 @@ class FakeTv : Closeable {
                 body = body,
             )
         return body
+    }
+
+    /** Answers 401 unless the call carries this TV's token, and says whether it did not. */
+    private suspend fun ApplicationCall.authorized(): Boolean {
+        if (request.headers[HttpHeaders.Authorization] == "Bearer $token") return true
+        error(HttpStatusCode.Unauthorized, "unauthorized", "Missing or invalid bearer token")
+        return false
     }
 
     /** Answers [failWith] when a test set one, and says whether it did. */

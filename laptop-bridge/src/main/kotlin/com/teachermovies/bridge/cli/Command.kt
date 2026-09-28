@@ -21,6 +21,9 @@ internal sealed interface Command {
     /** `doctor`: report this bridge's own health. */
     data object Doctor : Command
 
+    /** `run`: hold the TV's job stream open and answer its jobs until the TV refuses the token (#277). */
+    data object Run : Command
+
     /** `logs [--since <seq>] [--level <nivel>] [--limit <n>]`; a null filter is the TV's default. */
     data class Logs(
         val since: Long?,

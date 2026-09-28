@@ -321,6 +321,27 @@ class BridgeCliTest {
     // --- unpair ---
 
     @Test
+    fun `run without a pairing fails at once and says how to pair (#277)`() {
+        assertEquals(1, run("run"))
+        assertTrue(err.toString().contains("no existe $configPath"))
+        assertTrue(err.toString().contains("teachermovies-bridge pair"))
+    }
+
+    @Test
+    fun `run stops with a failure when the TV no longer accepts the token (#277)`() {
+        pair()
+        val storedToken = tv.token
+        tv.token = "token-renovado"
+
+        assertEquals(1, run("run"))
+
+        assertTrue(out.toString().contains("La TV ha rechazado el token (401)"))
+        assertTrue(err.toString().contains("La TV ya no acepta el token de este portátil."))
+        assertTrue(Files.exists(configPath.resolveSibling("bridge.log")))
+        assertNoSecrets(storedToken)
+    }
+
+    @Test
     fun `unpair deletes the config, and doctor then reports no pairing`() {
         pair()
 

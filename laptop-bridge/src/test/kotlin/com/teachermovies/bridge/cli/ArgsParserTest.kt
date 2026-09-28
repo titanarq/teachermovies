@@ -59,6 +59,12 @@ class ArgsParserTest {
     }
 
     @Test
+    fun `run takes no options (#277)`() {
+        assertEquals(Command.Run, parsed("run").command)
+        assertTrue(message("run", "--limit", "2").contains("no admite"))
+    }
+
+    @Test
     fun `logs defaults every filter, so the TV applies its own`() {
         assertEquals(Command.Logs(null, null, null), parsed("logs").command)
     }
