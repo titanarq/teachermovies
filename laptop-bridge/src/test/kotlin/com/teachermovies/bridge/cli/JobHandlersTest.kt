@@ -3,6 +3,7 @@ package com.teachermovies.bridge.cli
 import com.teachermovies.bridge.config.BridgeConfigStore
 import com.teachermovies.bridge.explain.ExplainHandler
 import com.teachermovies.bridge.run.RunLog
+import com.teachermovies.bridge.translate.TranslateHandler
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -39,14 +40,15 @@ class JobHandlersTest {
     }
 
     @Test
-    fun `with a CLI there is one explain handler over one explain conversation, nothing started`() =
+    fun `with a CLI there is one handler per kind over a conversation of its own, nothing started`() =
         runBlocking {
             val home = home()
             val cli = executable(home)
             val env = { name: String -> if (name == "CLAUDE_BIN") cli.toString() else null }
             val handlers = JobHandlers.claude(home, env, store(home), log(home))
-            assertEquals(listOf(ExplainHandler.KIND), handlers.handlers.map { it.kind })
-            assertEquals(listOf(ExplainHandler.KIND), handlers.conversations.map { it.kind })
+            val kinds = listOf(TranslateHandler.KIND, ExplainHandler.KIND)
+            assertEquals(kinds, handlers.handlers.map { it.kind })
+            assertEquals(kinds, handlers.conversations.map { it.kind })
             assertTrue(out.isEmpty())
             handlers.conversations.forEach { it.close() }
         }

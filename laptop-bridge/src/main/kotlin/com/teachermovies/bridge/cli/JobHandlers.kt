@@ -14,6 +14,8 @@ import com.teachermovies.bridge.run.JobHandler
 import com.teachermovies.bridge.run.RunLog
 import com.teachermovies.bridge.service.ClaudeBinary
 import com.teachermovies.bridge.service.ClaudeLocation
+import com.teachermovies.bridge.translate.TranslateHandler
+import com.teachermovies.bridge.translate.TranslatePrompt
 import java.nio.file.Path
 
 /**
@@ -28,10 +30,11 @@ class JobHandlers(
         val NONE = JobHandlers(emptyList(), emptyList())
 
         /**
-         * The production set: the explain handler (#291) over a [ClaudeCliTransport] of its own, from
-         * the CLI [ClaudeBinary.locate] finds and the settings in `claude.json` beside the config,
-         * with one [DailyCap] for every conversation. No CLI or unusable settings: [NONE], said once
-         * in [log], and `run` goes on answering every job `unsupported_kind`.
+         * The production set: the translate (#286) and explain (#291) handlers, each over a
+         * [ClaudeCliTransport] of its own -- one process and one system prompt per kind -- from the
+         * CLI [ClaudeBinary.locate] finds and the settings in `claude.json` beside the config, with
+         * one [DailyCap] counted across every conversation. No CLI or unusable settings: [NONE],
+         * said once in [log], and `run` goes on answering every job `unsupported_kind`.
          */
         internal fun claude(
             home: Path,
@@ -80,6 +83,16 @@ class JobHandlers(
                 }
             val cap = DailyCap(settings.dailyJobCap)
             val dirs = ClaudeDirs.default(home, env)
+            val translate =
+                ClaudeCliTransport(
+                    TranslateHandler.KIND,
+                    TranslatePrompt.SYSTEM_PROMPT,
+                    executable,
+                    settings,
+                    dirs,
+                    cap,
+                    log,
+                )
             val explain =
                 ClaudeCliTransport(
                     ExplainHandler.KIND,
@@ -90,7 +103,10 @@ class JobHandlers(
                     cap,
                     log,
                 )
-            return JobHandlers(listOf(ExplainHandler(explain)), listOf(explain))
+            return JobHandlers(
+                listOf(TranslateHandler(translate), ExplainHandler(explain)),
+                listOf(translate, explain),
+            )
         }
     }
 }

@@ -16,8 +16,9 @@
   #282 adds the subtitle fetch loop (package `subtitles`), which `run` keeps going too and which
   drives the OpenSubtitles client against the TV's subtitle routes of #280. #278 adds the systemd
   user unit (package `service`), the `install-service` subcommand that writes it, and the install
-  runbook `docs/runbooks/laptop-bridge.md`. #291 adds the explain handler (package `explain`), the
-  first job handler `run` answers with, over a Claude conversation of its own.
+  runbook `docs/runbooks/laptop-bridge.md`. #291 adds the explain handler (package `explain`) and
+  #286 the translate handler (package `translate`): the two job handlers `run` answers with, each
+  over a Claude conversation of its own.
 - Pure JVM, never an Android library, so it depends only on `:bridge-protocol` and never on
   `:http-server` or any other Android module (ADR-0005 §1, AGENTS.md). The Ktor *server* artifacts
   are test-only here, for the in-test fake TV.
@@ -85,7 +86,8 @@
   is stopped -- except when the TV refuses the token (401), which is a new pairing to do rather than
   a connection to retry: exit 1, "La TV ya no acepta el token de este portátil". `BridgeCli` takes the
   `JobHandlerRegistry` (default `JobHandlerRegistry.default()`, empty) and the `TvDiscovery`
-  (default `JmDnsDiscovery()`) as constructor parameters, which is where #286/#291 add their handlers.
+  (default `JmDnsDiscovery()`) as constructor parameters, which is where the handlers of #286/#291
+  join it (`cli.JobHandlers`, see "Translate handler" and "Explain handler").
   Next to the job loop, in the same coroutine scope, it runs `TvLogMirror` (see "TV log mirror")
   into `TvLogFiles.defaultDir(home, env)`; the mirror is cancelled when the job loop ends. Also in
   that scope, when the OpenSubtitles credentials file (`CredentialsFile.defaultPath`) loads, it runs
@@ -222,8 +224,9 @@
   is what the translate and explain handlers of #286/#291 implement. `JobHandlerRegistry(handlers)`
   keys them by `kind` (two handlers of one kind are refused) and `dispatch(job: JsonObject)` returns
   the result to post: the handler's own, or `Failed` with code `unsupported_kind` (no handler for the
-  `kind` -- today `translate`, and every kind when the laptop has no usable Claude CLI; a `kind` this bridge's
-  `:bridge-protocol` does not even know is answered the same way, because the loop reads `kind` and
+  `kind` -- both of them when the laptop has no usable Claude CLI, since neither handler works
+  without one; a `kind` this bridge's `:bridge-protocol` does not even know is answered the same way,
+  because the loop reads `kind` and
   `id` off the raw JSON before decoding), `bad_job` (a handled kind whose fields do not decode) or
   `handler_error` (the handler threw; the message is the exception class name). So no job is ever
   left for the TV to time out.
@@ -267,7 +270,8 @@
   what the translate and explain handlers of #286/#291 hold, one per job kind with that kind's own
   system prompt; `ClaudeCliTransport` is the real one and `FakeClaudeCli` (main source set,
   ADR-0003: a queue of outcomes, the prompts it received) the one their tests use. `run` builds
-  one per handled kind through `cli.JobHandlers` (#291: explain) -- see "Explain handler".
+  one per handled kind through `cli.JobHandlers` (#286: translate, #291: explain) -- see "Translate
+  handler" and "Explain handler".
 - `ClaudeCliTransport(kind, systemPrompt, executable, settings, dirs, cap, log, baseEnvironment)`
   keeps one long-lived process per kind, started with `ClaudeCommandLine.argv`: `claude -p
   --input-format stream-json --output-format stream-json --verbose --model <m> --effort <e>
@@ -315,6 +319,42 @@
 - `ClaudeAuth.status(executable)` runs `claude auth status --json` with the same stripped
   environment and a 10 s timeout, and reads `loggedIn`/`authMethod`/`subscriptionType` from its
   JSON whatever the exit code: `LoggedIn`, `LoggedOut` or `Failed(reason, stderr)`.
+
+## Translate handler (package `com.teachermovies.bridge.translate`, #286)
+- ADR-0005 §6: `TranslateHandler(cli)` is the `translate` `JobHandler` -- the fallback behind LEFT
+  when no aligned Spanish subtitle is good enough (#288 asks, #287 caches). It takes a
+  `TranslateJobDto` (the captured English `line` and nothing else) and answers `Done(text)` whose
+  `text` is the Spanish line **bare**: no JSON document around it, and so no `promptVersion` either,
+  unlike an explanation. That is what the merged TV side reads -- `HubBridgeTranslateGateway` hands
+  the hub's `text` straight to `BridgeTranslationProvider`, which shows it verbatim (#287) -- and the
+  translation cache is keyed by the English line alone (#274), so there is no field for a version to
+  travel in and nothing that would read one.
+- Prompt: `TranslatePrompt.SYSTEM_PROMPT` is fixed Spanish text -- Castilian, the character's own
+  register, a similar length, nothing added or explained, proper names untouched, a non-English or
+  untranslatable line returned as it came -- and holds no job's text. The line goes only in the user
+  turn, as the one-field JSON document `{"linea": …}` the prompt tells Claude to read as data and
+  never as instructions.
+- Reply: Claude answers the `{"translation": …}` object. Validation (`TranslateReply`), after
+  `claude.JsonReply.extractObject` (the first parsable JSON object in the reply, fences and prose
+  around it ignored): `translation` required, a JSON string, trimmed and non-blank, at most
+  `TranslateReply.MAX_CHARS` code points -- `2 × MAX_LINE_CHARS`, this handler's own bound (the issue
+  fixed none), twice what the protocol allows the English line because Spanish runs longer and the
+  answer is one subtitle line, not a paragraph. Unknown keys are dropped.
+- Size: the encoded `BridgeJobResultDto.Done` -- envelope and escapes included, which is what the
+  TV's `POST /api/bridge/jobs/{id}/result` measures and refuses over `MAX_PAYLOAD_BYTES` with a 413
+  `too_large` -- is checked before posting, so a reply inside the char bound but over the body limit
+  is re-asked instead of lost on the way back.
+- One re-ask: a reply that breaks the schema gets a second turn naming the problem in the handler's
+  own words (never Claude's text) followed by the same data document, so it stands on its own even if
+  another job's turn came between. A second bad reply is `Failed("invalid_reply")` -- the code the
+  explain handler uses too -- and there is no third ask. A non-answer (`rate_limited`, `timeout`,
+  `daily_cap`, `api_key_billing`, `claude_error`) is posted as the transport's own `failureResult()`
+  and never re-asked, which is how the TV tells "Claude would not answer" from "Claude answered
+  rubbish".
+- Process: the handler needs a `ClaudeCli` of kind `translate` (anything else is refused at
+  construction), so it never shares a process -- or a system prompt -- with explain (#291).
+  `JobHandlers.claude` builds both conversations from the same CLI, the same `claude.json` settings
+  and the one `DailyCap`, so the day's cap covers translate and explain together.
 
 ## Explain handler (package `com.teachermovies.bridge.explain`, #291)
 - ADR-0005 §7: `ExplainHandler(cli)` is the `explain` `JobHandler`. It takes an `ExplainJobDto` (title,
@@ -474,8 +514,7 @@
   provider is on the runtime classpath, so every command that talks to the TV prints three
   `SLF4J(W)` lines to the real stderr. The tests cannot see them, because they capture the injected
   `Appendable`s instead of the console.
-- Not here yet, each its own issue: the translate handler (#286, which joins `JobHandlers.claude`
-  with a `ClaudeCliTransport` of its own and the same `DailyCap`), and the moviehash itself (#279: the TV
+- Not here yet, each its own issue: the moviehash itself (#279: the TV
   computes it, this module only sends it). The seven-day not-found retry is the TV's
   (`SubtitleFetch.isDue`, #280): the bridge only reports `not_found` and never tracks it itself.
 - The OpenSubtitles credentials follow the token's rule: no command prints them, `doctor` reports
@@ -484,7 +523,7 @@
 - The `laptop-bridge` row in AGENTS.md's module table is the human's edit, not this module's.
 
 ## Tests
-`bash scripts/test.sh :laptop-bridge:test` (thirty test classes as of #291) and
+`bash scripts/test.sh :laptop-bridge:test` (thirty-two test classes as of #286) and
 `./gradlew :laptop-bridge:ktlintCheck` for style. No test touches the network or the real home
 directory: `tv.FakeTv` is a real Ktor CIO server on a loopback port standing in for the TV (the
 criterion "tests run against an in-test Ktor server"), serving `/api/pair`, `/api/status`,
@@ -588,6 +627,14 @@ test queues with `sendFrame`, until `closeStreams()` -- and `POST /api/bridge/jo
   `network*.target` to order itself after was read off `systemctl --user list-unit-files`, and that
   `loginctl enable-linger` with no argument means the calling user off `loginctl(1)`. A real install,
   a reboot with linger and a service that restarts itself are #295's end-to-end verification.
+- `TranslateHandlerTest` (#286, over `FakeClaudeCli`): a good reply posted as the bare Spanish line
+  with no JSON around it, the line sent as the one-field JSON data turn with none of it in the system
+  prompt, an injection attempt staying a JSON string, the re-ask (problem plus the same data) and its
+  success, two bad replies as `invalid_reply` with no third ask and no reply text in the message, a
+  translation inside the char bound but over the result body's byte limit re-asked rather than
+  posted, each non-answer code without a re-ask, a failure on the re-ask, dispatch off the wire
+  through the registry, and the wrong kind of conversation or job refused. `TranslateReplyTest`
+  covers the bound at its edge, code points, what is tolerated and each schema break's wording.
 - `ExplainHandlerTest` (#291, over `FakeClaudeCli`): a good reply posted as the `ExplanationDto` JSON
   with its `promptVersion`, the context sent as a JSON data turn with none of it in the system prompt,
   an injection attempt staying a JSON string, the re-ask (problem plus the same data) and its success,
@@ -595,8 +642,8 @@ test queues with `sendFrame`, until `closeStreams()` -- and `POST /api/bridge/jo
   non-answer code without a re-ask, a failure on the re-ask, the forced-null difference, dispatch off
   the wire through the registry, and the wrong kind of conversation or job refused. `ExplainReplyTest`
   covers every limit at its edge, code points, and each schema break's wording; `JsonReplyTest` the
-  extraction; `JobHandlersTest` the wiring (one explain handler over one explain conversation, none
-  started; no CLI, an unusable `CLAUDE_BIN` and a corrupt `claude.json` as no handler, logged);
+  extraction; `JobHandlersTest` the wiring (one handler per kind over a conversation of its own,
+  none started; no CLI, an unusable `CLAUDE_BIN` and a corrupt `claude.json` as no handler, logged);
   `:bridge-protocol`'s `ExplanationDtoTest` the golden JSON. No test runs the real CLI, so how well
   Sonnet keeps to the limits -- how often the re-ask is needed -- is #295's to observe.
 - The Claude transport (#276) never runs the real CLI: `claude.FakeClaudeMain` is a small Kotlin
