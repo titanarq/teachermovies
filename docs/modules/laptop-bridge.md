@@ -13,6 +13,8 @@
   #277 adds `run`, the long-lived loop that holds the TV's job stream open, answers its jobs through
   a handler registry and reconnects (backoff, then an mDNS browse) for as long as the process is up.
   #272 adds the TV log mirror (package `logs`), which `run` keeps going alongside the job loop.
+  #282 adds the subtitle fetch loop (package `subtitles`), which `run` keeps going too and which
+  drives the OpenSubtitles client against the TV's subtitle routes of #280.
 - Pure JVM, never an Android library, so it depends only on `:bridge-protocol` and never on
   `:http-server` or any other Android module (ADR-0005 §1, AGENTS.md). The Ktor *server* artifacts
   are test-only here, for the in-test fake TV.
@@ -77,7 +79,12 @@
   `JobHandlerRegistry` (default `JobHandlerRegistry.default()`, empty) and the `TvDiscovery`
   (default `JmDnsDiscovery()`) as constructor parameters, which is where #286/#291 add their handlers.
   Next to the job loop, in the same coroutine scope, it runs `TvLogMirror` (see "TV log mirror")
-  into `TvLogFiles.defaultDir(home, env)`; the mirror is cancelled when the job loop ends.
+  into `TvLogFiles.defaultDir(home, env)`; the mirror is cancelled when the job loop ends. Also in
+  that scope, when the OpenSubtitles credentials file (`CredentialsFile.defaultPath`) loads, it runs
+  `SubtitleFetchLoop` (see "Subtitle fetch loop") over one `OpenSubtitlesApi` for the whole process
+  (so the JWT and the quota tracker survive between passes), sharing the CIO client with `TvApi`.
+  A missing, incomplete or unreadable file is said once in the log (path and key names only) and
+  `run` goes on without automatic subtitles; the file is read once, so adding it takes a restart.
 
 ## Configuration (package `com.teachermovies.bridge.config`)
 - Default location `~/.config/teachermovies-bridge/config.json`, or
@@ -134,6 +141,13 @@
 - `postJobResult(baseUrl, token, jobId, result)` -> `POST /api/bridge/jobs/{id}/result` with a
   `BridgeJobResultDto` body: `Success(Unit)` on 204, `Unauthorized` on 401, `Http(status, code, …)`
   otherwise (404 `unknown_job`, 409 `job_closed`, 400).
+- Subtitle routes (#280), all with the bearer header: `subtitleNeeds(baseUrl, token)` ->
+  `GET /api/bridge/subtitle-needs`, a `List<SubtitleNeedDto>`; `postSubtitleStatus(baseUrl, token,
+  SubtitleStatusDto)` -> `POST /api/bridge/subtitle-status`, `Success(Unit)` on 204;
+  `uploadSubtitle(baseUrl, token, torrentId, language, variant?, bytes)` -> multipart
+  `POST /api/bridge/subtitles` (fields `torrentId`, `language`, `variant` only when not null, and
+  `file` as `application/x-subrip` with the placeholder name `subtitle.srt`, which the TV never
+  reads), `SubtitleUploadedDto(path)` on 201. Refusals map onto `ApiFailure` as everywhere else.
 - `ApiResult<T>` is `Success(value)` or `Failure(ApiFailure)`, where `ApiFailure` is `Unauthorized`,
   `Http(status, code, message)` -- carrying the TV's own error code -- or `Network(reason)`. The
   reason is a short diagnostic ("timeout", "unexpected response body", an exception class name) that
@@ -227,6 +241,40 @@
   config file, created `0600`. A job's text or result never reaches it, nor the token. When the
   file cannot be written it says so once on stdout and carries on without it; there is no rotation.
 
+## Subtitle fetch loop (package `com.teachermovies.bridge.subtitles`, #282)
+- ADR-0005 §5: the bridge works through the TV's subtitle needs, searching OpenSubtitles and
+  reporting each result back, without the laptop having to be on all the time.
+- `SubtitleFetchLoop(api, searcher, log, interval = 30 min, sleep, now)`. `searcher` is
+  `opensubtitles.SubtitleSearcher` (`find(SubtitleRequest)`, `quota()`), which `SubtitleFinder`
+  implements (#281).
+- Triggers: `request(reason)` (it is the `SubtitleTrigger` `RunLoop` takes as `subtitles`) on every
+  accepted job stream (`conexión`) and every `subtitles-needed` frame (`aviso de la TV`), and a timer
+  every `interval` (`temporizador`). Requests go through a conflated channel into one consumer, so
+  passes never overlap and any number of requests during a pass become one more pass after it.
+  `run(url, token, onPass)` re-reads the TV URL before every pass (it follows the job loop's mDNS
+  re-discovery) and runs until cancelled.
+- Catch-up: nothing is queued for a bridge that is off (#280); the pass on connect reads the whole
+  needs list, which holds everything that accumulated meanwhile, and works through all of it.
+- A pass: reads `GET /api/bridge/subtitle-needs`; for each need in the TV's order posts
+  `searching`, asks the searcher with the need's language (`en` -> English, `es` -> Spanish), its
+  moviehash and its title, and then: a found subtitle is uploaded with its variant label
+  (`latino` for the last-resort Latin-American one); nothing found is `not_found` (the TV starts its
+  seven-day retry); anything else is `failed` with a short Spanish `message` -- the quota, refused
+  credentials, a rate limit, an OpenSubtitles status or network reason, a refused upload (`la TV
+  no ha aceptado el fichero (413 too_large)`) -- never a credential, the JWT or a body. A language
+  other than `en`/`es` is `failed` without a search; a need whose `searching` the TV refuses (404
+  `unknown_need`, …) is skipped. The result of a pass is `Pass(uploaded, notFound, failed, skipped,
+  stoppedBy)`.
+- Quota: a pass does not start -- not even the list is read -- and stops before its next need while
+  `searcher.quota().isExhausted(now)` (no download left and the reset still ahead). A search
+  answered `QuotaExhausted` is reported `failed` (so the TV lists it again) and ends the pass; so do
+  refused credentials and a rate limit (`Stop.OPENSUBTITLES`), which would fail every need behind
+  them. With `OpenSubtitlesApi` also refusing locally until the reset, the daily quota is never
+  overrun by more than the one 406 that reveals it.
+- Its lines go to the `RunLog`: how many needs each pass found and why it ran, one line per need
+  (title, language, outcome, the stored path), and a summary with the downloads left today. A timer
+  pass with nothing to do writes nothing.
+
 ## TV log mirror (package `com.teachermovies.bridge.logs`, #272)
 - ADR-0006 §5: while `run` is up, the bridge copies the TV's log ring buffer to dated files on the
   laptop, so a TV's history survives the TV process (whose buffer is in memory only).
@@ -276,20 +324,21 @@
   `Appendable`s instead of the console.
 - Not here yet, each its own issue: the job handlers
   themselves (#286 translate, #291 explain, on #276's transport), the Claude Code CLI transport
-  (#276), the systemd user unit and `install-service` (#278), the loop that decides when to search
-  subtitles and uploads them to the TV (#282, through #280's routes), and the moviehash itself (#279:
-  the TV computes it, this module only sends it).
+  (#276), the systemd user unit and `install-service` (#278), and the moviehash itself (#279: the TV
+  computes it, this module only sends it). The seven-day not-found retry is the TV's
+  (`SubtitleFetch.isDue`, #280): the bridge only reports `not_found` and never tracks it itself.
 - The OpenSubtitles credentials follow the token's rule: no command prints them, `doctor` reports
   the file's existence and mode only, and nothing in the `opensubtitles` package puts one -- or the
   JWT -- in a result, a failure or a `toString`.
 - The `laptop-bridge` row in AGENTS.md's module table is the human's edit, not this module's.
 
 ## Tests
-`bash scripts/test.sh :laptop-bridge:test` (nineteen test classes as of #272) and
+`bash scripts/test.sh :laptop-bridge:test` (twenty test classes as of #282) and
 `./gradlew :laptop-bridge:ktlintCheck` for style. No test touches the network or the real home
 directory: `tv.FakeTv` is a real Ktor CIO server on a loopback port standing in for the TV (the
 criterion "tests run against an in-test Ktor server"), serving `/api/pair`, `/api/status`,
-`/api/logs` and (#277) the job stream `GET /api/bridge/jobs` -- a `: ping`, then whatever frames a
+`/api/logs`, (#280) the three subtitle routes -- a scripted needs list that `searching` empties and
+`failed` refills, as the TV does, plus `statusAnswer`/`uploadAnswer` refusals -- and (#277) the job stream `GET /api/bridge/jobs` -- a `: ping`, then whatever frames a
 test queues with `sendFrame`, until `closeStreams()` -- and `POST /api/bridge/jobs/{id}/result`
 (204, or `resultAnswer`), checking the bearer token, recording every request and failing or refusing on demand.
 - `ArgsParserTest`: every flag of every subcommand, the defaults, and each usage error --
@@ -333,6 +382,14 @@ test queues with `sendFrame`, until `closeStreams()` -- and `POST /api/bridge/jo
   `RunLogTest` (format, `0600`, unwritable file), `SseParserTest`, `JmDnsDiscoveryTest` (the name
   filter and URL shape only); `ArgsParserTest`/`BridgeCliTest` cover `run`'s parsing, the missing
   pairing and the 401 exit.
+- `SubtitleFetchLoopTest` (#282, over `FakeTv` and a scripted `SubtitleSearcher`): the pass on the
+  job stream opening catching up on three accumulated needs, a `subtitles-needed` frame running
+  another pass, the 30-minute timer driving passes on its own, `not_found` reported with nothing
+  uploaded, the multipart upload (fields, `latino` variant, text, bearer header), a spent quota
+  failing the need, leaving the rest listed, not even reading the list before the reset and picking
+  up after it, a quota exhausted by the last download stopping before the next need, refused
+  credentials stopping the pass, a network failure failing only its need, a refused upload, an
+  unsupported language, an unreadable list and a refused `searching`.
 - `TvLogMirrorTest` (#272, over a scripted `LogStreamSource` and a fixed UTC clock): the line
   format and daily roll by the entry's own time, `0600`/`0700`, the backfill of a restarted bridge
   from the stored `seq` without duplicates, the whole buffer on a first run, the gap marker on a

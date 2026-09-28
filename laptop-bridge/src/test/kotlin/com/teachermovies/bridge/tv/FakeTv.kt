@@ -2,6 +2,8 @@ package com.teachermovies.bridge.tv
 
 import com.teachermovies.bridge.protocol.LogEntryDto
 import com.teachermovies.bridge.protocol.LogsPageDto
+import com.teachermovies.bridge.protocol.SubtitleNeedDto
+import com.teachermovies.bridge.protocol.SubtitleStatusDto
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -23,6 +25,7 @@ import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.io.Closeable
 import java.util.concurrent.CopyOnWriteArrayList
@@ -88,8 +91,29 @@ class FakeTv : Closeable {
     @Volatile
     var resultAnswer: Answer? = null
 
+    /**
+     * The TV's subtitle needs (#280), served by `GET /api/bridge/subtitle-needs` in this order. Like
+     * the real TV, a `searching` status takes a need off the list and a `failed` one puts it back
+     * (with state `failed`); `not_found` and an upload leave it off.
+     */
+    val subtitleNeeds: MutableList<SubtitleNeedDto> = CopyOnWriteArrayList()
+
+    /** Every `POST /api/bridge/subtitle-status` body accepted, in order. */
+    val subtitleStatuses: MutableList<SubtitleStatusDto> = CopyOnWriteArrayList()
+
+    /** When not null, what `POST /api/bridge/subtitle-status` answers instead of accepting it. */
+    @Volatile
+    var statusAnswer: Answer? = null
+
+    /** What `POST /api/bridge/subtitles` answers (after the token check); 201 by default. */
+    @Volatile
+    var uploadAnswer: Answer? = null
+
     /** Frames still to write on each open `GET /api/bridge/jobs` stream, newest last. */
     private val streams: MutableList<Channel<String>> = CopyOnWriteArrayList()
+
+    /** Needs a `searching` status took off [subtitleNeeds], until answered. */
+    private val claimed: MutableList<SubtitleNeedDto> = CopyOnWriteArrayList()
 
     /** How many job streams the TV has accepted so far. */
     val streamsOpened = AtomicInteger()
@@ -199,6 +223,59 @@ class FakeTv : Closeable {
                         call.error(answer.status, answer.code, "refused by the fake TV")
                     } else {
                         call.respond(HttpStatusCode.NoContent)
+                    }
+                }
+                get("/api/bridge/subtitle-needs") {
+                    call.record()
+                    if (call.refuse()) return@get
+                    if (!call.authorized()) return@get
+                    val body = JSON.encodeToString(ListSerializer(SubtitleNeedDto.serializer()), subtitleNeeds.toList())
+                    call.answer(body, HttpStatusCode.OK)
+                }
+                post("/api/bridge/subtitle-status") {
+                    val body = call.record()
+                    if (call.refuse()) return@post
+                    if (!call.authorized()) return@post
+                    statusAnswer?.let {
+                        call.error(it.status, it.code, "refused by the fake TV")
+                        return@post
+                    }
+                    val status = JSON.decodeFromString(SubtitleStatusDto.serializer(), body)
+                    val need =
+                        subtitleNeeds.firstOrNull {
+                            it.torrentId == status.torrentId && it.language == status.language
+                        } ?: claimed.firstOrNull { it.torrentId == status.torrentId && it.language == status.language }
+                    if (need == null) {
+                        call.error(HttpStatusCode.NotFound, "unknown_need", "No such need")
+                        return@post
+                    }
+                    subtitleStatuses += status
+                    when (status.status) {
+                        "searching" -> {
+                            subtitleNeeds.remove(need)
+                            claimed += need.copy(attempts = need.attempts + 1)
+                        }
+
+                        "failed" -> {
+                            claimed.removeIf { it.torrentId == need.torrentId && it.language == need.language }
+                            subtitleNeeds += need.copy(state = "failed")
+                        }
+
+                        else -> {
+                            claimed.removeIf { it.torrentId == need.torrentId && it.language == need.language }
+                        }
+                    }
+                    call.respond(HttpStatusCode.NoContent)
+                }
+                post("/api/bridge/subtitles") {
+                    call.record()
+                    if (call.refuse()) return@post
+                    if (!call.authorized()) return@post
+                    val answer = uploadAnswer
+                    if (answer != null) {
+                        call.error(answer.status, answer.code, "refused by the fake TV")
+                    } else {
+                        call.answer("{\"path\":\"subs/movie.srt\"}", HttpStatusCode.Created)
                     }
                 }
                 route("{...}") {

@@ -86,7 +86,10 @@ class BridgeCli(
 
             Command.Run -> {
                 val logsDir = TvLogFiles.defaultDir(home, env)
-                withTv { RunCommand(out, err, store, it, registry, discovery, logsDir).run() }
+                val credentials = CredentialsFile(CredentialsFile.defaultPath(home, env))
+                withHttp { client ->
+                    RunCommand(out, err, store, TvApi(client), registry, discovery, logsDir, credentials, client).run()
+                }
             }
         }
 }
@@ -95,10 +98,13 @@ class BridgeCli(
  * Runs [block] with a [TvApi] over a fresh CIO client and closes that client whatever happens: a
  * CLI process holds one client for one subcommand, and `unpair` never opens one at all.
  */
-private suspend fun <T> withTv(block: suspend (TvApi) -> T): T {
+private suspend fun <T> withTv(block: suspend (TvApi) -> T): T = withHttp { block(TvApi(it)) }
+
+/** The CIO client behind [withTv]; `run` also hands it to the OpenSubtitles client (#282). */
+private suspend fun <T> withHttp(block: suspend (HttpClient) -> T): T {
     val httpClient = HttpClient(CIO)
     try {
-        return block(TvApi(httpClient))
+        return block(httpClient)
     } finally {
         httpClient.close()
     }
