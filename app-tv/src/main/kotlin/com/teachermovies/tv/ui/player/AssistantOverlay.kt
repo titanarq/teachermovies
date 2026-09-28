@@ -25,12 +25,14 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.teachermovies.assistant.TranslationFailure
 import com.teachermovies.assistant.TranslationUiState
+import com.teachermovies.assistant.explanation.Explanation
+import com.teachermovies.assistant.explanation.ExplanationUiState
 import com.teachermovies.tv.player.AssistantAction
 import com.teachermovies.tv.player.AssistantKeyMapper
 import com.teachermovies.tv.player.AssistantOverlayState
 
-/** The hint line under the captured text (#86, #92). */
-const val ASSISTANT_HINT = "OK Repetir · DERECHA Escuchar · IZQUIERDA Traducir · ATRÁS Cerrar"
+/** The hint line under the captured text (#86, #293; ADR-0005 §7). */
+const val ASSISTANT_HINT = "OK Repetir · IZQUIERDA Español · DERECHA Explicar · ATRÁS Cerrar"
 
 /** Shown while the captured fragment is replaying (#86). */
 const val ASSISTANT_REPLAYING = "Repitiendo…"
@@ -42,6 +44,38 @@ const val ASSISTANT_SPEAKING = "Hablando…"
 const val TRANSLATION_LOADING = "Traduciendo…"
 const val TRANSLATION_OFFLINE = "Sin conexión para traducir"
 const val TRANSLATION_UNAVAILABLE = "Traducción no disponible"
+
+/** RIGHT's explanation states (#293). */
+const val EXPLANATION_THINKING = "Pensando…"
+const val EXPLANATION_UNAVAILABLE = "Explicación no disponible (enciende el portátil)"
+
+/**
+ * The lines the overlay draws for [explanation] (#293), top to bottom: none while
+ * [ExplanationUiState.Idle], [EXPLANATION_THINKING] while the request is on its way, the summary, up
+ * to [Explanation.MAX_POINTS] points as `expression: explanation` and the optional subtitle note once
+ * shown, or [EXPLANATION_UNAVAILABLE] on any failure.
+ */
+fun explanationLines(explanation: ExplanationUiState): List<String> =
+    when (explanation) {
+        ExplanationUiState.Idle -> {
+            emptyList()
+        }
+
+        is ExplanationUiState.Thinking -> {
+            listOf(EXPLANATION_THINKING)
+        }
+
+        is ExplanationUiState.Shown -> {
+            val shown = explanation.explanation
+            listOf(shown.summary) +
+                shown.points.take(Explanation.MAX_POINTS).map { "${it.expression}: ${it.explanation}" } +
+                listOfNotNull(shown.subtitleNote)
+        }
+
+        is ExplanationUiState.Unavailable -> {
+            listOf(EXPLANATION_UNAVAILABLE)
+        }
+    }
 
 /**
  * What the overlay draws under the English line for [translation]: null while
@@ -73,11 +107,11 @@ fun translationLine(translation: TranslationUiState): String? =
  * The captured-line overlay (#86): a dimmed band at the bottom of the video with the English
  * [AssistantOverlayState.text] in a large size, the hint line and a replaying indicator. Under the
  * English line (#92) it draws the Spanish translation or its status ([translationLine]) with its
- * [AssistantOverlayState.spanishLabel] ("subtítulo" or "IA", #288), a transient [AssistantOverlayState.message] and a discreet indicator while
- * [AssistantOverlayState.speaking].
+ * [AssistantOverlayState.spanishLabel] ("subtítulo" or "IA", #288), RIGHT's explanation or its status
+ * ([explanationLines], #293) and a discreet indicator while [AssistantOverlayState.speaking].
  *
  * It takes focus as soon as it appears and maps every key-down through
- * [AssistantKeyMapper.map] with the overlay open, so OK/ENTER/PLAY_PAUSE replay, RIGHT speaks the
+ * [AssistantKeyMapper.map] with the overlay open, so OK/ENTER/PLAY_PAUSE replay, RIGHT explains the
  * line, LEFT shows it in Spanish, BACK/DOWN/CAPTIONS dismiss, and every other key is swallowed ([AssistantAction.Consumed]) -- key-ups included -- so
  * nothing behind it reacts. When it leaves composition the player screen takes focus back.
  */
@@ -136,11 +170,18 @@ fun AssistantOverlay(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        state.message?.let { message ->
+        // RIGHT's explanation (#293): the summary stands out, points and note follow smaller.
+        val shown = state.explanation is ExplanationUiState.Shown
+        explanationLines(state.explanation).forEachIndexed { index, line ->
             Text(
-                text = message,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.error,
+                text = line,
+                style =
+                    if (shown && index == 0) {
+                        MaterialTheme.typography.titleLarge
+                    } else {
+                        MaterialTheme.typography.titleMedium
+                    },
+                color = if (shown) Color(0xFFB3E5FC) else Color.White.copy(alpha = 0.85f),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )

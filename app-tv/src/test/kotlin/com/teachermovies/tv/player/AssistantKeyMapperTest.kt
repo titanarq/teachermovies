@@ -76,6 +76,13 @@ class AssistantKeyMapperTest {
     }
 
     @Test
+    fun withTheOverlayOpenUpIsConsumedAndWithItClosedFallsThroughToOpenTheTracksPanel() {
+        assertEquals(AssistantAction.Consumed, AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP, overlayOpen = true))
+        assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP, overlayOpen = false))
+        assertEquals(PlayerAction.ShowTracks, RemoteKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP))
+    }
+
+    @Test
     fun withTheOverlayOpenEveryOtherKeyIsConsumed() {
         otherKeys.forEach { keyCode ->
             assertEquals(
@@ -87,9 +94,9 @@ class AssistantKeyMapperTest {
     }
 
     @Test
-    fun withTheOverlayOpenRightSpeaksTheLineAndLeftTranslatesIt() {
+    fun withTheOverlayOpenRightExplainsTheLineAndLeftTranslatesIt() {
         assertEquals(
-            AssistantAction.SpeakOriginal,
+            AssistantAction.ExplainLine,
             AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = true),
         )
         assertEquals(

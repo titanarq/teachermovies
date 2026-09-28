@@ -10,6 +10,8 @@ import com.teachermovies.assistant.HiddenSubtitleController
 import com.teachermovies.assistant.LineCaptureController
 import com.teachermovies.assistant.SubtitleEngine
 import com.teachermovies.assistant.alignment.SpanishLineLookup
+import com.teachermovies.assistant.explanation.ExplanationController
+import com.teachermovies.assistant.explanation.LineExplainer
 import com.teachermovies.assistant.speech.AndroidTextToSpeechSpeaker
 import com.teachermovies.assistant.speech.Speaker
 import com.teachermovies.assistant.translation.BridgeTranslationProvider
@@ -17,6 +19,7 @@ import com.teachermovies.assistant.translation.PersistentCachingTranslationProvi
 import com.teachermovies.assistant.translation.TranslationProvider
 import com.teachermovies.core.db.TeacherMoviesDatabase
 import com.teachermovies.core.log.RingBufferLogSink
+import com.teachermovies.core.repo.RoomExplanationCacheRepository
 import com.teachermovies.core.repo.RoomSubtitleAlignmentRepository
 import com.teachermovies.core.repo.RoomSubtitleFetchRepository
 import com.teachermovies.core.repo.RoomTorrentRepository
@@ -249,6 +252,20 @@ class AppContainer(
 
     val assistantSpeechController: AssistantSpeechController =
         AssistantSpeechController(speaker, translationProvider, assistantScope)
+
+    /**
+     * RIGHT = "Explicar" (#293, ADR-0005 §7): Claude on the laptop explains the captured line through
+     * the bridge (#292), its real answers kept in Room. Without a bridge the panel shows
+     * `Explicación no disponible (enciende el portátil)`. Nothing is spoken.
+     */
+    val explanationController: ExplanationController =
+        ExplanationController(
+            LineExplainer(
+                HubBridgeExplainGateway(bridgeJobHub),
+                RoomExplanationCacheRepository(torrentDatabase.explanationCacheDao()),
+            ),
+            assistantScope,
+        )
 
     /**
      * LEFT's first answer (#288, ADR-0005 §6): the Spanish subtitle line aligned to the captured
