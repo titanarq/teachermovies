@@ -1,5 +1,7 @@
 package com.teachermovies.bridge.cli
 
+import com.teachermovies.bridge.claude.ClaudeDirs
+import com.teachermovies.bridge.claude.FakeClaude
 import com.teachermovies.bridge.config.BridgeConfig
 import com.teachermovies.bridge.config.BridgeConfigStore
 import com.teachermovies.bridge.config.ConfigLocation
@@ -60,6 +62,17 @@ class BridgeCliTest {
             "OPENSUBTITLES_API_KEY=$osApiKey\nOPENSUBTITLES_USERNAME=usuario-os\nOPENSUBTITLES_PASSWORD=$osPassword\n",
         )
         Files.setPosixFilePermissions(credentialsPath, PosixFilePermissions.fromString("rw-------"))
+    }
+
+    /** A fake `claude` (#276) where `doctor` finds one with no PATH: `~/.local/bin/claude`. */
+    private val fakeClaude by lazy { FakeClaude(tmpFolder.root.toPath().resolve("fake-claude")) }
+
+    private val claudePath: Path
+        get() = home.resolve(".local/bin/claude")
+
+    @Before
+    fun installClaude() {
+        fakeClaude.installAt(claudePath)
     }
 
     @After
@@ -144,8 +157,86 @@ class BridgeCliTest {
         assertTrue(report.contains("versión 1.0"))
         assertTrue(report.contains("el token es válido"))
         assertTrue(report.contains("OK    credenciales OpenSubtitles: $credentialsPath (permisos 0600"))
+        assertTrue(report.contains("OK    Claude Code: $claudePath"))
+        assertTrue(report.contains("OK    sesión de Claude Code: iniciada (claude.ai, plan max)"))
+        assertTrue(
+            report.contains(
+                "OK    ajustes de Claude: modelo sonnet, esfuerzo low, tope 300 trabajos/día (predeterminados",
+            ),
+        )
         assertTrue(report.contains("doctor: todo correcto"))
         assertNoSecrets(osApiKey, osPassword, "usuario-os")
+    }
+
+    @Test
+    fun `doctor reports a Claude Code CLI that is not logged in and how to log in`() {
+        pair()
+        fakeClaude.authAnswer("""{"loggedIn":false}""", exitCode = 1)
+        out.setLength(0)
+
+        assertEquals(1, run("doctor"))
+
+        val report = out.toString()
+        assertTrue(report.contains("FALLO sesión de Claude Code: no hay sesión iniciada"))
+        assertTrue(report.contains("-> inicia sesión con: $claudePath auth login"))
+        assertTrue(report.contains("doctor: 1 problema"))
+    }
+
+    @Test
+    fun `doctor reports a missing Claude Code CLI and where it looked`() {
+        pair()
+        Files.delete(claudePath)
+        out.setLength(0)
+
+        assertEquals(1, run("doctor"))
+
+        val report = out.toString()
+        assertTrue(report.contains("FALLO Claude Code: no se encuentra 'claude' en el PATH ni en ~/.local/bin"))
+        assertTrue(report.contains("CLAUDE_BIN"))
+        assertFalse(report.contains("sesión de Claude Code"))
+        assertTrue(report.contains("doctor: 1 problema"))
+    }
+
+    @Test
+    fun `doctor reports a CLAUDE_BIN that does not exist rather than looking elsewhere`() {
+        pair()
+        out.setLength(0)
+        val wrong = home.resolve("no-existe/claude")
+
+        val env = { name: String -> if (name == "CLAUDE_BIN") wrong.toString() else null }
+        assertEquals(1, BridgeCli(out, err, home = home, env = env).run(arrayOf("doctor")))
+
+        assertTrue(out.toString().contains("FALLO Claude Code: CLAUDE_BIN=$wrong no existe"))
+    }
+
+    @Test
+    fun `doctor reports an unusable claude json next to the config`() {
+        pair()
+        Files.writeString(configPath.resolveSibling("claude.json"), """{"turnTimeoutSeconds":0}""")
+        out.setLength(0)
+
+        assertEquals(1, run("doctor"))
+
+        assertTrue(
+            out.toString().contains(
+                "FALLO ajustes de Claude: ${configPath.resolveSibling("claude.json")} no se puede usar",
+            ),
+        )
+        assertTrue(out.toString().contains("doctor: 1 problema"))
+    }
+
+    @Test
+    fun `doctor shows the stderr tail the last dead Claude process left, as information`() {
+        pair()
+        val tail = ClaudeDirs.default(home) { null }.stderrTail("translate")
+        Files.createDirectories(requireNotNull(tail.parent))
+        Files.writeString(tail, "# proceso 42, código 1\nError: system prompt file not found: /x\n")
+        out.setLength(0)
+
+        assertEquals(0, run("doctor"))
+
+        assertTrue(out.toString().contains("INFO  último stderr de Claude Code ($tail):"))
+        assertTrue(out.toString().contains("Error: system prompt file not found: /x"))
     }
 
     @Test

@@ -1,12 +1,23 @@
 package com.teachermovies.bridge.cli
 
+import com.teachermovies.bridge.claude.AuthStatus
+import com.teachermovies.bridge.claude.ClaudeDirs
+import com.teachermovies.bridge.claude.ClaudeSettings
+import com.teachermovies.bridge.claude.ClaudeSettingsFile
+import com.teachermovies.bridge.claude.ClaudeSettingsLoad
 import com.teachermovies.bridge.config.BridgeConfig
 import com.teachermovies.bridge.config.BridgeConfigStore
 import com.teachermovies.bridge.config.ConfigLoad
 import com.teachermovies.bridge.opensubtitles.CredentialsFile
+import com.teachermovies.bridge.service.ClaudeBinary
+import com.teachermovies.bridge.service.ClaudeLocation
 import com.teachermovies.bridge.tv.ApiResult
 import com.teachermovies.bridge.tv.TvApi
 import com.teachermovies.bridge.tv.TvStatus
+import java.io.IOException
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
 
 /**
  * `teachermovies-bridge doctor` (#271): answers "is this bridge installed, paired and able to talk
@@ -21,12 +32,18 @@ import com.teachermovies.bridge.tv.TvStatus
  * The OpenSubtitles credentials file (#281) is checked last and whatever happened to the config:
  * only that it exists and that its permissions are `0600`. `doctor` never opens it, so none of its
  * contents -- not even whether it is complete -- can reach the report.
+ *
+ * The Claude Code CLI (#276) comes after it, also whatever happened to the config: the binary the
+ * transport would start ([ClaudeBinary]), `claude auth status` -- a login, never a model call --
+ * and whether `claude.json` is usable, followed by the stderr tail of the last Claude process that
+ * died, when there is one, as information rather than a check.
  */
 internal class DoctorCommand(
     private val out: Appendable,
     private val store: BridgeConfigStore,
     private val api: TvApi,
     private val credentials: CredentialsFile,
+    private val claude: ClaudeChecks,
 ) {
     private var problems = 0
 
@@ -157,8 +174,98 @@ internal class DoctorCommand(
         }
     }
 
+    private fun reportClaude() {
+        when (val location = claude.location) {
+            is ClaudeLocation.Found -> {
+                ok("Claude Code", location.path.toString())
+                reportAuth(location.path)
+            }
+
+            is ClaudeLocation.Unusable -> {
+                val why = if (location.exists) "no es ejecutable" else "no existe"
+                problem("Claude Code", "${ClaudeBinary.VARIABLE}=${location.path} $why", CLAUDE_BIN_HINT)
+            }
+
+            ClaudeLocation.Absent -> {
+                problem(
+                    "Claude Code",
+                    "no se encuentra '${ClaudeBinary.EXECUTABLE_NAME}' en el PATH ni en ~/.local/bin",
+                    CLAUDE_BIN_HINT,
+                )
+            }
+        }
+        reportClaudeSettings()
+        reportStderrTails()
+    }
+
+    private fun reportAuth(executable: Path) {
+        when (val status = claude.auth(executable)) {
+            is AuthStatus.LoggedIn -> {
+                val method = status.authMethod ?: "método desconocido"
+                val plan = status.subscriptionType?.let { ", plan $it" }.orEmpty()
+                ok("sesión de Claude Code", "iniciada ($method$plan)")
+            }
+
+            AuthStatus.LoggedOut -> {
+                problem("sesión de Claude Code", "no hay sesión iniciada", "inicia sesión con: $executable auth login")
+            }
+
+            is AuthStatus.Failed -> {
+                problem("sesión de Claude Code", "'claude auth status' ${status.reason}")
+                status.stderr.forEach { out.appendLine("$HINT_INDENT  $it") }
+            }
+        }
+    }
+
+    private fun reportClaudeSettings() {
+        val file = claude.settings
+        when (val load = file.load()) {
+            ClaudeSettingsLoad.Defaults -> {
+                ok("ajustes de Claude", "${settingsText(ClaudeSettings())} (predeterminados; ${file.path} no existe)")
+            }
+
+            is ClaudeSettingsLoad.Loaded -> {
+                ok("ajustes de Claude", "${settingsText(load.settings)} (${file.path})")
+            }
+
+            is ClaudeSettingsLoad.Corrupt -> {
+                problem("ajustes de Claude", "${file.path} no se puede usar (${load.reason})", SETTINGS_HINT)
+            }
+
+            is ClaudeSettingsLoad.Unreadable -> {
+                problem("ajustes de Claude", "${file.path} no se puede leer (${load.reason})", SETTINGS_HINT)
+            }
+        }
+    }
+
+    private fun settingsText(settings: ClaudeSettings): String =
+        "modelo ${settings.model}, esfuerzo ${settings.effort}, tope ${settings.dailyJobCap} trabajos/día"
+
+    /** The stderr each job kind's last dead process left behind (#276): information, not a check. */
+    private fun reportStderrTails() {
+        val files =
+            try {
+                Files.list(claude.dirs.root).use { entries ->
+                    entries.filter { it.fileName.toString().endsWith(ClaudeDirs.STDERR_SUFFIX) }.sorted().toList()
+                }
+            } catch (_: IOException) {
+                return
+            }
+        for (file in files) {
+            val lines =
+                try {
+                    Files.readAllLines(file, StandardCharsets.UTF_8).filter { it.isNotBlank() }
+                } catch (_: IOException) {
+                    continue
+                }
+            out.appendLine("$INFO_LABEL último stderr de Claude Code ($file):")
+            lines.takeLast(STDERR_LINES).forEach { out.appendLine("$HINT_INDENT  $it") }
+        }
+    }
+
     private fun finish(): Int {
         reportCredentials()
+        reportClaude()
         if (problems == 0) {
             out.appendLine("doctor: todo correcto")
             return ExitCode.OK
@@ -190,6 +297,15 @@ internal class DoctorCommand(
         const val BOOT_ID_LENGTH = 8
         const val OK_LABEL = "OK   "
         const val PROBLEM_LABEL = "FALLO"
+        const val INFO_LABEL = "INFO "
+        const val STDERR_LINES = 10
+
+        const val CLAUDE_BIN_HINT =
+            "instala Claude Code (https://claude.com/claude-code) o pon la ruta absoluta del CLI en ${ClaudeBinary.VARIABLE}"
+
+        const val SETTINGS_HINT =
+            "corrige o borra ese fichero: sin él se usan modelo ${ClaudeSettings.DEFAULT_MODEL}, " +
+                "esfuerzo ${ClaudeSettings.DEFAULT_EFFORT} y ${ClaudeSettings.DEFAULT_DAILY_JOB_CAP} trabajos/día"
         const val HINT_INDENT = "      "
 
         const val PAIR_HINT =
@@ -200,3 +316,15 @@ internal class DoctorCommand(
                 "${CredentialsFile.PASSWORD}, y dale permisos $EXPECTED_PERMISSIONS"
     }
 }
+
+/**
+ * What `doctor` needs to check the Claude Code CLI (#276): where the binary is, the settings file,
+ * the transport's directory (for stderr tails) and how to ask `claude auth status` -- injected so a
+ * test drives a fake `claude`.
+ */
+internal class ClaudeChecks(
+    val location: ClaudeLocation,
+    val settings: ClaudeSettingsFile,
+    val dirs: ClaudeDirs,
+    val auth: (Path) -> AuthStatus,
+)
