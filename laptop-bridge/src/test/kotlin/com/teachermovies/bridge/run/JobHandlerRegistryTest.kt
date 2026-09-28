@@ -29,7 +29,7 @@ class JobHandlerRegistryTest {
     }
 
     @Test
-    fun `the shipped registry is empty and answers every job unsupported_kind`() =
+    fun `an empty registry answers every job unsupported_kind`() =
         runBlocking {
             val registry = JobHandlerRegistry.default()
             assertTrue(registry.kinds.isEmpty())

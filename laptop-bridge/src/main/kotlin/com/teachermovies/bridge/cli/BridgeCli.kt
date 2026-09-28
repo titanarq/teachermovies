@@ -9,7 +9,7 @@ import com.teachermovies.bridge.config.ConfigLocation
 import com.teachermovies.bridge.logs.TvLogFiles
 import com.teachermovies.bridge.opensubtitles.CredentialsFile
 import com.teachermovies.bridge.run.JmDnsDiscovery
-import com.teachermovies.bridge.run.JobHandlerRegistry
+import com.teachermovies.bridge.run.RunLog
 import com.teachermovies.bridge.run.TvDiscovery
 import com.teachermovies.bridge.service.ClaudeBinary
 import com.teachermovies.bridge.tv.TvApi
@@ -36,7 +36,9 @@ class BridgeCli(
     private val err: Appendable,
     private val home: Path = ConfigLocation.systemHome(),
     private val env: (String) -> String? = { System.getenv(it) },
-    private val registry: JobHandlerRegistry = JobHandlerRegistry.default(),
+    private val jobHandlers: (BridgeConfigStore, RunLog) -> JobHandlers = { store, log ->
+        JobHandlers.claude(home, env, store, log)
+    },
     private val discovery: TvDiscovery = JmDnsDiscovery(),
     private val claudeAuth: (Path) -> AuthStatus = { ClaudeAuth.status(it) },
 ) {
@@ -101,7 +103,8 @@ class BridgeCli(
                 val logsDir = TvLogFiles.defaultDir(home, env)
                 val credentials = CredentialsFile(CredentialsFile.defaultPath(home, env))
                 withHttp { client ->
-                    RunCommand(out, err, store, TvApi(client), registry, discovery, logsDir, credentials, client).run()
+                    val handlers = { log: RunLog -> jobHandlers(store, log) }
+                    RunCommand(out, err, store, TvApi(client), handlers, discovery, logsDir, credentials, client).run()
                 }
             }
 
