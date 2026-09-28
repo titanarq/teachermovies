@@ -2,16 +2,24 @@ package com.teachermovies.bridge.cli
 
 import com.teachermovies.bridge.config.BridgeConfigStore
 import com.teachermovies.bridge.config.ConfigLoad
+import com.teachermovies.bridge.logs.LogStreamSource
+import com.teachermovies.bridge.logs.MirrorCursorStore
+import com.teachermovies.bridge.logs.TvLogFiles
+import com.teachermovies.bridge.logs.TvLogMirror
 import com.teachermovies.bridge.run.JobHandlerRegistry
 import com.teachermovies.bridge.run.RunLog
 import com.teachermovies.bridge.run.RunLoop
 import com.teachermovies.bridge.run.TvDiscovery
 import com.teachermovies.bridge.tv.TvApi
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import java.nio.file.Path
 
 /**
  * `teachermovies-bridge run` (#277): the long-lived process the systemd user unit of #278 keeps up.
  * Checks there is a pairing, then hands over to [RunLoop], which logs to [out] and to
- * `bridge.log` next to the config file. It returns -- [ExitCode.FAILED] -- only when there is no
+ * `bridge.log` next to the config file, and alongside it to [TvLogMirror] (#272), which copies the
+ * TV log into dated files in [logsDir]. It returns -- [ExitCode.FAILED] -- only when there is no
  * usable pairing or the TV refuses the token; otherwise it runs until the process is stopped.
  */
 internal class RunCommand(
@@ -21,6 +29,7 @@ internal class RunCommand(
     private val api: TvApi,
     private val registry: JobHandlerRegistry,
     private val discovery: TvDiscovery,
+    private val logsDir: Path,
 ) {
     suspend fun run(): Int {
         val config =
@@ -43,9 +52,29 @@ internal class RunCommand(
             }
         if (!config.isPaired) return fail("Este portátil no está emparejado con ninguna TV. $PAIR_HINT")
         val log = RunLog(out, store.path.resolveSibling(RunLog.FILE_NAME))
-        return when (RunLoop(api, store, registry, log, discovery).run(config)) {
+        val token = checkNotNull(config.token)
+        val end =
+            coroutineScope {
+                val mirror =
+                    launch {
+                        TvLogMirror(
+                            LogStreamSource.of(api),
+                            TvLogFiles(logsDir),
+                            MirrorCursorStore(logsDir.resolve(MirrorCursorStore.FILE_NAME)),
+                            log,
+                        ).run({ currentTvUrl(config.tvUrl) }, token)
+                    }
+                RunLoop(api, store, registry, log, discovery).run(config).also { mirror.cancel() }
+            }
+        return when (end) {
             RunLoop.End.Unauthorized -> fail("La TV ya no acepta el token de este portátil. $PAIR_HINT")
         }
+    }
+
+    /** The URL the job loop last saved -- it moves after an mDNS re-discovery -- or [fallback]. */
+    private fun currentTvUrl(fallback: String?): String {
+        val saved = (store.load() as? ConfigLoad.Loaded)?.config?.tvUrl
+        return checkNotNull(saved ?: fallback)
     }
 
     private fun fail(message: String): Int {

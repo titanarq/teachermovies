@@ -12,13 +12,14 @@
   yet besides `doctor`'s credentials check: #282's fetch loop will drive it (see "Boundaries").
   #277 adds `run`, the long-lived loop that holds the TV's job stream open, answers its jobs through
   a handler registry and reconnects (backoff, then an mDNS browse) for as long as the process is up.
+  #272 adds the TV log mirror (package `logs`), which `run` keeps going alongside the job loop.
 - Pure JVM, never an Android library, so it depends only on `:bridge-protocol` and never on
   `:http-server` or any other Android module (ADR-0005 §1, AGENTS.md). The Ktor *server* artifacts
   are test-only here, for the in-test fake TV.
 - This doc covers `:bridge-protocol` too, which has no label or doc of its own (AGENTS.md): the
   pure-JVM DTOs shared with `:http-server` -- `LogsPageDto(bootId, entries)` of
   `LogEntryDto(seq, timeMs, level, module, message)`, and `LogStreamBootDto(bootId)`, the first
-  frame of the SSE stream that #272 mirrors and this module does not call yet.
+  frame of the SSE stream that the log mirror (#272) reads.
 - Every string it prints is Spanish, the product's language; the code and this doc are English.
 
 ## Command line (package `com.teachermovies.bridge.cli`)
@@ -75,6 +76,8 @@
   a connection to retry: exit 1, "La TV ya no acepta el token de este portátil". `BridgeCli` takes the
   `JobHandlerRegistry` (default `JobHandlerRegistry.default()`, empty) and the `TvDiscovery`
   (default `JmDnsDiscovery()`) as constructor parameters, which is where #286/#291 add their handlers.
+  Next to the job loop, in the same coroutine scope, it runs `TvLogMirror` (see "TV log mirror")
+  into `TvLogFiles.defaultDir(home, env)`; the mirror is cancelled when the job loop ends.
 
 ## Configuration (package `com.teachermovies.bridge.config`)
 - Default location `~/.config/teachermovies-bridge/config.json`, or
@@ -224,17 +227,54 @@
   config file, created `0600`. A job's text or result never reaches it, nor the token. When the
   file cannot be written it says so once on stdout and carries on without it; there is no rotation.
 
+## TV log mirror (package `com.teachermovies.bridge.logs`, #272)
+- ADR-0006 §5: while `run` is up, the bridge copies the TV's log ring buffer to dated files on the
+  laptop, so a TV's history survives the TV process (whose buffer is in memory only).
+- Directory: `$TEACHERMOVIES_TV_LOGS_DIR` when set and non-blank (a leading `~` is the home
+  directory), otherwise `.cache/tv-logs` against the process's working directory
+  (`TvLogFiles.defaultDir`); always absolute. Created `0700`; every file `0600`.
+- Files: `<yyyy-mm-dd>.log`, one line per entry, `<ISO> <L> <module> <msg>` -- the entry's own
+  `timeMs` as `yyyy-MM-dd'T'HH:mm:ss.SSSXXX` in the laptop's time zone, the level's initial
+  (`D`/`I`/`W`/`E`), the module (whitespace -> `_`), the message with its line breaks written as a
+  literal `\n`. An entry goes to the file of the day its own time falls on, so the files roll daily
+  even for backfilled lines. Starting a day's file deletes the dated files more than 14 days older
+  than today (`TvLogFiles.KEEP_DAYS`); other files in the directory are left alone.
+- Cursor: `cursor.json` in the same directory, `MirrorCursor(bootId, seq)` of the last entry
+  written, saved after every line (a `0600` temporary file moved over the old one atomically). The
+  stream is opened with `since = <seq>` (no `since` on the first run: the whole buffer), and an
+  entry at or below the cursor is dropped, so a restarted bridge neither repeats nor skips a line
+  the TV still holds. A cursor that is missing or unreadable means "copy the whole buffer". A crash
+  between a line and its cursor save can repeat that one line.
+- TV restart: the stream's first frame `boot` names the TV process. A `bootId` other than the
+  cursor's writes a gap line -- `<ISO now> - bridge ===== la TV ha vuelto a arrancar (arranque
+  <old8> -> <new8>): lo que no se copió antes del reinicio se ha perdido =====`, level column `-`
+  so a filter on `E`/`W` never hides it -- to today's file, and the cursor starts over at
+  `(newBoot, 0)`. A stream that had been opened with a positive `since` is missing the new boot's
+  first lines, so it is dropped and reopened at once from `since = 0`.
+- Reconnect: any other end of the stream (closed, broken, a non-401 status such as a 404 from a TV
+  older than #269) waits `Backoff(max = 30 s)` -- 1 s doubling up to 30 s, reset once a stream is
+  accepted -- and asks again. The TV URL is re-read from the config before every attempt, so the
+  mirror follows the job loop's mDNS re-discovery. A failed write (disk full, unwritable
+  directory) stops the stream without moving the cursor, so the retry asks for that line again. A
+  401 ends the mirror; the job loop, refused the same way, is what ends `run`.
+- Its events (copying into a directory, the restart, each problem) go to the same `RunLog` as the
+  job loop, each different problem once until a stream opens again. The copied lines themselves
+  are not echoed there.
+- `TvApi.logStream(baseUrl, token, since, onOpen, onEvent)` -> `GET /api/logs/stream?since=`
+  with the bearer header only (the TV refuses `?token=` there): the same SSE reader and socket
+  timeout as `jobStream`, except that `onEvent` returning false stops the stream (`Closed`).
+
 ## Boundaries
 - The bridge token and the PIN are never printed to stdout or stderr, and the module has no logging
   framework of its own for them to reach: `doctor` and `logs` say that a token is stored and valid,
   never what it is. The TV's ring buffer arrives already redacted by the TV (`LogRedactor`,
-  ADR-0006 §3) and this module prints those lines verbatim, adding no redaction of its own -- worth
-  remembering when #272 writes them to a file on the laptop.
+  ADR-0006 §3) and this module prints those lines verbatim, adding no redaction of its own -- also
+  in the mirror's files (#272), which is one reason they are `0600` in a `0700` directory.
 - Known noise, no secret involved: `slf4j-api` arrives transitively with the Ktor client and no
   provider is on the runtime classpath, so every command that talks to the TV prints three
   `SLF4J(W)` lines to the real stderr. The tests cannot see them, because they capture the injected
   `Appendable`s instead of the console.
-- Not here yet, each its own issue: tailing the TV log to a local file (#272), the job handlers
+- Not here yet, each its own issue: the job handlers
   themselves (#286 translate, #291 explain, on #276's transport), the Claude Code CLI transport
   (#276), the systemd user unit and `install-service` (#278), the loop that decides when to search
   subtitles and uploads them to the TV (#282, through #280's routes), and the moviehash itself (#279:
@@ -245,7 +285,7 @@
 - The `laptop-bridge` row in AGENTS.md's module table is the human's edit, not this module's.
 
 ## Tests
-`bash scripts/test.sh :laptop-bridge:test` (seventeen test classes as of #277) and
+`bash scripts/test.sh :laptop-bridge:test` (nineteen test classes as of #272) and
 `./gradlew :laptop-bridge:ktlintCheck` for style. No test touches the network or the real home
 directory: `tv.FakeTv` is a real Ktor CIO server on a loopback port standing in for the TV (the
 criterion "tests run against an in-test Ktor server"), serving `/api/pair`, `/api/status`,
@@ -293,6 +333,16 @@ test queues with `sendFrame`, until `closeStreams()` -- and `POST /api/bridge/jo
   `RunLogTest` (format, `0600`, unwritable file), `SseParserTest`, `JmDnsDiscoveryTest` (the name
   filter and URL shape only); `ArgsParserTest`/`BridgeCliTest` cover `run`'s parsing, the missing
   pairing and the 401 exit.
+- `TvLogMirrorTest` (#272, over a scripted `LogStreamSource` and a fixed UTC clock): the line
+  format and daily roll by the entry's own time, `0600`/`0700`, the backfill of a restarted bridge
+  from the stored `seq` without duplicates, the whole buffer on a first run, the gap marker on a
+  `bootId` change with the reopen from 0 (and no reopen when already reading from 0), backoff
+  1/2/4/8/16/30/30 s and its reset, 401 ending the mirror, a failed write keeping the cursor,
+  unreadable frames skipped, the URL re-read each attempt, the 14-day pruning and the directory
+  default and variable. `TvLogMirrorOverTvTest` runs it over the real `TvApi.logStream` against
+  `FakeTv` (whose `/api/logs/stream` sends `boot`, the `logsPage` entries after `since`, then what
+  `sendLog` queues): backlog, a live line, and a TV restart. `TvApiTest` covers `logStream`'s query,
+  header, frames, stop and 401.
 - No JVM test covers the JmDNS browse itself (it needs a LAN with multicast and a TV announcing on
   it), nor `run` against the real `:http-server` hub: `FakeTv` spells the #275 contract out from
   `docs/modules/http-server.md`.
