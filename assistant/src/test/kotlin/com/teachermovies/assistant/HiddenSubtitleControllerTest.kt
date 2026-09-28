@@ -565,6 +565,148 @@ class HiddenSubtitleControllerTest {
             assertTrue(player.extractionCalls.isEmpty())
         }
 
+    // -- The downloaded fallback (#284) --
+
+    @Test
+    fun `without a sidecar and without an English track the downloaded English file is used`() =
+        runTest {
+            writeSubtitle("subs/movie.en.opensubtitles.srt")
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-es", "Espanol", "es")))
+            player.selectSubtitle("sub-es")
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            player.emitPosition(1_500L)
+            runCurrent()
+
+            val result = controller.start(mediaFile)
+            runCurrent()
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.DOWNLOADED), result)
+            assertTrue(controller.active.value)
+            assertTrue(player.extractionCalls.isEmpty())
+            assertEquals("Hello there.", engine.currentSubtitle.value?.text)
+            // The download hides the player's own subtitles and keeps them hidden, as the other two
+            // sources do.
+            assertNull(player.selectedSubtitleId.value)
+            player.selectSubtitle("sub-es")
+            runCurrent()
+            assertNull(player.selectedSubtitleId.value)
+        }
+
+    @Test
+    fun `a sidecar wins over the downloaded English file`() =
+        runTest {
+            writeSubtitle("movie.en.srt", OTHER_SRT)
+            writeSubtitle("subs/movie.en.opensubtitles.srt")
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-en", "English", "en")))
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            player.emitPosition(1_500L)
+            runCurrent()
+
+            val result = controller.start(mediaFile)
+            runCurrent()
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.SIDECAR), result)
+            assertEquals("From the container.", engine.currentSubtitle.value?.text)
+            assertTrue(player.extractionCalls.isEmpty())
+        }
+
+    @Test
+    fun `an embedded English track wins over the downloaded English file`() =
+        runTest {
+            writeSubtitle("subs/movie.en.opensubtitles.srt", OTHER_SRT)
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-en", "English", "en")))
+            player.emitExtractionText(SRT, SubtitleFormat.SRT)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            player.emitPosition(1_500L)
+            runCurrent()
+
+            val result = controller.start(mediaFile)
+            runCurrent()
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.EMBEDDED), result)
+            assertEquals(listOf("sub-en"), player.extractionCalls)
+            assertEquals("Hello there.", engine.currentSubtitle.value?.text)
+        }
+
+    @Test
+    fun `a downloaded Spanish subtitle is never the hidden English track`() =
+        runTest {
+            writeSubtitle("subs/movie.es.opensubtitles.srt")
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-es", "Espanol", "es")))
+            player.selectSubtitle("sub-es")
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+
+            val result = controller.start(mediaFile)
+            runCurrent()
+
+            assertEquals(HiddenModeResult.NoSubtitleFile, result)
+            assertFalse(controller.active.value)
+            assertNull(engine.currentSubtitle.value)
+            assertEquals("sub-es", player.selectedSubtitleId.value)
+        }
+
+    @Test
+    fun `a downloaded file without cues gives Unreadable`() =
+        runTest {
+            writeSubtitle("subs/movie.en.opensubtitles.srt", "no cues here")
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("sub-es", "Espanol", "es")))
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+
+            val result = controller.start(mediaFile)
+
+            assertTrue("was $result", result is HiddenModeResult.Unreadable)
+            assertFalse(controller.active.value)
+            assertNull(engine.currentSubtitle.value)
+        }
+
+    @Test
+    fun `the downloaded file is only reached once the wait for the embedded tracks is over`() =
+        runTest {
+            writeSubtitle("subs/movie.en.opensubtitles.srt")
+            // No tracks are ever published: the download is the last resort, so the wait comes first.
+            val player = FakePlayer()
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            val startedAt = currentTime
+
+            val result = controller.start(mediaFile)
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.DOWNLOADED), result)
+            assertEquals(HiddenSubtitleController.TRACKS_TIMEOUT_MS, currentTime - startedAt)
+            assertTrue(controller.active.value)
+        }
+
+    @Test
+    fun `stop while start waits for tracks leaves the downloaded file unused`() =
+        runTest {
+            writeSubtitle("subs/movie.en.opensubtitles.srt")
+            val player = FakePlayer()
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+
+            val pending = async { controller.start(mediaFile) }
+            runCurrent()
+            assertFalse(pending.isCompleted)
+
+            controller.stop()
+            runCurrent()
+
+            assertTrue(pending.isCompleted)
+            assertEquals(HiddenModeResult.NoSubtitleFile, pending.await())
+            assertFalse(controller.active.value)
+            assertNull(engine.currentSubtitle.value)
+        }
+
     @Test
     fun `embedded tracks published after start began are waited for and used`() =
         runTest {

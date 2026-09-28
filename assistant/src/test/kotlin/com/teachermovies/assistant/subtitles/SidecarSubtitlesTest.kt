@@ -118,6 +118,23 @@ class SidecarSubtitlesTest {
     }
 
     @Test
+    fun `ignores the file the bridge downloaded, for any language`() {
+        touch("movie.en.opensubtitles.srt")
+        touch("subs/movie.es.opensubtitles.srt")
+
+        assertNull(SidecarSubtitles.findFor(mediaFile))
+        assertNull(SidecarSubtitles.findFor(mediaFile, language = "es"))
+    }
+
+    @Test
+    fun `a sidecar wins over the download of the same language`() {
+        touch("movie.en.opensubtitles.srt")
+        val expected = touch("Subs/movie.en.srt")
+
+        assertEquals(expected, SidecarSubtitles.findFor(mediaFile))
+    }
+
+    @Test
     fun `returns null when only other languages and unsupported files are present`() {
         touch("movie.es.srt")
         touch("movie.txt")
