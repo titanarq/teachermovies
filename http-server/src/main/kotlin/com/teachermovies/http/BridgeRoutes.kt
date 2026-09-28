@@ -4,6 +4,8 @@ import com.teachermovies.bridge.protocol.BridgeCancelDto
 import com.teachermovies.bridge.protocol.BridgeJobDto
 import com.teachermovies.bridge.protocol.BridgeJobProtocol
 import com.teachermovies.bridge.protocol.BridgeJobResultDto
+import com.teachermovies.bridge.protocol.BridgeSubtitleProtocol
+import com.teachermovies.bridge.protocol.SubtitlesNeededDto
 import com.teachermovies.http.auth.TokenScope
 import com.teachermovies.http.auth.requireBearer
 import com.teachermovies.http.bridge.BridgeStreamEvent
@@ -37,6 +39,10 @@ private const val PING_INTERVAL_MS = 15_000L
  * `GET /api/bridge/jobs` and `POST /api/bridge/jobs/{id}/result` (#275, ADR-0005 §2): the laptop
  * bridge's side of [ServerDeps.bridge]. Bridge tokens only, in the `Authorization` header only
  * (ADR-0005 §4): a phone token or a `?token=` is 401.
+ *
+ * The job stream is the bridge's one connection, so it also carries the `subtitles-needed` nudge of
+ * #280 that `BridgeJobHub.notifySubtitlesNeeded` queues; the subtitle routes themselves are
+ * [bridgeSubtitleRoutes].
  */
 internal fun Route.bridgeRoutes(deps: ServerDeps) {
     requireBearer(deps.pairing, setOf(TokenScope.BRIDGE)) {
@@ -132,6 +138,13 @@ private fun BridgeStreamEvent.toFrame(): String =
             SseFormat.event(
                 BridgeJobProtocol.CANCEL_EVENT,
                 bridgeJson.encodeToString(BridgeCancelDto.serializer(), BridgeCancelDto(id)),
+            )
+        }
+
+        is BridgeStreamEvent.SubtitlesNeeded -> {
+            SseFormat.event(
+                BridgeSubtitleProtocol.SUBTITLES_NEEDED_EVENT,
+                bridgeJson.encodeToString(SubtitlesNeededDto.serializer(), SubtitlesNeededDto(torrentId)),
             )
         }
     }

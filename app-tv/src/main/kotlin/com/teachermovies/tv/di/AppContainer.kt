@@ -21,6 +21,7 @@ import com.teachermovies.core.repo.RoomSubtitleAlignmentRepository
 import com.teachermovies.core.repo.RoomSubtitleFetchRepository
 import com.teachermovies.core.repo.RoomTorrentRepository
 import com.teachermovies.core.repo.RoomTranslationCacheRepository
+import com.teachermovies.core.repo.SubtitleFetchRepository
 import com.teachermovies.core.repo.TorrentRepository
 import com.teachermovies.core.settings.DataStoreSettingsRepository
 import com.teachermovies.core.settings.SettingsRepository
@@ -58,6 +59,7 @@ import com.teachermovies.tv.net.LanAddressResolver
 import com.teachermovies.tv.player.AlignedSpanishSource
 import com.teachermovies.tv.player.LookupAlignedSpanishSource
 import com.teachermovies.tv.player.SpanishSubtitleFinder
+import com.teachermovies.tv.subtitles.SubtitleNeedsCoordinator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -139,6 +141,14 @@ class AppContainer(
     private val torrentDatabase: TeacherMoviesDatabase = TeacherMoviesDatabase.build(application)
 
     val torrentRepository: TorrentRepository = RoomTorrentRepository(torrentDatabase.torrentDao())
+
+    /**
+     * The automatic-subtitle fetch state (#274, ADR-0005 §5) of every movie and language: what the
+     * bridge's subtitle routes publish and update (#280), in the same database as the torrents so it
+     * survives a restart.
+     */
+    val subtitleFetchRepository: SubtitleFetchRepository =
+        RoomSubtitleFetchRepository(torrentDatabase.subtitleFetchStateDao())
 
     // Lives for the process (no owner to cancel it): `engineRepositorySync` collects the engine for
     // as long as the process runs, same as `TorrentEngineHolder`'s own scope.
@@ -222,8 +232,9 @@ class AppContainer(
     /**
      * The laptop bridge's job hub (#275, ADR-0005 §2), one for the process: the instance behind
      * `/api/bridge/jobs` (passed to every server restart through [serverDeps], so Configuración's
-     * "Portátil (Claude)" state (#289) does not reset with the server) and the one the assistant
-     * submits to.
+     * "Portátil (Claude)" state (#289) does not reset with the server), the one the assistant
+     * submits to, and the one [subtitleNeedsCoordinator] nudges so a movie that just finished
+     * reaches the stream the server is already holding open (#280).
      */
     val bridgeJobHub: BridgeJobHub = BridgeJobHub()
 
@@ -283,6 +294,7 @@ class AppContainer(
                 },
             library = torrentRepository,
             bridge = bridgeJobHub,
+            subtitleFetches = subtitleFetchRepository,
         )
 
     /**
@@ -301,6 +313,21 @@ class AppContainer(
                 RunningServer(server::stop)
             },
         )
+
+    /**
+     * Writes the subtitle needs of every stored movie and tells the paired laptop bridge that one
+     * just finished downloading (#280, ADR-0005 §5), so it looks for its subtitles now instead of on
+     * its next timer pass. Started here, after the server that holds the bridge's stream; it stores
+     * into [subtitleFetchRepository] -- the very rows `/api/bridge/subtitle-needs` publishes -- and
+     * only ever nudges [bridgeJobHub].
+     */
+    val subtitleNeedsCoordinator: SubtitleNeedsCoordinator =
+        SubtitleNeedsCoordinator(
+            library = torrentRepository,
+            fetches = subtitleFetchRepository,
+            notify = { id -> bridgeJobHub.notifySubtitlesNeeded(id) },
+            scope = applicationScope,
+        ).also { it.start() }
 
     /** Announces the TV's HTTP service over NSD (#103); failures only show on its own `state`. */
     val serviceAnnouncer: ServiceAnnouncer = NsdServiceAnnouncer(AndroidNsdRegistrar(application))

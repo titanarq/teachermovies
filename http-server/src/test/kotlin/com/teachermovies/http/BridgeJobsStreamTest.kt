@@ -1,5 +1,6 @@
 package com.teachermovies.http
 
+import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
 import com.teachermovies.http.auth.InMemorySettingsRepository
 import com.teachermovies.http.auth.PairResult
@@ -164,6 +165,29 @@ class BridgeJobsStreamTest {
                             next.cancel()
                             assertEquals("cancel" to """{"id":"job-2"}""", readEvent(newerChannel))
                         }
+                }
+        }
+
+    @Test
+    fun `a subtitles-needed nudge reaches the open stream, and is dropped when none is open`() =
+        withServer { port, client, token ->
+            val movieId = "a".repeat(40)
+            // No stream yet: the nudge is not queued for whoever connects next (#280).
+            hub.notifySubtitlesNeeded(TorrentId(movieId))
+            client
+                .prepareGet("http://127.0.0.1:$port/api/bridge/jobs") {
+                    header(HttpHeaders.Authorization, "Bearer $token")
+                    header(TEST_REMOTE_HEADER, "127.0.0.1")
+                }.execute { response ->
+                    assertEquals(HttpStatusCode.OK, response.status)
+                    val channel = response.bodyAsChannel()
+                    withTimeout(5_000) { hub.connected.first { it } }
+
+                    hub.notifySubtitlesNeeded(TorrentId(movieId))
+                    assertEquals("subtitles-needed" to """{"torrentId":"$movieId"}""", readEvent(channel))
+
+                    hub.notifySubtitlesNeeded()
+                    assertEquals("subtitles-needed" to """{"torrentId":null}""", readEvent(channel))
                 }
         }
 }
