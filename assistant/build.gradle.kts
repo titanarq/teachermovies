@@ -36,7 +36,8 @@ dependencies {
     // caller drives it off a `CoroutineScope` (same reasoning as `:torrent` and `:player`).
     api(libs.kotlinx.coroutines.core)
     // Official Anthropic Java SDK behind `AnthropicTranslationProvider` (#90). `implementation`: no
-    // SDK type appears in this module's public API.
+    // SDK type appears in this module's public API. Dormant since #290 (ADR-0005 §9): nothing wires
+    // the provider, but it and this dependency are kept for a future extension -- do not delete.
     implementation(libs.anthropic.java)
     // Reads the explain handler's JSON document (#291) as a `JsonElement` tree in `Explanation.parse`;
     // no serialization plugin and no serialization type in this module's public API.

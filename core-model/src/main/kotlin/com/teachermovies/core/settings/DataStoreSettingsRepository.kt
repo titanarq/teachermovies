@@ -1,6 +1,7 @@
 package com.teachermovies.core.settings
 
 import android.content.Context
+import androidx.datastore.core.DataMigration
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
@@ -114,10 +115,33 @@ class DataStoreSettingsRepository(
 }
 
 /**
- * Creates the production settings store, backed by `<app files>/datastore/settings.preferences_pb`.
+ * Wipes a stored Anthropic API key (#290, ADR-0005 §9): the API-key translation path is unwired and
+ * the TV stores no key, so one pasted in Configuración before the upgrade is removed the first time
+ * the upgraded app opens its settings. DataStore runs it before the first read and again on every
+ * later open, where [shouldMigrate] finds nothing and it costs one key lookup. The key itself and
+ * [SettingsRepository.setTranslationApiKey] stay, dormant with `AnthropicTranslationProvider`.
+ */
+internal object ClearTranslationApiKeyMigration : DataMigration<Preferences> {
+    override suspend fun shouldMigrate(currentData: Preferences): Boolean = TRANSLATION_API_KEY in currentData
+
+    override suspend fun migrate(currentData: Preferences): Preferences =
+        currentData.toMutablePreferences().apply { remove(TRANSLATION_API_KEY) }.toPreferences()
+
+    override suspend fun cleanUp() = Unit
+}
+
+/** The migrations the production settings store runs on open, oldest first. */
+internal val SETTINGS_MIGRATIONS: List<DataMigration<Preferences>> = listOf(ClearTranslationApiKeyMigration)
+
+/**
+ * Creates the production settings store, backed by `<app files>/datastore/settings.preferences_pb`,
+ * running [SETTINGS_MIGRATIONS] on open.
  *
  * DataStore rejects a second instance over a file one is already active on, so the caller keeps the
  * returned store -- `AppContainer` does, once (ADR-0003).
  */
 fun Context.settingsDataStore(): DataStore<Preferences> =
-    PreferenceDataStoreFactory.create(produceFile = { preferencesDataStoreFile(DATA_STORE_NAME) })
+    PreferenceDataStoreFactory.create(
+        migrations = SETTINGS_MIGRATIONS,
+        produceFile = { preferencesDataStoreFile(DATA_STORE_NAME) },
+    )
