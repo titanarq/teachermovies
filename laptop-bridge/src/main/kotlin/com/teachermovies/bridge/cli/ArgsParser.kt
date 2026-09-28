@@ -27,6 +27,7 @@ internal object ArgsParser {
           unpair   olvida el emparejamiento guardado (borra el fichero de configuración)
           doctor   comprueba la configuración, sus permisos y la conexión con la TV
           logs     imprime una página del registro de la TV
+          run      atiende los trabajos de la TV y se reconecta sola mientras el proceso viva
 
         Opciones de 'pair':
           --url <url>      URL de la TV, por ejemplo http://192.168.1.20:8787 (obligatoria)
@@ -100,6 +101,11 @@ internal object ArgsParser {
                 "doctor" -> {
                     rejectOptions(rest.drop(1))
                     Command.Doctor
+                }
+
+                "run" -> {
+                    rejectOptions(rest.drop(1))
+                    Command.Run
                 }
 
                 "logs" -> {
