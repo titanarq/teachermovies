@@ -3,6 +3,7 @@ package com.teachermovies.bridge.cli
 import com.teachermovies.bridge.config.BridgeConfig
 import com.teachermovies.bridge.config.BridgeConfigStore
 import com.teachermovies.bridge.config.ConfigLocation
+import com.teachermovies.bridge.opensubtitles.CredentialsFile
 import com.teachermovies.bridge.protocol.LogsPageDto
 import com.teachermovies.bridge.tv.FakeTv
 import com.teachermovies.bridge.tv.jsonField
@@ -10,6 +11,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -40,6 +42,24 @@ class BridgeCliTest {
 
     private val configPath: Path
         get() = ConfigLocation.configFile(null, home) { null }
+
+    /** Where `doctor` looks for the OpenSubtitles credentials (#281) under this test's home. */
+    private val credentialsPath: Path
+        get() = CredentialsFile.defaultPath(home) { null }
+
+    private val osPassword = "contraseña-opensubtitles-7c1e"
+    private val osApiKey = "clave-api-opensubtitles-55aa"
+
+    /** Every test starts with a well-kept credentials file, so only the tests about it see it fail. */
+    @Before
+    fun writeCredentials() {
+        Files.createDirectories(requireNotNull(credentialsPath.parent))
+        Files.writeString(
+            credentialsPath,
+            "OPENSUBTITLES_API_KEY=$osApiKey\nOPENSUBTITLES_USERNAME=usuario-os\nOPENSUBTITLES_PASSWORD=$osPassword\n",
+        )
+        Files.setPosixFilePermissions(credentialsPath, PosixFilePermissions.fromString("rw-------"))
+    }
 
     @After
     fun tearDown() {
@@ -122,8 +142,64 @@ class BridgeCliTest {
         assertTrue(report.contains("emparejado: ${tv.baseUrl}"))
         assertTrue(report.contains("versión 1.0"))
         assertTrue(report.contains("el token es válido"))
+        assertTrue(report.contains("OK    credenciales OpenSubtitles: $credentialsPath (permisos 0600"))
         assertTrue(report.contains("doctor: todo correcto"))
-        assertNoSecrets()
+        assertNoSecrets(osApiKey, osPassword, "usuario-os")
+    }
+
+    @Test
+    fun `doctor reports missing OpenSubtitles credentials and what the file needs`() {
+        pair()
+        Files.delete(credentialsPath)
+        out.setLength(0)
+
+        assertEquals(1, run("doctor"))
+
+        val report = out.toString()
+        assertTrue(report.contains("FALLO credenciales OpenSubtitles: no existe $credentialsPath"))
+        assertTrue(report.contains("OPENSUBTITLES_API_KEY"))
+        assertTrue(report.contains("doctor: 1 problema"))
+    }
+
+    @Test
+    fun `doctor reports loose credentials permissions without printing the file`() {
+        pair()
+        Files.setPosixFilePermissions(credentialsPath, PosixFilePermissions.fromString("rw-r--r--"))
+        out.setLength(0)
+
+        assertEquals(1, run("doctor"))
+
+        val report = out.toString()
+        assertTrue(report.contains("FALLO credenciales OpenSubtitles: 0644 en $credentialsPath"))
+        assertTrue(report.contains("chmod 0600 $credentialsPath"))
+        assertNoSecrets(osApiKey, osPassword, "usuario-os")
+    }
+
+    @Test
+    fun `doctor checks the credentials even without a config, and never opens them`() {
+        // Unreadable to its owner too: doctor must still report it by existence and mode alone.
+        Files.setPosixFilePermissions(credentialsPath, PosixFilePermissions.fromString("-w-------"))
+
+        assertEquals(1, run("doctor"))
+
+        val report = out.toString()
+        assertTrue(report.contains("no existe $configPath"))
+        assertTrue(report.contains("credenciales OpenSubtitles: 0200 en $credentialsPath"))
+        assertTrue(report.contains("doctor: 2 problemas"))
+    }
+
+    @Test
+    fun `the credentials path can be moved with an environment variable`() {
+        val elsewhere = home.resolve("otra/opensubtitles.env")
+        Files.createDirectories(requireNotNull(elsewhere.parent))
+        Files.move(credentialsPath, elsewhere)
+        pair()
+        out.setLength(0)
+
+        val env = { name: String -> if (name == CredentialsFile.PATH_VARIABLE) elsewhere.toString() else null }
+        assertEquals(0, BridgeCli(out, err, home = home, env = env).run(arrayOf("doctor")))
+
+        assertTrue(out.toString().contains("credenciales OpenSubtitles: $elsewhere"))
     }
 
     @Test
@@ -243,6 +319,27 @@ class BridgeCliTest {
     }
 
     // --- unpair ---
+
+    @Test
+    fun `run without a pairing fails at once and says how to pair (#277)`() {
+        assertEquals(1, run("run"))
+        assertTrue(err.toString().contains("no existe $configPath"))
+        assertTrue(err.toString().contains("teachermovies-bridge pair"))
+    }
+
+    @Test
+    fun `run stops with a failure when the TV no longer accepts the token (#277)`() {
+        pair()
+        val storedToken = tv.token
+        tv.token = "token-renovado"
+
+        assertEquals(1, run("run"))
+
+        assertTrue(out.toString().contains("La TV ha rechazado el token (401)"))
+        assertTrue(err.toString().contains("La TV ya no acepta el token de este portátil."))
+        assertTrue(Files.exists(configPath.resolveSibling("bridge.log")))
+        assertNoSecrets(storedToken)
+    }
 
     @Test
     fun `unpair deletes the config, and doctor then reports no pairing`() {

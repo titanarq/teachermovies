@@ -2,6 +2,10 @@ package com.teachermovies.bridge.cli
 
 import com.teachermovies.bridge.config.BridgeConfigStore
 import com.teachermovies.bridge.config.ConfigLocation
+import com.teachermovies.bridge.opensubtitles.CredentialsFile
+import com.teachermovies.bridge.run.JmDnsDiscovery
+import com.teachermovies.bridge.run.JobHandlerRegistry
+import com.teachermovies.bridge.run.TvDiscovery
 import com.teachermovies.bridge.tv.TvApi
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -26,6 +30,8 @@ class BridgeCli(
     private val err: Appendable,
     private val home: Path = ConfigLocation.systemHome(),
     private val env: (String) -> String? = { System.getenv(it) },
+    private val registry: JobHandlerRegistry = JobHandlerRegistry.default(),
+    private val discovery: TvDiscovery = JmDnsDiscovery(),
 ) {
     /** Runs one invocation and returns the exit code; it never throws for a foreseeable mistake. */
     fun run(args: Array<String>): Int {
@@ -60,10 +66,26 @@ class BridgeCli(
         store: BridgeConfigStore,
     ): Int =
         when (command) {
-            is Command.Pair -> withTv { PairCommand(out, err, store, it).run(command) }
-            Command.Unpair -> UnpairCommand(out, err, store).run()
-            Command.Doctor -> withTv { DoctorCommand(out, store, it).run() }
-            is Command.Logs -> withTv { LogsCommand(out, err, store, it).run(command) }
+            is Command.Pair -> {
+                withTv { PairCommand(out, err, store, it).run(command) }
+            }
+
+            Command.Unpair -> {
+                UnpairCommand(out, err, store).run()
+            }
+
+            Command.Doctor -> {
+                val credentials = CredentialsFile(CredentialsFile.defaultPath(home, env))
+                withTv { DoctorCommand(out, store, it, credentials).run() }
+            }
+
+            is Command.Logs -> {
+                withTv { LogsCommand(out, err, store, it).run(command) }
+            }
+
+            Command.Run -> {
+                withTv { RunCommand(out, err, store, it, registry, discovery).run() }
+            }
         }
 }
 

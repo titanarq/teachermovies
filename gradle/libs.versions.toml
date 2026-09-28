@@ -24,6 +24,8 @@ tvMaterial = "1.1.0"
 room = "2.7.2"
 datastore = "1.1.7"
 ktor = "3.1.3"
+# :laptop-bridge only (#277, ADR-0004 row "JmDNS"): mDNS browse of the TV's `_http._tcp` service.
+jmdns = "3.6.3"
 jlibtorrent = "2.0.12.9"
 libvlc = "3.7.2"
 junit = "4.13.2"
@@ -81,6 +83,9 @@ ktor-client-cio = { group = "io.ktor", name = "ktor-client-cio", version.ref = "
 # :mobile-app (#196, ADR-0004 "Ktor client in `:mobile-app`"): the phone app's TV API client decodes
 # JSON through the client-side ContentNegotiation plugin (with `ktor-serialization-kotlinx-json`).
 ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
+
+# :laptop-bridge (#277, ADR-0005): re-discovers the TV over mDNS when its saved URL stops answering.
+jmdns = { group = "org.jmdns", name = "jmdns", version.ref = "jmdns" }
 
 # Native libraries (ADR-0001): :torrent -- #51, :player -- #75
 jlibtorrent = { group = "com.frostwire", name = "jlibtorrent", version.ref = "jlibtorrent" }

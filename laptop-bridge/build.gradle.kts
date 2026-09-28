@@ -34,6 +34,9 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.kotlinx.coroutines.core)
+    // `run` (#277): an mDNS browse of the TV's `_http._tcp` announcement when the URL saved at
+    // pairing stops answering (ADR-0004 row "JmDNS"). Pure JVM; brings `slf4j-api` along, as Ktor does.
+    implementation(libs.jmdns)
 
     testImplementation(libs.junit)
     // "Tests run against an in-test Ktor server standing in for the TV" (#271): a real CIO server on
