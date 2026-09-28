@@ -199,6 +199,29 @@ generic `ci-host.yml` (agent-os#50).
   module target named in the Definition of done: the control plane keeps reading CI on the
   head SHA as the authority, never the validator's own narrower run, before merging.
 
+- **The validator's own worktree has no Android SDK, so it cannot run `scripts/test.sh` at
+  all and escalates a question CI has already answered.** Found on #273 / PR #327
+  (2026-09-28): the validator requested changes with its test line "NOT SETTLED ... No test
+  ran" -- Gradle stopped at `SDK location not found. Define a valid SDK location with an
+  ANDROID_HOME environment variable or by setting the sdk.dir path in your project's local
+  properties file`, because the review worktree has neither `local.properties` nor those
+  variables. `config/agents.yaml`'s `project.worker_environment` does carry
+  `ANDROID_HOME`/`ANDROID_SDK_ROOT`, but only `agent_os/bin/worker_task.sh` reads it (its
+  `worker-environment` export loop); the validator is a one-shot role launched by
+  `agent_os/bin/agent_task.sh`, which prepares a throwaway worktree under `.cache/` and never
+  exports it, so the review environment is SDK-less by construction. The validator then raised
+  a `status:blocked-on-human` doubt asking the human to choose between fixing that environment
+  and running the tests by hand, when the answer was already on the record: CI on head
+  `1887a7b` was red for exactly one reason, ktlint's max line length at
+  `http-server/src/test/kotlin/com/teachermovies/http/WebUiRouteTest.kt:154` (122 characters,
+  limit 120). The human ruled it settled that way on #273 (02:00 UTC). Workaround already in
+  effect, the same one as the #294 / PR #307 bullet above -- no code change here: the control
+  plane reads CI on the PR's head SHA as the authority on whether tests pass, never the
+  validator's own (possibly SDK-less) run, before merging or before answering a
+  `blocked-on-human` doubt of this shape. The fix itself is upstream: let the validator's launch
+  path read `project.worker_environment` too, or give the review worktree an environment key of
+  its own.
+
 ## Refiner
 
 `config/agents.yaml`'s `refiner_unattended` is `true`: the refiner runs unattended. First
