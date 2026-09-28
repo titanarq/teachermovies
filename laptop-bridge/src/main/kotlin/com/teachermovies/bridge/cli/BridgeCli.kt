@@ -2,6 +2,7 @@ package com.teachermovies.bridge.cli
 
 import com.teachermovies.bridge.config.BridgeConfigStore
 import com.teachermovies.bridge.config.ConfigLocation
+import com.teachermovies.bridge.logs.TvLogFiles
 import com.teachermovies.bridge.opensubtitles.CredentialsFile
 import com.teachermovies.bridge.run.JmDnsDiscovery
 import com.teachermovies.bridge.run.JobHandlerRegistry
@@ -84,7 +85,8 @@ class BridgeCli(
             }
 
             Command.Run -> {
-                withTv { RunCommand(out, err, store, it, registry, discovery).run() }
+                val logsDir = TvLogFiles.defaultDir(home, env)
+                withTv { RunCommand(out, err, store, it, registry, discovery, logsDir).run() }
             }
         }
 }

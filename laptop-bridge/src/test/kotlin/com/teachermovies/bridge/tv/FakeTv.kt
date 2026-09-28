@@ -30,7 +30,8 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * A real Ktor CIO server on a loopback port standing in for the TV (#271): `POST /api/pair` with
- * scoped tokens (#270), `GET /api/status` (ADR-0002) and `GET /api/logs` (ADR-0006 §4), spelled the
+ * scoped tokens (#270), `GET /api/status` (ADR-0002), `GET /api/logs` and (#272) `GET /api/logs/stream`
+ * -- a `boot` frame, the [logsPage] entries after `since`, then whatever [sendLog] queues -- (ADR-0006 §4), spelled the
  * way `docs/modules/http-server.md` documents them and serving the log DTOs of `:bridge-protocol`.
  *
  * It is hand-written rather than the real `:http-server` module because that one is an Android
@@ -103,7 +104,25 @@ class FakeTv : Closeable {
     fun closeStreams() {
         streams.forEach { it.close() }
         streams.clear()
+        logStreams.forEach { it.close() }
+        logStreams.clear()
     }
+
+    /** Frames still to write on each open `GET /api/logs/stream`, newest last (#272). */
+    private val logStreams: MutableList<Channel<String>> = CopyOnWriteArrayList()
+
+    /** Queues one live `log` frame for [entry] on the newest open log stream; false when none is open. */
+    fun sendLog(entry: LogEntryDto): Boolean =
+        logStreams
+            .lastOrNull()
+            ?.trySend(
+                "event: log\ndata: ${JSON.encodeToString(LogEntryDto.serializer(), entry)}\n\n",
+            )?.isSuccess
+            ?: false
+
+    /** How many log streams are open right now. */
+    val openLogStreams: Int
+        get() = logStreams.size
 
     private val server: EmbeddedServer<*, *> =
         embeddedServer(CIO, host = HOST, port = 0) {
@@ -141,6 +160,28 @@ class FakeTv : Closeable {
                     streamsOpened.incrementAndGet()
                     call.response.header(HttpHeaders.CacheControl, "no-cache")
                     call.respondTextWriter(ContentType.Text.EventStream) {
+                        write(": ping\n\n")
+                        flush()
+                        for (frame in frames) {
+                            write(frame)
+                            flush()
+                        }
+                    }
+                }
+                get("/api/logs/stream") {
+                    call.record()
+                    if (call.refuse()) return@get
+                    if (!call.authorized()) return@get
+                    val since = call.request.queryParameters["since"]?.toLong() ?: 0L
+                    val page = logsPage
+                    val frames = Channel<String>(Channel.UNLIMITED)
+                    logStreams += frames
+                    call.response.header(HttpHeaders.CacheControl, "no-cache")
+                    call.respondTextWriter(ContentType.Text.EventStream) {
+                        write("event: boot\ndata: {\"bootId\":\"${page.bootId}\"}\n\n")
+                        for (entry in page.entries.filter { it.seq > since }) {
+                            write("event: log\ndata: ${JSON.encodeToString(LogEntryDto.serializer(), entry)}\n\n")
+                        }
                         write(": ping\n\n")
                         flush()
                         for (frame in frames) {

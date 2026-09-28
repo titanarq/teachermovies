@@ -165,12 +165,46 @@ class TvApi(
         token: String,
         onOpen: suspend () -> Unit,
         onEvent: suspend (SseEvent) -> Unit,
+    ): JobStreamEnd =
+        sseStream(baseUrl, "/api/bridge/jobs", token, since = null, onOpen) { event ->
+            onEvent(event)
+            true
+        }
+
+    /**
+     * `GET /api/logs/stream?since=` with the bridge token (#272, ADR-0006 §4-5): the TV's log ring
+     * buffer as SSE -- an `event: boot` frame ([com.teachermovies.bridge.protocol.LogStreamBootDto]),
+     * the backlog after [since] as one `event: log` frame per entry, then every new line live. A null
+     * [since] is not sent (the whole buffer). The token goes in the header only: the TV refuses
+     * `?token=` on this route.
+     *
+     * Frames reach [onEvent] exactly as on [jobStream], with the same socket timeout; [onEvent]
+     * returning false stops reading and ends the stream as [JobStreamEnd.Closed], which is how a
+     * reader drops a stream it opened with a cursor from another boot.
+     */
+    suspend fun logStream(
+        baseUrl: String,
+        token: String,
+        since: Long?,
+        onOpen: suspend () -> Unit,
+        onEvent: suspend (SseEvent) -> Boolean,
+    ): JobStreamEnd = sseStream(baseUrl, "/api/logs/stream", token, since, onOpen, onEvent)
+
+    /** The one SSE reader behind [jobStream] and [logStream]; it never throws. */
+    private suspend fun sseStream(
+        baseUrl: String,
+        path: String,
+        token: String,
+        since: Long?,
+        onOpen: suspend () -> Unit,
+        onEvent: suspend (SseEvent) -> Boolean,
     ): JobStreamEnd {
         var opened = false
         return try {
             client
-                .prepareGet(url(baseUrl, "/api/bridge/jobs")) {
+                .prepareGet(url(baseUrl, path)) {
                     bearerAuth(token)
+                    parameter("since", since)
                     header(HttpHeaders.Accept, ContentType.Text.EventStream.toString())
                     timeout {
                         requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
@@ -185,7 +219,8 @@ class TvApi(
                             val parser = SseParser()
                             while (true) {
                                 val line = channel.readUTF8Line() ?: break
-                                parser.feed(line)?.let { onEvent(it) }
+                                val event = parser.feed(line) ?: continue
+                                if (!onEvent(event)) break
                             }
                             JobStreamEnd.Closed
                         }

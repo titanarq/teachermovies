@@ -6,7 +6,7 @@ data class SseEvent(
     val data: String,
 )
 
-/** How [TvApi.jobStream] ended; it never throws. */
+/** How [TvApi.jobStream] or [TvApi.logStream] ended; neither throws. */
 sealed interface JobStreamEnd {
     /** The TV accepted the stream and later closed it (restart, a newer bridge stream, "Olvidar portátil"). */
     data object Closed : JobStreamEnd
