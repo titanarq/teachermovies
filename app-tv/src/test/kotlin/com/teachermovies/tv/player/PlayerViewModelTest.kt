@@ -113,6 +113,9 @@ class PlayerViewModelTest {
     private lateinit var speech: AssistantSpeechController
     private lateinit var explanations: ExplanationController
 
+    /** The clock [capture] measures a run of OK presses with (#339); tests move it by hand. */
+    private var nowMs = 1_000L
+
     /**
      * The real assistant controllers (#83, #85, #91) over [player], [speaker] and [translations],
      * on the test's background scope.
@@ -120,7 +123,7 @@ class PlayerViewModelTest {
     private fun TestScope.viewModel(): PlayerViewModel {
         val engine = SubtitleEngine(player.positionMs, backgroundScope)
         hidden = HiddenSubtitleController(player, engine, backgroundScope, tmp.newFolder("cache"))
-        capture = LineCaptureController(player, engine, backgroundScope)
+        capture = LineCaptureController(player, engine, backgroundScope, clock = { nowMs })
         speech = AssistantSpeechController(speaker, translations, backgroundScope, allSpoken)
         explanations =
             ExplanationController(
@@ -164,6 +167,15 @@ class PlayerViewModelTest {
     private fun movieWithEnglishSubtitles(): File =
         movieFile().also { movie ->
             movie.resolveSibling("Big Movie.en.srt").writeText("1\n00:00:01,000 --> 00:00:03,000\nHello there.\n")
+        }
+
+    /** An English sidecar of two lines, so OK can step back from the second one to the first (#339). */
+    private fun movieWithTwoEnglishSubtitles(): File =
+        movieFile().also { movie ->
+            movie.resolveSibling("Big Movie.en.srt").writeText(
+                "1\n00:00:01,000 --> 00:00:03,000\nHello there.\n\n" +
+                    "2\n00:00:30,000 --> 00:00:33,000\nBye now.\n",
+            )
         }
 
     private fun TestScope.openedViewModel(): PlayerViewModel {
@@ -593,6 +605,17 @@ class PlayerViewModelTest {
         return vm
     }
 
+    /** Opens the two-line subtitled movie, playing at 31 s: inside "Bye now.", the second line (#339). */
+    private suspend fun TestScope.playingWithTwoSubtitles(): PlayerViewModel {
+        seed(movieWithTwoEnglishSubtitles())
+        val vm = openedViewModel()
+        player.emitDuration(600_000L)
+        player.play()
+        player.emitPosition(31_000L)
+        runCurrent()
+        return vm
+    }
+
     /** What the player screen does with a key: the assistant mapping first, then the transport one. */
     private fun PlayerViewModel.press(keyCode: Int) {
         val assistantAction = AssistantKeyMapper.map(keyCode, overlayOpen = uiState.value.assistant != null)
@@ -643,6 +666,54 @@ class PlayerViewModelTest {
             assertEquals(AssistantOverlayState("Hello there.", replaying = false), vm.uiState.value.assistant)
             assertEquals(PlayerState.Paused, player.state.value)
             assertEquals(2_000L, player.positionMs.value)
+        }
+
+    @Test
+    fun okPressedAgainInsideTheWindowReplaysThePreviousLineAndTheOverlaySaysHowFarBack() =
+        runTest(dispatcher) {
+            val vm = playingWithTwoSubtitles()
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_CENTER)
+            runCurrent()
+
+            assertEquals(AssistantOverlayState("Bye now.", replaying = true), vm.uiState.value.assistant)
+            assertEquals("the first OK replays the captured line itself", 29_700L, player.positionMs.value)
+
+            nowMs += 400L
+            vm.press(KeyEvent.KEYCODE_DPAD_CENTER)
+            runCurrent()
+
+            assertEquals(
+                AssistantOverlayState("Bye now.", replaying = true, linesBack = 1),
+                vm.uiState.value.assistant,
+            )
+            assertEquals("the second OK replays the line before it", 700L, player.positionMs.value)
+        }
+
+    @Test
+    fun anOkOutsideTheWindowReplaysTheCapturedLineAgain() =
+        runTest(dispatcher) {
+            val vm = playingWithTwoSubtitles()
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+            vm.press(KeyEvent.KEYCODE_DPAD_CENTER)
+            runCurrent()
+            nowMs += 400L
+            vm.press(KeyEvent.KEYCODE_DPAD_CENTER)
+            runCurrent()
+            assertEquals(
+                AssistantOverlayState("Bye now.", replaying = true, linesBack = 1),
+                vm.uiState.value.assistant,
+            )
+
+            nowMs += LineCaptureController.REPLAY_BACK_WINDOW_MS + 1
+            vm.press(KeyEvent.KEYCODE_DPAD_CENTER)
+            runCurrent()
+
+            assertEquals(AssistantOverlayState("Bye now.", replaying = true), vm.uiState.value.assistant)
+            assertEquals(29_700L, player.positionMs.value)
         }
 
     @Test

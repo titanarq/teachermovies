@@ -30,4 +30,11 @@ class TranslationLineTest {
     fun theHintLineNamesEveryOverlayKey() {
         assertEquals("OK Repetir · IZQUIERDA Español · DERECHA Explicar · ATRÁS Cerrar", ASSISTANT_HINT)
     }
+
+    @Test
+    fun theHintLineSaysHowFarBackTheReplayIsOnceOkHasSteppedBack() {
+        assertEquals(ASSISTANT_HINT, hintLine(0))
+        assertEquals("‹ 1 frases atrás", hintLine(1))
+        assertEquals("‹ 4 frases atrás", hintLine(4))
+    }
 }

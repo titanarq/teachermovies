@@ -1,5 +1,6 @@
 package com.teachermovies.assistant
 
+import com.teachermovies.assistant.subtitles.SteppedCue
 import com.teachermovies.assistant.subtitles.SubtitleCue
 import com.teachermovies.assistant.subtitles.SubtitleTrack
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -172,5 +173,30 @@ class SubtitleEngineTest {
 
             engine.load(SubtitleTrack(cues = emptyList()))
             assertNull(engine.cueForCapture(1_500L))
+        }
+
+    @Test
+    fun `cueLinesBefore steps back through the loaded track, clamped at its first cue`() =
+        runTest {
+            val engine = SubtitleEngine(MutableStateFlow(0L), backgroundScope)
+            engine.load(captureTrack)
+            val first = captureTrack.cues[0]
+            val second = captureTrack.cues[1]
+
+            assertEquals(SteppedCue(second, linesBack = 0), engine.cueLinesBefore(second, 0))
+            assertEquals(SteppedCue(first, linesBack = 1), engine.cueLinesBefore(second, 1))
+            assertEquals(SteppedCue(first, linesBack = 1), engine.cueLinesBefore(second, 5))
+        }
+
+    @Test
+    fun `cueLinesBefore returns null with no track loaded and for a cue of another track`() =
+        runTest {
+            val engine = SubtitleEngine(MutableStateFlow(0L), backgroundScope)
+            val outside = cue(9, startMs = 90_000L, endMs = 91_000L)
+
+            assertNull(engine.cueLinesBefore(captureTrack.cues[1], 1))
+
+            engine.load(captureTrack)
+            assertNull(engine.cueLinesBefore(outside, 1))
         }
 }

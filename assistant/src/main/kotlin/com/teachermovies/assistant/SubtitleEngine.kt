@@ -1,5 +1,6 @@
 package com.teachermovies.assistant
 
+import com.teachermovies.assistant.subtitles.SteppedCue
 import com.teachermovies.assistant.subtitles.SubtitleCue
 import com.teachermovies.assistant.subtitles.SubtitleIndex
 import com.teachermovies.assistant.subtitles.SubtitleTrack
@@ -60,4 +61,14 @@ class SubtitleEngine(
         val cue = index?.cueAtOrBefore(positionMs) ?: return null
         return if (positionMs - cue.endMs <= maxGapMs) cue else null
     }
+
+    /**
+     * The cue [lines] lines before [cue] in the loaded track, clamped at its first cue, or `null`
+     * while no track is loaded or [cue] is not part of the loaded one. See
+     * [SubtitleIndex.cueLinesBefore].
+     */
+    fun cueLinesBefore(
+        cue: SubtitleCue,
+        lines: Int,
+    ): SteppedCue? = index?.cueLinesBefore(cue, lines)
 }
