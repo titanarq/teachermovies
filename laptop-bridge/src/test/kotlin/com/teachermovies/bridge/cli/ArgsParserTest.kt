@@ -77,6 +77,24 @@ class ArgsParserTest {
     }
 
     @Test
+    fun `install-service takes no option but --exec (#278)`() {
+        assertEquals(Command.InstallService(null), parsed("install-service").command)
+        assertEquals(
+            Command.InstallService("/opt/puente/bin/teachermovies-bridge"),
+            parsed("install-service", "--exec", "/opt/puente/bin/teachermovies-bridge").command,
+        )
+        assertEquals(Command.InstallService(null), parsed("install-service", "--exec", "   ").command)
+    }
+
+    @Test
+    fun `install-service reads --config like every subcommand`() {
+        val invocation = parsed("--config", "~/otro.json", "install-service")
+
+        assertEquals("~/otro.json", invocation.configSpec)
+        assertEquals(Command.InstallService(null), invocation.command)
+    }
+
+    @Test
     fun `help is a result of its own`() {
         assertEquals(ParseResult.Help, parse("-h"))
         assertEquals(ParseResult.Help, parse("--help"))
@@ -109,6 +127,7 @@ class ArgsParserTest {
     @Test
     fun `an option without a value is a usage error`() {
         assertTrue(message("pair", "--url").contains("necesita un valor"))
+        assertTrue(message("install-service", "--exec").contains("necesita un valor"))
         assertTrue(message("--config").contains("necesita un valor"))
     }
 
@@ -118,6 +137,15 @@ class ArgsParserTest {
 
         assertTrue(text.contains("opción desconocida"))
         assertTrue(text.contains("--otro"))
+    }
+
+    @Test
+    fun `an option install-service does not take is a usage error that quotes no value`() {
+        val text = message("install-service", "--url", "http://tv:8787")
+
+        assertTrue(text.contains("opción desconocida"))
+        assertTrue(text.contains("--url"))
+        assertFalse(text.contains("http://tv:8787"))
     }
 
     @Test
@@ -180,7 +208,19 @@ class ArgsParserTest {
 
     @Test
     fun `the usage text names every subcommand and the exit codes`() {
-        val expected = listOf("pair", "unpair", "doctor", "logs", "--config", "--help", "Códigos de salida")
+        val expected =
+            listOf(
+                "pair",
+                "unpair",
+                "doctor",
+                "logs",
+                "run",
+                "install-service",
+                "--config",
+                "--exec",
+                "--help",
+                "Códigos de salida",
+            )
 
         expected.forEach { assertTrue(ArgsParser.USAGE.contains(it)) }
     }

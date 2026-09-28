@@ -30,4 +30,12 @@ internal sealed interface Command {
         val level: String?,
         val limit: Int?,
     ) : Command
+
+    /**
+     * `install-service [--exec <ruta>]`: write the systemd `--user` unit that keeps [Run] up (#278).
+     * A null [exec] means "the start script this very process was launched from".
+     */
+    data class InstallService(
+        val exec: String?,
+    ) : Command
 }

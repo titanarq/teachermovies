@@ -1,0 +1,36 @@
+# teachermovies-bridge -- the laptop half of ADR-0005: it answers the TV's assistant jobs, looks
+# subtitles up on OpenSubtitles and mirrors the TV's log. Runbook: docs/runbooks/laptop-bridge.md.
+#
+# `teachermovies-bridge install-service` renders this template and rewrites the unit on every run,
+# so a later change belongs in a drop-in (`systemctl --user edit teachermovies-bridge.service`)
+# rather than in the file it wrote.
+#
+# No secret belongs in a unit file and none is here. The bridge reads the TV token from its own
+# 0600 config file and the OpenSubtitles credentials from its own 0600 env file, both under
+# ~/.config/teachermovies-bridge/; a unit file is world-readable and a service's environment is
+# readable in /proc/<pid>/environ. `Environment=` therefore carries three names and nothing else --
+# PATH, the TV log directory and CLAUDE_BIN -- every value an absolute path, which is the invariant
+# `ServiceUnitTest` holds this file to.
+#
+# A systemd --user manager comes up with a minimal PATH of its own and, with linger enabled, with no
+# desktop session behind it: the PATH below is the one this laptop's shell had at install time, and
+# is what lets the start script find `java` and the Claude Code CLI find its own `node`.
+#
+# `run` only ends by itself when the TV refuses this bridge's token (401), which restarting cannot
+# mend, so Restart=on-failure together with the start limit below parks the unit in the failed state
+# after five attempts instead of looping: pair again, then `systemctl --user restart`.
+[Unit]
+Description=teachermovies bridge (TV jobs, automatic subtitles, TV log mirror; ADR-0005)
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+WorkingDirectory=__WORKING_DIRECTORY__
+__ENVIRONMENT__
+ExecStart="__EXEC_START__" run
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

@@ -42,14 +42,24 @@ object ConfigLocation {
         return configDir(home, env).resolve(FILE_NAME)
     }
 
-    /** The directory holding [FILE_NAME]: `$XDG_CONFIG_HOME` when set and non-blank, else `~/.config`. */
+    /** The directory holding [FILE_NAME]: this bridge's own [DIR_NAME] inside [configHome]. */
     fun configDir(
+        home: Path,
+        env: (String) -> String?,
+    ): Path = configHome(home, env).resolve(DIR_NAME)
+
+    /**
+     * The config home every application directory hangs off: `$XDG_CONFIG_HOME` when set and
+     * non-blank, else `~/.config`. The systemd user unit directory (#278) is another directory under
+     * it, which is why this is not a detail of [configDir].
+     */
+    fun configHome(
         home: Path,
         env: (String) -> String?,
     ): Path {
         val xdgHome = env(CONFIG_HOME_VARIABLE)?.takeIf { it.isNotBlank() }
         val configHome = if (xdgHome == null) home.resolve(".config") else expand(xdgHome, home)
-        return configHome.resolve(DIR_NAME).toAbsolutePath().normalize()
+        return configHome.toAbsolutePath().normalize()
     }
 
     /**

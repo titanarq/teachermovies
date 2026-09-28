@@ -23,11 +23,12 @@ internal object ArgsParser {
           teachermovies-bridge [--config <fichero>] <subcomando> [opciones]
 
         Subcomandos:
-          pair     se empareja con la TV y guarda su URL y el token de ámbito 'bridge'
-          unpair   olvida el emparejamiento guardado (borra el fichero de configuración)
-          doctor   comprueba la configuración, sus permisos y la conexión con la TV
-          logs     imprime una página del registro de la TV
-          run      atiende los trabajos de la TV y se reconecta sola mientras el proceso viva
+          pair             se empareja con la TV y guarda su URL y el token de ámbito 'bridge'
+          unpair           olvida el emparejamiento guardado (borra el fichero de configuración)
+          doctor           comprueba la configuración, sus permisos y la conexión con la TV
+          logs             imprime una página del registro de la TV
+          run              atiende los trabajos de la TV y se reconecta sola mientras el proceso viva
+          install-service  escribe la unidad de usuario de systemd que mantiene 'run' en marcha
 
         Opciones de 'pair':
           --url <url>      URL de la TV, por ejemplo http://192.168.1.20:8787 (obligatoria)
@@ -39,6 +40,11 @@ internal object ArgsParser {
           --level <nivel>  nivel mínimo: debug, info, warn o error (por defecto, todos)
           --limit <n>      tamaño de la página, 1 o mayor (por defecto, el de la TV)
 
+        Opciones de 'install-service':
+          --exec <ruta>    script 'teachermovies-bridge' que la unidad lanzará; '~' se expande y una
+                           ruta relativa se resuelve contra el directorio de trabajo (por defecto,
+                           el de la instalación que está en marcha)
+
         Opciones globales:
           --config <fichero>  otro fichero de configuración; '~' se expande y una ruta relativa
                               se resuelve contra el directorio de trabajo (por defecto
@@ -46,7 +52,8 @@ internal object ArgsParser {
           -h, --help, help    esta ayuda
 
         Códigos de salida: 0 correcto, 1 la operación falló, 2 uso incorrecto.
-        El token de la TV se guarda en el fichero de configuración y no se imprime nunca.
+        El token de la TV se guarda en el fichero de configuración y no se imprime nunca; la unidad
+        de systemd que escribe 'install-service' tampoco lo lleva.
         """.trimIndent()
 
     private const val CONFIG_OPTION = "--config"
@@ -56,6 +63,8 @@ internal object ArgsParser {
     private val PAIR_OPTIONS = setOf("--url", "--pin", "--name")
 
     private val LOGS_OPTIONS = setOf("--since", "--level", "--limit")
+
+    private val INSTALL_SERVICE_OPTIONS = setOf("--exec")
 
     /** The levels `GET /api/logs` accepts, spelled the way the TV compares them (ADR-0006 §4). */
     private val LEVELS = listOf("debug", "info", "warn", "error")
@@ -112,6 +121,10 @@ internal object ArgsParser {
                     logsCommand(collectOptions(rest.drop(1), LOGS_OPTIONS))
                 }
 
+                "install-service" -> {
+                    installServiceCommand(collectOptions(rest.drop(1), INSTALL_SERVICE_OPTIONS))
+                }
+
                 else -> {
                     throw UsageException("subcomando desconocido; '--help' los lista todos")
                 }
@@ -159,6 +172,10 @@ internal object ArgsParser {
             level = values["--level"]?.let { logLevel(it) },
             limit = values["--limit"]?.let { pageSize(it) },
         )
+
+    /** `--exec` is the one option `install-service` takes; blank means "derive it", as absent does. */
+    private fun installServiceCommand(values: Map<String, String>): Command.InstallService =
+        Command.InstallService(exec = values["--exec"]?.takeIf { it.isNotBlank() })
 
     private fun required(
         values: Map<String, String>,
