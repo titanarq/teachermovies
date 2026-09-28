@@ -82,6 +82,10 @@ data class PlayerUiState(
  * translation ([PlayerViewModel.LABEL_AI]); null while there is no Spanish line to label.
  *
  * [explanation] (#293) is RIGHT's answer: Claude's explanation of the line, or where it stands.
+ *
+ * [linesBack] (#339) is how many lines before the captured one the fragment being replayed is: 0
+ * while OK repeats the captured line itself, 1 or more once OK pressed in a row has stepped back
+ * through the track.
  */
 data class AssistantOverlayState(
     val text: String,
@@ -90,6 +94,7 @@ data class AssistantOverlayState(
     val translation: TranslationUiState = TranslationUiState.Idle,
     val spanishLabel: String? = null,
     val explanation: ExplanationUiState = ExplanationUiState.Idle,
+    val linesBack: Int = 0,
 )
 
 /**
@@ -180,15 +185,19 @@ class PlayerViewModel(
 
     private val explanationState = explanations?.state ?: flowOf(ExplanationUiState.Idle)
 
+    /** Whether a fragment is playing and how many lines back from the capture it is (#339). */
+    private val replayState = combine(capture.replaying, capture.linesBack, ::Pair)
+
     private val assistant =
         combine(
             capture.captured,
-            capture.replaying,
+            replayState,
             speech.state,
             local,
             explanationState,
-        ) { line, replaying, speech, local, explanation ->
+        ) { line, replay, speech, local, explanation ->
             line?.let {
+                val (replaying, linesBack) = replay
                 val translation =
                     when (val answer = local.spanish) {
                         null, SpanishAnswer.Bridge -> speech.translation
@@ -208,6 +217,7 @@ class PlayerViewModel(
                     translation = translation,
                     spanishLabel = label,
                     explanation = if (local.explainGathering) ExplanationUiState.Thinking(it.cue.text) else explanation,
+                    linesBack = linesBack,
                 )
             }
         }
@@ -323,8 +333,9 @@ class PlayerViewModel(
 
     /**
      * An assistant key was pressed (#86): [AssistantAction.CaptureLine] pauses on the line just
-     * spoken (or shows why it cannot), [AssistantAction.ReplayFragment] replays it,
-     * [AssistantAction.TranslateLine] shows it in Spanish without saying it (#288),
+     * spoken (or shows why it cannot), [AssistantAction.ReplayFragment] replays it -- pressed again
+     * inside [LineCaptureController.REPLAY_BACK_WINDOW_MS] each press replays one more line back
+     * (#339) -- [AssistantAction.TranslateLine] shows it in Spanish without saying it (#288),
      * [AssistantAction.ExplainLine] explains it without saying it (#293),
      * [AssistantAction.DismissOverlay] closes the overlay, resets the speech and resumes the movie,
      * and [AssistantAction.Consumed] does nothing. Ignored once exiting.

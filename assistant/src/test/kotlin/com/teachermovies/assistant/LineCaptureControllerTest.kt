@@ -20,7 +20,12 @@ import java.io.File
 class LineCaptureControllerTest {
     private val first = SubtitleCue(index = 0, startMs = 10_000L, endMs = 12_000L, text = "Hello.")
     private val second = SubtitleCue(index = 1, startMs = 30_000L, endMs = 33_000L, text = "Bye.")
-    private val track = SubtitleTrack(cues = listOf(first, second))
+    private val third = SubtitleCue(index = 2, startMs = 50_000L, endMs = 53_000L, text = "And?")
+    private val fourth = SubtitleCue(index = 3, startMs = 70_000L, endMs = 72_000L, text = "Go.")
+    private val track = SubtitleTrack(cues = listOf(first, second, third, fourth))
+
+    /** The controller's injected clock: the wall time the tests move by hand. */
+    private var nowMs = 1_000L
 
     private class Fixture(
         val player: FakePlayer,
@@ -46,6 +51,7 @@ class LineCaptureControllerTest {
                 player,
                 engine,
                 CoroutineScope(backgroundScope.coroutineContext + controllerJob),
+                clock = { nowMs },
             )
         return Fixture(player, engine, controllerJob, controller)
     }
@@ -221,6 +227,135 @@ class LineCaptureControllerTest {
             assertFalse(f.controller.replaying.value)
             assertEquals(11_000L, f.player.positionMs.value)
             assertEquals(0, f.activeWatchers)
+        }
+
+    @Test
+    fun `a single OK replays the captured line itself and reports no lines back`() =
+        runTest {
+            val f = fixture()
+            f.player.emitPosition(71_000L)
+            f.controller.capture()
+
+            assertTrue(f.controller.replay())
+            runCurrent()
+
+            assertEquals(0, f.controller.linesBack.value)
+            assertEquals(fourth.startMs - 300L, f.player.positionMs.value)
+            assertEquals(PlayerState.Playing, f.player.state.value)
+        }
+
+    @Test
+    fun `each further OK inside the window steps the replayed line one cue back`() =
+        runTest {
+            val f = fixture()
+            f.player.emitPosition(71_000L)
+            f.controller.capture()
+            f.controller.replay()
+
+            nowMs += 400L
+            f.controller.replay()
+            runCurrent()
+            assertEquals(1, f.controller.linesBack.value)
+            assertEquals(third.startMs - 300L, f.player.positionMs.value)
+
+            nowMs += 400L
+            f.controller.replay()
+            runCurrent()
+            assertEquals(2, f.controller.linesBack.value)
+            assertEquals(second.startMs - 300L, f.player.positionMs.value)
+
+            nowMs += 400L
+            assertTrue(f.controller.replay())
+            runCurrent()
+            assertEquals(3, f.controller.linesBack.value)
+            assertEquals(first.startMs - 300L, f.player.positionMs.value)
+            // Every replay still returns the movie to the captured position, not to the line played.
+            f.player.emitPosition(first.endMs + 200L)
+            runCurrent()
+            assertEquals(71_000L, f.player.positionMs.value)
+            assertEquals(0, f.activeWatchers)
+        }
+
+    @Test
+    fun `an OK at the window edge still steps back and one past it starts a new run`() =
+        runTest {
+            val f = fixture()
+            f.player.emitPosition(71_000L)
+            f.controller.capture()
+            f.controller.replay()
+
+            nowMs += LineCaptureController.REPLAY_BACK_WINDOW_MS
+            f.controller.replay()
+            runCurrent()
+            assertEquals(1, f.controller.linesBack.value)
+            assertEquals(third.startMs - 300L, f.player.positionMs.value)
+
+            nowMs += LineCaptureController.REPLAY_BACK_WINDOW_MS + 1
+            f.controller.replay()
+            runCurrent()
+            assertEquals(0, f.controller.linesBack.value)
+            assertEquals(fourth.startMs - 300L, f.player.positionMs.value)
+        }
+
+    @Test
+    fun `stepping back stops at the first cue of a track shorter than the run`() =
+        runTest {
+            val f = fixture()
+            f.engine.load(SubtitleTrack(cues = listOf(first, second)))
+            f.player.emitPosition(31_000L)
+            f.controller.capture()
+            f.controller.replay()
+
+            repeat(3) {
+                nowMs += 200L
+                assertTrue(f.controller.replay())
+                runCurrent()
+                assertEquals(1, f.controller.linesBack.value)
+                assertEquals(first.startMs - 300L, f.player.positionMs.value)
+                assertEquals(1, f.activeWatchers)
+            }
+        }
+
+    @Test
+    fun `a new capture starts the run over even inside the window`() =
+        runTest {
+            val f = fixture()
+            f.player.emitPosition(71_000L)
+            f.controller.capture()
+            f.controller.replay()
+            nowMs += 300L
+            f.controller.replay()
+            runCurrent()
+            assertEquals(1, f.controller.linesBack.value)
+
+            f.player.emitPosition(51_000L)
+            assertEquals(CaptureResult.Captured, f.controller.capture())
+            nowMs += 300L
+            f.controller.replay()
+            runCurrent()
+
+            assertEquals(0, f.controller.linesBack.value)
+            assertEquals(third.startMs - 300L, f.player.positionMs.value)
+            assertEquals(CapturedLine(third, capturedAtMs = 51_000L), f.controller.captured.value)
+        }
+
+    @Test
+    fun `dismiss clears the lines back`() =
+        runTest {
+            val f = fixture()
+            f.player.emitPosition(71_000L)
+            f.controller.capture()
+            f.controller.replay()
+            nowMs += 300L
+            f.controller.replay()
+            runCurrent()
+            assertEquals(1, f.controller.linesBack.value)
+
+            f.controller.dismiss()
+            runCurrent()
+
+            assertEquals(0, f.controller.linesBack.value)
+            assertEquals(71_000L, f.player.positionMs.value)
         }
 
     @Test

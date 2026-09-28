@@ -282,6 +282,19 @@
   `HubBridgeExplainGateway` submits `BridgeJob.Explain` with the context field for field and maps
   `BridgeOutcome` to `BridgeExplainOutcome` (`Replaced` -> `Disconnected`, `Rejected` -> `BridgeError`).
 
+## Asistente: OK N veces retrocede N frases (#339)
+- `AssistantKeyMapper` is untouched: with the overlay open, DPAD_CENTER/ENTER/MEDIA_PLAY_PAUSE is
+  still `ReplayFragment`, and every other key keeps its mapping. What changes is what a run of those
+  presses does: `LineCaptureController` counts them and replays one more subtitle line back each
+  time (see `docs/modules/assistant.md`).
+- `AssistantOverlayState.linesBack: Int = 0` comes from `LineCaptureController.linesBack`, combined
+  with `.replaying` into one flow first because the panel's `combine` was already at its five flows.
+  It is how many lines before the captured one the fragment being replayed is: 0 while OK repeats
+  the captured line itself.
+- `AssistantOverlay` draws `hintLine(state.linesBack)` where it drew `ASSISTANT_HINT`: that same hint
+  while `linesBack` is 0, `‹ N frases atrás` while it is not, for as long as that replay is the
+  active one. Nothing else in the overlay changes, and `Repitiendo…` still shows while it plays.
+
 ## Reproducir mientras descarga (#226)
 - Entry point: Descargas, OK on a row -> the action dialog starts with `Reproducir` (focused) when
   the row is `Downloading`/`Paused` and its main file is known (`DownloadRow.canPlay`); a completed

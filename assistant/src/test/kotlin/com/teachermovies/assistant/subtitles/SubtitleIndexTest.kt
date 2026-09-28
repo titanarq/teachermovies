@@ -140,4 +140,45 @@ class SubtitleIndexTest {
         assertEquals(second, index.cueAtOrBefore(31_000L))
         assertEquals(second, index.cueAtOrBefore(900_000L))
     }
+
+    @Test
+    fun `cueLinesBefore steps back one cue at a time, and zero steps give the cue itself`() {
+        val first = cue(0, 1_000L, 2_000L)
+        val second = cue(1, 3_000L, 4_000L)
+        val third = cue(2, 5_000L, 6_000L)
+        val index = SubtitleIndex(SubtitleTrack(cues = listOf(first, second, third)))
+
+        assertEquals(SteppedCue(third, linesBack = 0), index.cueLinesBefore(third, 0))
+        assertEquals(SteppedCue(second, linesBack = 1), index.cueLinesBefore(third, 1))
+        assertEquals(SteppedCue(first, linesBack = 2), index.cueLinesBefore(third, 2))
+        assertEquals(SteppedCue(first, linesBack = 1), index.cueLinesBefore(second, 1))
+    }
+
+    @Test
+    fun `cueLinesBefore clamps a step past the first cue at the first cue`() {
+        val first = cue(0, 1_000L, 2_000L)
+        val second = cue(1, 3_000L, 4_000L)
+        val index = SubtitleIndex(SubtitleTrack(cues = listOf(first, second)))
+
+        assertEquals(SteppedCue(first, linesBack = 1), index.cueLinesBefore(second, 7))
+        assertEquals(SteppedCue(first, linesBack = 0), index.cueLinesBefore(first, 7))
+    }
+
+    @Test
+    fun `cueLinesBefore returns null for an empty track and for a cue that is not in it`() {
+        val outside = cue(9, 50_000L, 51_000L)
+        val index = SubtitleIndex(SubtitleTrack(cues = listOf(cue(0, 1_000L, 2_000L))))
+
+        assertNull(index.cueLinesBefore(outside, 1))
+        assertNull(SubtitleIndex(SubtitleTrack(cues = emptyList())).cueLinesBefore(outside, 1))
+    }
+
+    @Test
+    fun `cueLinesBefore steps through the sorted order, whatever the order cues were passed in`() {
+        val early = cue(0, 1_000L, 2_000L)
+        val late = cue(1, 5_000L, 6_000L)
+        val index = SubtitleIndex(SubtitleTrack(cues = listOf(late, early)))
+
+        assertEquals(SteppedCue(early, linesBack = 1), index.cueLinesBefore(late, 1))
+    }
 }

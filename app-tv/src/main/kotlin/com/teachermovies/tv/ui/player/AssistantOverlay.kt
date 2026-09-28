@@ -31,7 +31,7 @@ import com.teachermovies.tv.player.AssistantAction
 import com.teachermovies.tv.player.AssistantKeyMapper
 import com.teachermovies.tv.player.AssistantOverlayState
 
-/** The hint line under the captured text (#86, #293; ADR-0005 §7). */
+/** The hint line under the captured text (#86, #293; ADR-0005 §7); [hintLine] says when it is replaced. */
 const val ASSISTANT_HINT = "OK Repetir · IZQUIERDA Español · DERECHA Explicar · ATRÁS Cerrar"
 
 /** Shown while the captured fragment is replaying (#86). */
@@ -104,9 +104,16 @@ fun translationLine(translation: TranslationUiState): String? =
     }
 
 /**
+ * The line the overlay draws at the bottom: [ASSISTANT_HINT] while the replay target is the captured
+ * line itself, or how many lines back it is once OK pressed in a row has stepped back through the
+ * track (#339).
+ */
+fun hintLine(linesBack: Int): String = if (linesBack <= 0) ASSISTANT_HINT else "‹ $linesBack frases atrás"
+
+/**
  * The captured-line overlay (#86): a dimmed band at the bottom of the video with the English
- * [AssistantOverlayState.text] in a large size, the hint line and a replaying indicator. Under the
- * English line (#92) it draws the Spanish translation or its status ([translationLine]) with its
+ * [AssistantOverlayState.text] in a large size, the hint line ([hintLine]) and a replaying
+ * indicator. Under the English line (#92) it draws the Spanish translation or its status ([translationLine]) with its
  * [AssistantOverlayState.spanishLabel] ("subtítulo" or "IA", #288), RIGHT's explanation or its status
  * ([explanationLines], #293) and a discreet indicator while [AssistantOverlayState.speaking].
  *
@@ -205,7 +212,7 @@ fun AssistantOverlay(
             )
         }
         Text(
-            text = ASSISTANT_HINT,
+            text = hintLine(state.linesBack),
             style = MaterialTheme.typography.titleMedium,
             color = Color.White.copy(alpha = 0.8f),
             textAlign = TextAlign.Center,
