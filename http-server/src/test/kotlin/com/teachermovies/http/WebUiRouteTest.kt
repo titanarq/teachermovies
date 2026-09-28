@@ -85,6 +85,21 @@ class WebUiRouteTest {
         }
 
     @Test
+    fun `app js offers buscar subtitulos on finished movies and follows the search`() =
+        testApplication {
+            application { module(deps()) }
+            val body = lanClient().get("/static/app.js").bodyAsText()
+
+            assertTrue(body.contains("BUSCAR SUBTÍTULOS"))
+            assertTrue(body.contains("row.searchButton.hidden = t.state !== 'completed'"))
+            assertTrue(body.contains("'/api/library/' + encodeURIComponent(id) + '/subtitles'"))
+            assertTrue(body.contains("api(path + '/search', { method: 'POST' })"))
+            assertTrue(body.contains("Portátil no conectado"))
+            assertTrue(body.contains("No se encontraron subtítulos"))
+            assertTrue(body.contains("Subtítulos encontrados"))
+        }
+
+    @Test
     fun `index html has the delete dialog with the delete-files checkbox`() =
         testApplication {
             application { module(deps()) }
