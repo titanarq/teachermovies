@@ -9,6 +9,10 @@ import com.teachermovies.assistant.HiddenModeResult
 import com.teachermovies.assistant.HiddenSubtitleController
 import com.teachermovies.assistant.LineCaptureController
 import com.teachermovies.assistant.TranslationUiState
+import com.teachermovies.assistant.explanation.ExplanationContext
+import com.teachermovies.assistant.explanation.ExplanationController
+import com.teachermovies.assistant.explanation.ExplanationUiState
+import com.teachermovies.assistant.subtitles.SubtitleTrack
 import com.teachermovies.core.model.DownloadState
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.TorrentRepository
@@ -70,21 +74,22 @@ data class PlayerUiState(
  * The captured-line overlay (#86): the English cue [text] the viewer froze and whether its audio
  * fragment is [replaying] right now.
  *
- * From the assistant's speech (#92): [speaking] while a spoken answer is being said, the Spanish
- * [translation] of the line, and a short [message] (e.g. no voice available) shown for
- * [PlayerViewModel.MESSAGE_TIMEOUT_MS].
+ * From the assistant's speech (#92): [speaking] while a spoken answer is being said and the Spanish
+ * [translation] of the line.
  *
  * [spanishLabel] (#288) says where a `Ready` [translation] came from: the aligned Spanish subtitle
  * ([PlayerViewModel.LABEL_SUBTITLE], or [PlayerViewModel.LABEL_SUBTITLE_LATINO]) or the bridge's AI
  * translation ([PlayerViewModel.LABEL_AI]); null while there is no Spanish line to label.
+ *
+ * [explanation] (#293) is RIGHT's answer: Claude's explanation of the line, or where it stands.
  */
 data class AssistantOverlayState(
     val text: String,
     val replaying: Boolean,
     val speaking: Boolean = false,
     val translation: TranslationUiState = TranslationUiState.Idle,
-    val message: String? = null,
     val spanishLabel: String? = null,
+    val explanation: ExplanationUiState = ExplanationUiState.Idle,
 )
 
 /**
@@ -98,15 +103,19 @@ data class AssistantOverlayState(
  * [AssistantAction]s arrive through [onAssistantAction], forwarded to [capture]. While a line is
  * captured the transport overlay is hidden and transport actions are ignored.
  *
- * The spoken answers (#92) go through [speech]: opening an item prepares its speaker once on
- * [prepareDispatcher] without waiting for it, [AssistantAction.SpeakOriginal] says the line again
- * in English. None of them touches the player, so the movie stays paused until
- * [AssistantAction.DismissOverlay], which also resets [speech].
+ * [speech] (#92) holds LEFT's bridge translation: opening an item prepares its speaker once on
+ * [prepareDispatcher] without waiting for it. No panel key touches the player, so the movie stays
+ * paused until [AssistantAction.DismissOverlay], which also resets [speech].
  *
  * LEFT, [AssistantAction.TranslateLine] (#288, ADR-0005 §6), shows the line in Spanish and says
  * nothing: the Spanish subtitle aligned to it from [spanishLines], labelled [LABEL_SUBTITLE], when
  * one aligns well enough; otherwise [speech]'s translation -- the laptop bridge in production --
  * labelled [LABEL_AI], whose failures keep their own texts ("Traducción no disponible", ...).
+ *
+ * RIGHT, [AssistantAction.ExplainLine] (#293, ADR-0005 §7), asks [explanations] -- Claude on the
+ * laptop through the bridge -- to explain the line with its context (the neighbouring English cues of
+ * [hidden]'s track, the title and the aligned Spanish line when there is one) and shows the answer,
+ * never spoken. Without [explanations] RIGHT does nothing.
  *
  * Playing an in-progress download (#226): when [streamingController] and [repo] are given, [open]
  * of an item that is not [DownloadState.Completed] goes through [PlaybackSession.openStreaming]
@@ -129,6 +138,7 @@ class PlayerViewModel(
     private val streamingController: StreamingPlaybackController? = null,
     private val repo: TorrentRepository? = null,
     private val spanishLines: AlignedSpanishSource = AlignedSpanishSource.NONE,
+    private val explanations: ExplanationController? = null,
 ) : ViewModel() {
     /** Where LEFT's Spanish line for the captured cue stands (#288); null until LEFT is pressed. */
     private sealed interface SpanishAnswer {
@@ -151,9 +161,10 @@ class PlayerViewModel(
         val tracksPanelOpen: Boolean = false,
         val assistantAvailable: Boolean = false,
         val message: String? = null,
-        val assistantMessage: String? = null,
         val streaming: Boolean = false,
         val spanish: SpanishAnswer? = null,
+        /** RIGHT was pressed and its context (the aligned Spanish line) is still being gathered. */
+        val explainGathering: Boolean = false,
     )
 
     private val local = MutableStateFlow(Local())
@@ -167,8 +178,16 @@ class PlayerViewModel(
             TracksPanelState::of,
         )
 
+    private val explanationState = explanations?.state ?: flowOf(ExplanationUiState.Idle)
+
     private val assistant =
-        combine(capture.captured, capture.replaying, speech.state, local) { line, replaying, speech, local ->
+        combine(
+            capture.captured,
+            capture.replaying,
+            speech.state,
+            local,
+            explanationState,
+        ) { line, replaying, speech, local, explanation ->
             line?.let {
                 val translation =
                     when (val answer = local.spanish) {
@@ -187,8 +206,8 @@ class PlayerViewModel(
                     replaying = replaying,
                     speaking = speech.speaking,
                     translation = translation,
-                    message = local.assistantMessage,
                     spanishLabel = label,
+                    explanation = if (local.explainGathering) ExplanationUiState.Thinking(it.cue.text) else explanation,
                 )
             }
         }
@@ -231,8 +250,8 @@ class PlayerViewModel(
     private var openJob: Job? = null
     private var hideJob: Job? = null
     private var messageJob: Job? = null
-    private var assistantMessageJob: Job? = null
     private var spanishJob: Job? = null
+    private var explainJob: Job? = null
 
     /** The opened movie, for LEFT's aligned Spanish lookup (#288). */
     private var movie: Pair<TorrentId, File>? = null
@@ -305,8 +324,8 @@ class PlayerViewModel(
     /**
      * An assistant key was pressed (#86): [AssistantAction.CaptureLine] pauses on the line just
      * spoken (or shows why it cannot), [AssistantAction.ReplayFragment] replays it,
-     * [AssistantAction.SpeakOriginal] says it again in English (or shows [NO_VOICE]),
      * [AssistantAction.TranslateLine] shows it in Spanish without saying it (#288),
+     * [AssistantAction.ExplainLine] explains it without saying it (#293),
      * [AssistantAction.DismissOverlay] closes the overlay, resets the speech and resumes the movie,
      * and [AssistantAction.Consumed] does nothing. Ignored once exiting.
      */
@@ -315,16 +334,47 @@ class PlayerViewModel(
         when (action) {
             AssistantAction.CaptureLine -> captureLine()
             AssistantAction.ReplayFragment -> capture.replay()
-            AssistantAction.SpeakOriginal -> speakOriginal()
             AssistantAction.TranslateLine -> showSpanish()
+            AssistantAction.ExplainLine -> explainLine()
             AssistantAction.DismissOverlay -> dismissOverlay()
             AssistantAction.Consumed -> Unit
         }
     }
 
-    private fun speakOriginal() {
+    /**
+     * RIGHT (#293): asks [explanations] to explain the captured line, never spoken. The aligned
+     * Spanish line goes with it -- LEFT's when LEFT already found one, else looked up here -- and the
+     * panel reads "Pensando…" from the key press on. While a request is on its way or once the line
+     * is explained another RIGHT changes nothing; after a failure it asks again.
+     */
+    private fun explainLine() {
+        val controller = explanations ?: return
         val line = capture.captured.value ?: return
-        if (!speech.speakOriginal(line)) showAssistantMessage(NO_VOICE)
+        if (local.value.explainGathering) return
+        when (controller.state.value) {
+            is ExplanationUiState.Thinking, is ExplanationUiState.Shown -> return
+            ExplanationUiState.Idle, is ExplanationUiState.Unavailable -> Unit
+        }
+        val known = (local.value.spanish as? SpanishAnswer.Aligned)?.line?.text
+        val opened = movie
+        val title = local.value.title
+        local.update { it.copy(explainGathering = true) }
+        explainJob =
+            viewModelScope.launch {
+                val spanish = known ?: opened?.let { (id, file) -> spanishLines.lineFor(id, file, line.cue) }?.text
+                // Dismissed (or another line captured) while gathering: this request is stale.
+                if (capture.captured.value != line || !local.value.explainGathering) return@launch
+                val track = hidden.track ?: SubtitleTrack(emptyList())
+                controller.explain(ExplanationContext.of(track, line.cue, title, spanish))
+                local.update { it.copy(explainGathering = false) }
+            }
+    }
+
+    private fun clearExplanation() {
+        explainJob?.cancel()
+        explainJob = null
+        local.update { it.copy(explainGathering = false) }
+        explanations?.dismiss()
     }
 
     /**
@@ -363,24 +413,9 @@ class PlayerViewModel(
 
     private fun dismissOverlay() {
         clearSpanish()
-        clearAssistantMessage()
+        clearExplanation()
         speech.reset()
         capture.dismiss()
-    }
-
-    private fun showAssistantMessage(text: String) {
-        assistantMessageJob?.cancel()
-        local.update { it.copy(assistantMessage = text) }
-        assistantMessageJob =
-            viewModelScope.launch {
-                delay(MESSAGE_TIMEOUT_MS)
-                local.update { it.copy(assistantMessage = null) }
-            }
-    }
-
-    private fun clearAssistantMessage() {
-        assistantMessageJob?.cancel()
-        local.update { it.copy(assistantMessage = null) }
     }
 
     private fun captureLine() {
@@ -485,7 +520,7 @@ class PlayerViewModel(
     /** Leaves the assistant as it was before this movie: no capture, hidden mode off. */
     private fun stopAssistant() {
         clearSpanish()
-        clearAssistantMessage()
+        clearExplanation()
         speech.reset()
         capture.dismiss(resume = false)
         hidden.stop()
@@ -540,6 +575,7 @@ class PlayerViewModel(
         private val streamingController: StreamingPlaybackController? = null,
         private val clock: () -> Long = System::currentTimeMillis,
         private val spanishLines: AlignedSpanishSource = AlignedSpanishSource.NONE,
+        private val explanations: ExplanationController? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -557,6 +593,7 @@ class PlayerViewModel(
                 streamingController = streamingController,
                 repo = repo,
                 spanishLines = spanishLines,
+                explanations = explanations,
             ) as T
         }
     }
@@ -579,9 +616,6 @@ class PlayerViewModel(
 
         const val NO_SUBTITLES = "Esta película no tiene subtítulos en inglés"
         const val NO_LINE = "No hay ninguna frase que capturar"
-
-        /** Shown in the captured-line overlay when the English line cannot be spoken (#92). */
-        const val NO_VOICE = "Voz no disponible"
 
         /** Where LEFT's Spanish line came from (#288, ADR-0005 §5/§6). */
         const val LABEL_SUBTITLE = "subtítulo"

@@ -28,6 +28,6 @@ class TranslationLineTest {
 
     @Test
     fun theHintLineNamesEveryOverlayKey() {
-        assertEquals("OK Repetir · DERECHA Escuchar · IZQUIERDA Traducir · ATRÁS Cerrar", ASSISTANT_HINT)
+        assertEquals("OK Repetir · IZQUIERDA Español · DERECHA Explicar · ATRÁS Cerrar", ASSISTANT_HINT)
     }
 }
