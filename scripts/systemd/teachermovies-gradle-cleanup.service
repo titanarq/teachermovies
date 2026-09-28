@@ -1,0 +1,8 @@
+[Unit]
+Description=teachermovies Gradle daemon cleanup (stop the shared idle daemon; see docs/runbooks/operations.md)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/titan/projects/teachermovies
+Environment="PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/titan/projects/teachermovies/scripts/stop_idle_gradle_daemon.sh
