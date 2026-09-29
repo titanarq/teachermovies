@@ -65,6 +65,30 @@ OpenSubtitles needs an API key + login and has daily quotas; those credentials l
 10. **TTS deferred** (future, optional, low priority). Nothing is spoken aloud; OK (replay of the
     original audio) is enough.
 
+## Amendment 2026-09-29: D-pad interaction model (human decision after trying the web simulator)
+
+The human tried the web simulator of the assistant player and replaced the panel-centred key model
+of decisions 4, 6, 7 and 10 above with the one below. Where they disagree, this amendment wins.
+
+- **DOWN opens the menu, informational only** (the captured English line, hints, the explanation
+  panel). The menu is not needed to replay phrases.
+- **LEFT (the arrow, not BACK) goes back N phrases and shows the English subtitle; RIGHT goes back N
+  phrases and shows the Spanish subtitle.** N is the number of presses in a group: presses belong to
+  one group while the gap between consecutive presses is < 1.5 s. After >= 1.5 s with no press the
+  player rewinds N phrases and resumes playback with no menu, showing the chosen subtitle (EN for
+  LEFT, ES for RIGHT; an already-visible EN stays, ES switches to EN on LEFT). When playback reaches
+  the point where the first press happened it continues normally and the subtitle state from before
+  the rewind is restored (nothing shown if nothing was shown).
+- **With the menu open, UP explains, in English, what was said**; N presses cover N phrases. The
+  video stays paused and the menu visible. The explanation is spoken with TTS when a voice exists
+  and is also shown in a text panel that uses more of the screen (smaller font if needed). This
+  replaces decision 7's "Spanish, on screen, no TTS" and lifts decision 10's TTS deferral for the
+  explanation only; the translation line and the replayed audio are unchanged. The explanation
+  stays a bridge job (decision 7's context, cache and no-prefetch rules stand); its prompt now
+  answers in English, and the cache prompt version is bumped so Spanish rows are never served.
+- OK keeps its transport/replay meaning; the "OK N times walks back" run of #339 is superseded by
+  LEFT/RIGHT and is no longer the way to step back.
+
 ## Consequences
 
 - Explanations and the fallback translation need the laptop on and paired; aligned ES subtitles
