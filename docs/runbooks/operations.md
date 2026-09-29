@@ -220,6 +220,10 @@ report upstream" below.
   upstream fixes it: the control plane keeps writing Qwen classes; the refiner (whose class rule
   in `config/agent_prompts/refiner.md` lists `complex-claude`) or an explicit human decision may
   assign `complex-claude`.
+  **Resolved in this project (2026-09-29):** ADR-0007
+  (`docs/adr/0007-explicit-model-request-overrides-qwen-default.md`) records the human's decision
+  that an explicitly requested model/class overrides the 2026-09-16 ADR; Qwen stays the default.
+  Upstream prompt/ADR change: **to report** to `titanarq/agent-os` (not yet filed).
 
 - **A `CHANGES_REQUESTED` review cannot be handed back to a worker once every stage of
   its task is already committed.** Found on #267 / PR #298 (2026-09-27): the validator
