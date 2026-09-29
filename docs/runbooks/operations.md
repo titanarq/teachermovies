@@ -200,7 +200,7 @@ report upstream" below.
 
 - **Worker-class fallback Qwen -> Claude on Qwen quota exhaustion.** The human's rule
   (2026-09-26): a task on a Qwen worker class (`mechanical-qwen`, `complex-qwen`) may move to
-  Opus (`claude` / `claude-opus-5-5`) when Qwen's quota is exhausted; an Opus task
+  Claude (`claude` / `claude-sonnet-5-5`) when Qwen's quota is exhausted; a Claude worker task
   (`complex-claude`) must never fall back to Qwen. agent_os cannot express the first half today:
   `TaskClass.fallback:` parses on any class, but only the one-shot role drivers
   (`agent_os/bin/agent_task.sh`, `planner_task.sh`, through `agent_os.lib role-backend`) read it
@@ -209,7 +209,10 @@ report upstream" below.
   inert for the launch and would also make `allows_backend_fallback` true, silencing the guard's
   `quota_exhausted_no_fallback` page for a run nothing can reroute. So the Qwen classes stay
   without a fallback until agent_os supports a worker launch gate (or a planner redispatch in the
-  Qwen -> Claude direction).
+  Qwen -> Claude direction). Filed as titanarq/agent-os#95 (also covers same-backend escalation,
+  e.g. Sonnet -> Opus). Related: #96 (model pins hard-coded in agent templates/docs), #97 (refiner
+  class list rendered from config). No shim is needed for the Sonnet switch: agent_os has no model
+  allowlist or price table.
 - **The control plane's prompt forbids Claude worker classes.** `agent_os/agents/control-plane.md`
   (rendered to `.claude/agents/control-plane.md`) says never to assign a worker task to a Claude
   backend, although this project now defines a Claude worker class (`complex-claude`), so every
