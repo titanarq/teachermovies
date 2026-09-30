@@ -311,8 +311,10 @@ land the sections above describe the code.
   Spanish track), independent of the libVLC subtitle selection, and removed when playback returns
   to the point of the first press.
 - The explanation is spoken (English TTS, `SpokenOutputSettings.explanations` on by default, it
-  degrades to text when there is no voice) and shown in a panel using most of the screen, with a
-  smaller font when the text is long.
+  degrades to text when there is no voice) and shown in a panel using most of the screen. The
+  explanation is English only (no Spanish translation in the text or the TTS). The TV cannot scroll, so the panel
+  auto-fits: font size and line spacing are computed so the full text fits, shrinking to a legible minimum and
+  truncating with an ellipsis only below it.
 
 ## Reproducir mientras descarga (#226)
 - Entry point: Descargas, OK on a row -> the action dialog starts with `Reproducir` (focused) when
