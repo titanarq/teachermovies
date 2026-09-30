@@ -307,3 +307,12 @@ report upstream" below.
 `config/agents.yaml`'s `refiner_unattended` is `true`: the refiner runs unattended. First
 attended run: feature #29 -> #81-#83 (2026-09-23), reviewed as good; per the 2026-09-24 review of
 that dry run, `refiner_unattended` was flipped to `true` and the refiner has run unattended since.
+
+- **`scripts/worker_task.sh <backend> open-pr` emits no `worker_finished` event, so a hand-published
+  worker is never reviewed.** Found on #343 -> PR #352 (2026-09-30): the worker finished and its PR
+  was opened by hand with `open-pr`, but no `worker_finished` event followed. The planner was never
+  woken and no validator started; the guard only paged "no review, no validator alive" on every
+  tick for about 4 hours. Workaround used: comment on the issue and add the `wake:planner` label,
+  after which the planner launched the validator. The fix is upstream: `open-pr` should emit
+  `worker_finished` itself, or add the `wake:planner` label to the issue. **To report** to
+  `titanarq/agent-os` (not yet filed).
