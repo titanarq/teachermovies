@@ -90,8 +90,11 @@ object BridgeJobProtocol {
     /** SSE event name of a frame carrying a [BridgeCancelDto]. */
     const val CANCEL_EVENT: String = "cancel"
 
-    /** Longest single subtitle line (`line`, each of `before`/`after`, `spanishLine`, `title`) in a job, in chars. */
+    /** Longest single subtitle line (`line` of a translate job, each of `before`/`after`, `spanishLine`, `title`) in a job, in chars. */
     const val MAX_LINE_CHARS: Int = 500
+
+    /** Longest `line` of an `explain` job, in chars: the TV joins several phrases into it (ADR-0005 §7). */
+    const val MAX_EXPLAIN_LINE_CHARS: Int = 1500
 
     /** Largest encoded job (the JSON `data` of its frame) and largest result body, in UTF-8 bytes. */
     const val MAX_PAYLOAD_BYTES: Int = 4 * 1024

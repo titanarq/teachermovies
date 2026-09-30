@@ -268,10 +268,13 @@ private fun violation(
     val lines =
         when (job) {
             is BridgeJob.Translate -> listOf(job.line)
-            is BridgeJob.Explain -> listOfNotNull(job.title, job.line, job.spanishLine) + job.before + job.after
+            is BridgeJob.Explain -> listOfNotNull(job.title, job.spanishLine) + job.before + job.after
         }
     if (lines.any { it.length > BridgeJobProtocol.MAX_LINE_CHARS }) {
         return "a line is over ${BridgeJobProtocol.MAX_LINE_CHARS} chars"
+    }
+    if (job is BridgeJob.Explain && job.line.length > BridgeJobProtocol.MAX_EXPLAIN_LINE_CHARS) {
+        return "the line is over ${BridgeJobProtocol.MAX_EXPLAIN_LINE_CHARS} chars"
     }
     val bytes = bridgeJson.encodeToString(BridgeJobDto.serializer(), dto).toByteArray(Charsets.UTF_8).size
     if (bytes > BridgeJobProtocol.MAX_PAYLOAD_BYTES) {

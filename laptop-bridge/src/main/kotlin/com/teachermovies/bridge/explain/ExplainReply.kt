@@ -15,9 +15,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * never quoting the reply -- what broke the schema, which is what the one re-ask tells Claude.
  *
  * Tolerated: text or a code fence around the object, unknown keys (dropped), surrounding whitespace
- * in a string (trimmed), a missing or blank `diferencia_subtitulo` (null). Forced: no
- * `diferencia_subtitulo` when the job carried no Spanish line, since there is nothing it can differ
- * from. Everything else outside [ExplanationDto]'s limits is [Result.Invalid].
+ * in a string (trimmed), a missing or blank `diferencia_subtitulo` (null).
+ * Everything else outside [ExplanationDto]'s limits is [Result.Invalid].
  */
 object ExplainReply {
     sealed interface Result {
@@ -30,22 +29,16 @@ object ExplainReply {
         ) : Result
     }
 
-    fun parse(
-        text: String,
-        hasSpanishLine: Boolean,
-    ): Result {
+    fun parse(text: String): Result {
         val reply = JsonReply.extractObject(text) ?: return Result.Invalid("no contiene ningún objeto JSON")
         return try {
-            Result.Valid(explanation(reply, hasSpanishLine))
+            Result.Valid(explanation(reply))
         } catch (e: InvalidReply) {
             Result.Invalid(checkNotNull(e.message))
         }
     }
 
-    private fun explanation(
-        reply: JsonObject,
-        hasSpanishLine: Boolean,
-    ): ExplanationDto {
+    private fun explanation(reply: JsonObject): ExplanationDto {
         val resumen = requiredString(reply[SUMMARY], SUMMARY, ExplanationDto.MAX_SUMMARY_CHARS)
         val puntos =
             when (val points = reply[POINTS]) {
@@ -61,7 +54,7 @@ object ExplainReply {
             promptVersion = ExplainPrompt.VERSION,
             resumen = resumen,
             puntos = puntos.mapIndexed { i, point -> point(point, i + 1) },
-            diferenciaSubtitulo = difference.takeIf { hasSpanishLine },
+            diferenciaSubtitulo = difference,
         )
     }
 

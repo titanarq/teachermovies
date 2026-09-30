@@ -204,6 +204,30 @@ class BridgeJobHubTest {
         }
 
     @Test
+    fun `an explain line is accepted up to the longer explain limit and its neighbours keep the old one`() =
+        runTest {
+            val stream = hub.connect()
+            val atLimit = "a".repeat(BridgeJobProtocol.MAX_EXPLAIN_LINE_CHARS)
+            val overLimit = atLimit + "a"
+            assertTrue(
+                hub.submit(BridgeJob.Explain(null, overLimit, emptyList(), emptyList(), null), timeout) is
+                    BridgeOutcome.Rejected,
+            )
+            val neighbour = "a".repeat(BridgeJobProtocol.MAX_LINE_CHARS + 1)
+            assertTrue(
+                hub.submit(BridgeJob.Explain(null, "ok", listOf(neighbour), emptyList(), null), timeout) is
+                    BridgeOutcome.Rejected,
+            )
+            assertNull(stream.next())
+
+            val job = BridgeJob.Explain(null, atLimit, emptyList(), emptyList(), null)
+            val accepted = async { hub.submit(job, timeout) }
+            runCurrent()
+            assertTrue(stream.next() is BridgeStreamEvent.Job)
+            accepted.cancel()
+        }
+
+    @Test
     fun `a job over the total payload limit is rejected and does not replace the older one`() =
         runTest {
             val stream = hub.connect()
