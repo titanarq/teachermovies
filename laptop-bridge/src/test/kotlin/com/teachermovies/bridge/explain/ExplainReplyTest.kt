@@ -8,17 +8,14 @@ import org.junit.Test
 
 /** The reply schema of #291: extraction, limits and what is tolerated. */
 class ExplainReplyTest {
-    private fun valid(
-        text: String,
-        hasSpanishLine: Boolean = true,
-    ): ExplanationDto {
-        val result = ExplainReply.parse(text, hasSpanishLine)
+    private fun valid(text: String): ExplanationDto {
+        val result = ExplainReply.parse(text)
         assertTrue("expected valid, got $result", result is ExplainReply.Result.Valid)
         return (result as ExplainReply.Result.Valid).explanation
     }
 
     private fun problem(text: String): String {
-        val result = ExplainReply.parse(text, hasSpanishLine = true)
+        val result = ExplainReply.parse(text)
         assertTrue("expected invalid, got $result", result is ExplainReply.Result.Invalid)
         return (result as ExplainReply.Result.Invalid).problem
     }
@@ -56,13 +53,6 @@ class ExplainReplyTest {
     fun `missing points and a missing or blank difference are empty and null`() {
         assertEquals(emptyList<ExplanationPointDto>(), valid("""{"resumen":"Hola."}""").puntos)
         assertEquals(null, valid("""{"resumen":"Hola.","puntos":[],"diferencia_subtitulo":"  "}""").diferenciaSubtitulo)
-    }
-
-    @Test
-    fun `a difference is dropped when the job carried no spanish line`() {
-        val explanation =
-            valid("""{"resumen":"Hola.","puntos":[],"diferencia_subtitulo":"Otra cosa."}""", hasSpanishLine = false)
-        assertEquals(null, explanation.diferenciaSubtitulo)
     }
 
     @Test

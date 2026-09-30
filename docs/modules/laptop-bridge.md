@@ -360,12 +360,19 @@
 - ADR-0005 §7: `ExplainHandler(cli)` is the `explain` `JobHandler`. It takes an `ExplainJobDto` (title,
   captured line, EN lines before/after, aligned ES line; which lines is the TV's choice, #292) and
   answers `Done(text)` whose `text` is the JSON of `:bridge-protocol`'s `ExplanationDto`:
-  `{"promptVersion":"explain-v1","resumen":…,"puntos":[{"expresion":…,"explicacion":…}],"diferencia_subtitulo":…|null}`.
+  `{"promptVersion":"explain-v2","resumen":…,"puntos":[{"expresion":…,"explicacion":…}],"diferencia_subtitulo":…|null}`.
   `promptVersion` (`ExplainPrompt.VERSION`) is on every explanation returned, so the TV's cache,
   keyed by it (#274), drops what an older prompt wrote; bump it whenever the prompt or the schema
   changes. Failures carry no version: they are never stored (ADR-0005 §8).
-- Prompt: `ExplainPrompt.SYSTEM_PROMPT` is fixed Spanish text for a Castilian learner of English and
-  holds no job's text. The job's context goes only in the user turn, as a JSON document
+- Prompt (`explain-v2`, #346): `ExplainPrompt.SYSTEM_PROMPT` is fixed English text asking Claude to
+  explain, in English only and in short plain English, what was said (idioms, phrasal verbs, slang,
+  grammar, and why the subtitle may differ). It asks for no Spanish translation and tells Claude to
+  ignore `subtitulo_es`; the reply's JSON keys are unchanged (`resumen`, `puntos`, `diferencia_subtitulo`),
+  only their content is English, and the difference is no longer dropped when the job has no ES line.
+  The `explain` job's `line` may be up to `BridgeJobProtocol.MAX_EXPLAIN_LINE_CHARS` = 1500 chars (an
+  N-phrase request, ADR-0005 amendment 2026-09-29), checked in the TV hub; `before`/`after`/`title`/
+  `spanishLine` and translate's `line` keep `MAX_LINE_CHARS` = 500, and the 4 KB payload cap still
+  applies. It holds no job's text. The job's context goes only in the user turn, as a JSON document
   (`titulo`, `antes`, `linea`, `despues`, `subtitulo_es`) the prompt tells Claude to read as data and
   never as instructions -- a line trying to escape it stays one JSON string.
 - Validation (`ExplainReply`), after `claude.JsonReply.extractObject` (the first parsable JSON object

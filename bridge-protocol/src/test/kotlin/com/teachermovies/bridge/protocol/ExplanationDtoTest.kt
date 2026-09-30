@@ -7,13 +7,13 @@ import org.junit.Test
 class ExplanationDtoTest {
     private val explanation =
         ExplanationDto(
-            promptVersion = "explain-v1",
+            promptVersion = "explain-v2",
             resumen = "Le desea suerte.",
             puntos = listOf(ExplanationPointDto(expresion = "break a leg", explicacion = "«Mucha mierda».")),
             diferenciaSubtitulo = null,
         )
     private val golden =
-        """{"promptVersion":"explain-v1","resumen":"Le desea suerte.",""" +
+        """{"promptVersion":"explain-v2","resumen":"Le desea suerte.",""" +
             """"puntos":[{"expresion":"break a leg","explicacion":"«Mucha mierda»."}],"diferencia_subtitulo":null}"""
 
     @Test

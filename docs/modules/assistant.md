@@ -145,3 +145,10 @@ no caching without a title, each failure mapped and storing nothing, a blank lin
 cache and an unparseable row. `ExplanationControllerTest` covers `Idle` -> `Thinking` -> `Shown`, a new line
 cancelling the previous one with `maxInFlight == 1` (also for five quick lines), the same line not re-sent, `dismiss`
 dropping a late answer, the `Unavailable` mapping and nothing being asked before `explain`.
+- Planned, 2026-09-29 (ADR-0005 amendment): the D-pad model changes. `PhraseRewindController` (a run of LEFT/RIGHT
+  presses < 1.5 s apart goes back N phrases, sets the subtitle display `Off`/`English`/`Spanish`, plays, and restores
+  the earlier display when the position returns to where the first press happened) and `SpanishCueTimeline` (the
+  Spanish text by playback position from the aligned track) are added by follow-up issues; the OK-run walk of
+  `LineCaptureController` (#339) is superseded and may be removed by them. Explanations are answered in English for
+  N consecutive phrases and spoken in `EN` when `SpokenOutputSettings.explanations` is on (default on); the explain
+  prompt version becomes `explain-v2`.

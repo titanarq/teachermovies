@@ -295,6 +295,27 @@
   while `linesBack` is 0, `‹ N frases atrás` while it is not, for as long as that replay is the
   active one. Nothing else in the overlay changes, and `Repitiendo…` still shows while it plays.
 
+## Asistente: modelo de teclas 2026-09-29 (ADR-0005 amendment; supersedes #86/#92/#288/#293/#339 keys)
+Target behaviour, delivered by the issues linked from the docs PR that added this section; until they
+land the sections above describe the code.
+- Menu closed: DPAD_DOWN opens the informational menu (pauses, shows the captured English line and
+  the hint); DPAD_LEFT / DPAD_RIGHT no longer seek by 10 s while the assistant is available: they go
+  back N phrases (N = presses in a group, gap < 1.5 s, `REWIND_GROUP_WINDOW_MS`), LEFT showing the
+  English subtitle and RIGHT the Spanish one, then play with no menu. Without an assistant
+  (no English subtitles) LEFT/RIGHT keep seeking. MENU/BACK keep their meaning; DPAD_UP opens the
+  tracks panel when the menu is closed.
+- Menu open: DPAD_UP = explain in English (N presses = N phrases, one request per group), the movie
+  stays paused and the menu visible; LEFT/RIGHT rewind as above and close the menu; BACK/DOWN close
+  it and resume. OK is unchanged.
+- The rewind subtitle is drawn by `:app-tv` from the assistant's cue text (English track, aligned
+  Spanish track), independent of the libVLC subtitle selection, and removed when playback returns
+  to the point of the first press.
+- The explanation is spoken (English TTS, `SpokenOutputSettings.explanations` on by default, it
+  degrades to text when there is no voice) and shown in a panel using most of the screen. The
+  explanation is English only (no Spanish translation in the text or the TTS). The TV cannot scroll, so the panel
+  auto-fits: font size and line spacing are computed so the full text fits, shrinking to a legible minimum and
+  truncating with an ellipsis only below it.
+
 ## Reproducir mientras descarga (#226)
 - Entry point: Descargas, OK on a row -> the action dialog starts with `Reproducir` (focused) when
   the row is `Downloading`/`Paused` and its main file is known (`DownloadRow.canPlay`); a completed

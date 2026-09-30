@@ -34,14 +34,13 @@ class ExplainHandler(
         val explain =
             job as? ExplainJobDto
                 ?: return BridgeJobResultDto.Failed(JobHandlerRegistry.BAD_JOB, "no es un trabajo '$KIND'")
-        val hasSpanishLine = !explain.spanishLine.isNullOrBlank()
         val data = ExplainPrompt.userTurn(explain)
         val problem =
-            when (val first = attempt(data, hasSpanishLine)) {
+            when (val first = attempt(data)) {
                 is Attempt.Done -> return first.result
                 is Attempt.Invalid -> first.problem
             }
-        return when (val second = attempt(ExplainPrompt.reAsk(problem, data), hasSpanishLine)) {
+        return when (val second = attempt(ExplainPrompt.reAsk(problem, data))) {
             is Attempt.Done -> {
                 second.result
             }
@@ -55,14 +54,11 @@ class ExplainHandler(
         }
     }
 
-    private suspend fun attempt(
-        prompt: String,
-        hasSpanishLine: Boolean,
-    ): Attempt {
+    private suspend fun attempt(prompt: String): Attempt {
         val outcome = cli.ask(prompt)
         outcome.failureResult()?.let { return Attempt.Done(it) }
         val text = (outcome as ClaudeOutcome.Answered).text
-        return when (val reply = ExplainReply.parse(text, hasSpanishLine)) {
+        return when (val reply = ExplainReply.parse(text)) {
             is ExplainReply.Result.Invalid -> {
                 Attempt.Invalid(reply.problem)
             }
