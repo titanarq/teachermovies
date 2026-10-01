@@ -9,7 +9,6 @@ class AssistantKeyMapperTest {
     /** Keys the assistant gives no meaning of their own (transport keys and a few others). */
     private val otherKeys =
         listOf(
-            KeyEvent.KEYCODE_DPAD_UP,
             KeyEvent.KEYCODE_MEDIA_PLAY,
             KeyEvent.KEYCODE_MEDIA_PAUSE,
             KeyEvent.KEYCODE_MEDIA_REWIND,
@@ -40,6 +39,7 @@ class AssistantKeyMapperTest {
         val fallThrough =
             otherKeys +
                 listOf(
+                    KeyEvent.KEYCODE_DPAD_UP,
                     KeyEvent.KEYCODE_DPAD_CENTER,
                     KeyEvent.KEYCODE_ENTER,
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
@@ -74,8 +74,8 @@ class AssistantKeyMapperTest {
     }
 
     @Test
-    fun withTheOverlayOpenUpIsConsumedAndWithItClosedFallsThroughToOpenTheTracksPanel() {
-        assertEquals(AssistantAction.Consumed, AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP, overlayOpen = true))
+    fun withTheOverlayOpenUpExplainsAndWithItClosedFallsThroughToOpenTheTracksPanel() {
+        assertEquals(AssistantAction.ExplainLine, AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP, overlayOpen = true))
         assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP, overlayOpen = false))
         assertEquals(PlayerAction.ShowTracks, RemoteKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP))
     }
@@ -112,10 +112,10 @@ class AssistantKeyMapperTest {
     }
 
     @Test
-    fun withTheOverlayOpenUpMeansNothingYet() {
+    fun rightNoLongerExplains() {
         assertEquals(
-            AssistantAction.Consumed,
-            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP, overlayOpen = true),
+            AssistantAction.RewindSpanish,
+            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = true),
         )
     }
 

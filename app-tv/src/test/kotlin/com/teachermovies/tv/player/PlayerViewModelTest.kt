@@ -19,7 +19,9 @@ import com.teachermovies.assistant.explanation.ExplanationPoint
 import com.teachermovies.assistant.explanation.ExplanationUiState
 import com.teachermovies.assistant.explanation.LineExplainer
 import com.teachermovies.assistant.explanation.fake.FakeBridgeExplainGateway
+import com.teachermovies.assistant.explanation.spokenText
 import com.teachermovies.assistant.speech.SpeakerAvailability
+import com.teachermovies.assistant.speech.SpeakerState
 import com.teachermovies.assistant.speech.SpeechLanguage
 import com.teachermovies.assistant.speech.SpokenOutputSettings
 import com.teachermovies.assistant.speech.fake.FakeSpeaker
@@ -97,7 +99,7 @@ class PlayerViewModelTest {
      * not the optional-TTS setting (#294) -- gating each answer is `AssistantSpeechControllerTest`'s
      * job, and its default silences all three.
      */
-    private val allSpoken: StateFlow<SpokenOutputSettings> =
+    private val allSpoken: MutableStateFlow<SpokenOutputSettings> =
         MutableStateFlow(SpokenOutputSettings(englishLine = true, spanishLine = true, explanations = true))
 
     @Before
@@ -805,7 +807,6 @@ class PlayerViewModelTest {
             listOf(
                 KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
                 KeyEvent.KEYCODE_MEDIA_PLAY,
-                KeyEvent.KEYCODE_DPAD_UP,
                 KeyEvent.KEYCODE_SPACE,
             ).forEach { vm.press(it) }
             vm.onAction(PlayerAction.TogglePlayPause)
@@ -842,6 +843,19 @@ class PlayerViewModelTest {
         return vm
     }
 
+    /** [presses] UP presses [step] ms apart, then the group window closes and the request is sent. */
+    private fun TestScope.explain(
+        vm: PlayerViewModel,
+        presses: Int = 1,
+        step: Long = 100,
+    ) {
+        repeat(presses) {
+            vm.onAssistantAction(AssistantAction.ExplainLine)
+            if (it < presses - 1) advanceTimeBy(step)
+        }
+        advanceTimeBy(PlayerViewModel.EXPLAIN_GROUP_WINDOW_MS + 1)
+    }
+
     @Test
     fun openingPreparesTheSpeakerOnce() =
         runTest(dispatcher) {
@@ -854,13 +868,13 @@ class PlayerViewModelTest {
         }
 
     @Test
-    fun explainLineShowsThinkingThenTheExplanationAndSaysNothing() =
+    fun explainLineShowsThinkingThenTheExplanationAndSaysItInEnglish() =
         runTest(dispatcher) {
             explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
             explainGateway.delayMs = 500
             val vm = captured()
 
-            vm.onAssistantAction(AssistantAction.ExplainLine)
+            explain(vm)
             runCurrent()
             assertEquals(
                 ExplanationUiState.Thinking("Hello there."),
@@ -880,7 +894,7 @@ class PlayerViewModelTest {
             assertEquals("Big Movie", asked.title)
             assertEquals("Hello there.", asked.line)
             assertNull("no aligned Spanish line", asked.spanishLine)
-            assertTrue("nothing is spoken", speaker.spoken.isEmpty())
+            assertEquals("said in English", 1, speaker.spoken.size)
             assertEquals("the movie stays paused", PlayerState.Paused, player.state.value)
             assertEquals(2_000L, player.positionMs.value)
         }
@@ -892,7 +906,7 @@ class PlayerViewModelTest {
             explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
             val vm = captured()
 
-            vm.onAssistantAction(AssistantAction.ExplainLine)
+            explain(vm)
             runCurrent()
 
             assertEquals(
@@ -915,7 +929,7 @@ class PlayerViewModelTest {
             explainGateway.nextOutcome = BridgeExplainOutcome.NoBridge
             val vm = captured()
 
-            vm.onAssistantAction(AssistantAction.ExplainLine)
+            explain(vm)
             runCurrent()
 
             val failed =
@@ -928,7 +942,7 @@ class PlayerViewModelTest {
             )
 
             explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
-            vm.onAssistantAction(AssistantAction.ExplainLine)
+            explain(vm)
             runCurrent()
 
             assertEquals(2, explainGateway.requests.size)
@@ -946,13 +960,13 @@ class PlayerViewModelTest {
             explainGateway.delayMs = 500
             val vm = captured()
 
-            vm.onAssistantAction(AssistantAction.ExplainLine)
+            explain(vm)
             runCurrent()
-            vm.onAssistantAction(AssistantAction.ExplainLine)
+            explain(vm)
             runCurrent()
             advanceTimeBy(501)
             runCurrent()
-            vm.onAssistantAction(AssistantAction.ExplainLine)
+            explain(vm)
             runCurrent()
 
             assertEquals(1, explainGateway.requests.size)
@@ -963,12 +977,129 @@ class PlayerViewModelTest {
         }
 
     @Test
+    fun nPressesOfUpInsideTheGroupWindowSendOneRequestWithNPhrases() =
+        runTest(dispatcher) {
+            explainGateway.documents["Hello there. Bye now."] = EXPLANATION_DOCUMENT
+            val vm = playingWithTwoSubtitles()
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
+            advanceTimeBy(1_000)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
+            assertTrue(
+                "Thinking from the first press, menu still open",
+                vm.uiState.value.assistant!!
+                    .explanation is ExplanationUiState.Thinking,
+            )
+            advanceTimeBy(1_000)
+            assertTrue("the gap restarts with each press", explainGateway.requests.isEmpty())
+            advanceTimeBy(501)
+            runCurrent()
+
+            val asked = explainGateway.requests.single().context
+            assertEquals("Hello there. Bye now.", asked.line)
+            assertNull("no Spanish line for a span", asked.spanishLine)
+            assertEquals(PlayerState.Paused, player.state.value)
+            assertTrue(
+                vm.uiState.value.assistant!!
+                    .explanation is ExplanationUiState.Shown,
+            )
+        }
+
+    @Test
+    fun morePressesThanPhrasesBeforeTheCaptureAreClampedToTheTrack() =
+        runTest(dispatcher) {
+            explainGateway.documents["Hello there. Bye now."] = EXPLANATION_DOCUMENT
+            val vm = playingWithTwoSubtitles()
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+
+            repeat(4) {
+                vm.press(KeyEvent.KEYCODE_DPAD_UP)
+                advanceTimeBy(100)
+            }
+            advanceTimeBy(1_600)
+            runCurrent()
+
+            assertEquals(
+                "Hello there. Bye now.",
+                explainGateway.requests
+                    .single()
+                    .context.line,
+            )
+        }
+
+    @Test
+    fun upIsIgnoredWhileTheGroupRequestIsBeingGatheredOrAnswered() =
+        runTest(dispatcher) {
+            explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
+            explainGateway.delayMs = 500
+            alignedDelayMs = 300
+            val vm = captured()
+
+            explain(vm)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
+            advanceTimeBy(1_000)
+            runCurrent()
+
+            assertEquals(1, explainGateway.requests.size)
+        }
+
+    @Test
+    fun theExplanationIsSpokenInEnglishOnceShown() =
+        runTest(dispatcher) {
+            explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
+            val vm = captured()
+
+            explain(vm)
+            runCurrent()
+
+            val (text, language) = speaker.spoken.single()
+            assertEquals(SpeechLanguage.EN, language)
+            assertEquals(EXPLANATION.spokenText(), text)
+            vm.press(KeyEvent.KEYCODE_BACK)
+            runCurrent()
+            assertEquals("dismissing stops the speech", SpeakerState.Idle, speaker.state.value)
+        }
+
+    @Test
+    fun withTheExplanationSpeechOffTheExplanationIsOnlyShown() =
+        runTest(dispatcher) {
+            allSpoken.value = SpokenOutputSettings(englishLine = true, spanishLine = true, explanations = false)
+            explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
+            val vm = captured()
+
+            explain(vm)
+            runCurrent()
+
+            assertTrue(speaker.spoken.isEmpty())
+            val shown =
+                vm.uiState.value.assistant!!
+                    .explanation
+            assertTrue(shown is ExplanationUiState.Shown)
+            assertNull("no error message", vm.uiState.value.message)
+        }
+
+    @Test
+    fun anUnavailableExplanationIsNotSpoken() =
+        runTest(dispatcher) {
+            explainGateway.nextOutcome = BridgeExplainOutcome.NoBridge
+            val vm = captured()
+
+            explain(vm)
+            runCurrent()
+
+            assertTrue(speaker.spoken.isEmpty())
+        }
+
+    @Test
     fun dismissWhileThinkingDropsTheExplanation() =
         runTest(dispatcher) {
             explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
             explainGateway.delayMs = 500
             val vm = captured()
-            vm.onAssistantAction(AssistantAction.ExplainLine)
+            explain(vm)
             runCurrent()
 
             vm.press(KeyEvent.KEYCODE_BACK)
@@ -1185,7 +1316,7 @@ class PlayerViewModelTest {
             val vm = captured()
             explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
             vm.onAssistantAction(AssistantAction.TranslateLine)
-            vm.onAssistantAction(AssistantAction.ExplainLine)
+            explain(vm)
             runCurrent()
             assertEquals(TranslationUiState.Ready("Hola."), speech.state.value.translation)
             assertTrue(explanations.state.value is ExplanationUiState.Shown)

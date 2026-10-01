@@ -14,6 +14,8 @@ import com.teachermovies.assistant.TranslationUiState
 import com.teachermovies.assistant.explanation.ExplanationContext
 import com.teachermovies.assistant.explanation.ExplanationController
 import com.teachermovies.assistant.explanation.ExplanationUiState
+import com.teachermovies.assistant.explanation.spokenText
+import com.teachermovies.assistant.subtitles.SubtitleCue
 import com.teachermovies.assistant.subtitles.SubtitleTrack
 import com.teachermovies.core.model.DownloadState
 import com.teachermovies.core.model.TorrentId
@@ -36,6 +38,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -123,10 +126,10 @@ data class AssistantOverlayState(
  * one aligns well enough; otherwise [speech]'s translation -- the laptop bridge in production --
  * labelled [LABEL_AI], whose failures keep their own texts ("Traducción no disponible", ...).
  *
- * RIGHT, [AssistantAction.ExplainLine] (#293, ADR-0005 §7), asks [explanations] -- Claude on the
+ * UP with the menu open, [AssistantAction.ExplainLine] (#293, #347, ADR-0005 §7), asks [explanations] -- Claude on the
  * laptop through the bridge -- to explain the line with its context (the neighbouring English cues of
  * [hidden]'s track, the title and the aligned Spanish line when there is one) and shows the answer,
- * never spoken. Without [explanations] RIGHT does nothing.
+ * never spoken. Without [explanations] UP does nothing.
  *
  * Playing an in-progress download (#226): when [streamingController] and [repo] are given, [open]
  * of an item that is not [DownloadState.Completed] goes through [PlaybackSession.openStreaming]
@@ -192,6 +195,17 @@ class PlayerViewModel(
         )
 
     private val explanationState = explanations?.state ?: flowOf(ExplanationUiState.Idle)
+
+    init {
+        // A shown explanation is said in English (off or no voice: text only); dismissing resets [speech].
+        viewModelScope.launch {
+            explanationState.filterIsInstance<ExplanationUiState.Shown>().collect {
+                speech.speakExplanation(
+                    it.spokenText(),
+                )
+            }
+        }
+    }
 
     /** Whether a fragment is playing and how many lines back from the capture it is (#339). */
     private val replayState = combine(capture.replaying, capture.linesBack, ::Pair)
@@ -282,6 +296,7 @@ class PlayerViewModel(
     private var messageJob: Job? = null
     private var spanishJob: Job? = null
     private var explainJob: Job? = null
+    private var explainPresses = 0
 
     /** The opened movie, for LEFT's aligned Spanish lookup (#288). */
     private var movie: Pair<TorrentId, File>? = null
@@ -396,37 +411,64 @@ class PlayerViewModel(
     }
 
     /**
-     * RIGHT (#293): asks [explanations] to explain the captured line, never spoken. The aligned
-     * Spanish line goes with it -- LEFT's when LEFT already found one, else looked up here -- and the
-     * panel reads "Pensando…" from the key press on. While a request is on its way or once the line
-     * is explained another RIGHT changes nothing; after a failure it asks again.
+     * UP with the menu open (#347, ADR-0005 §7): one more press for the explain group. Presses less
+     * than [EXPLAIN_GROUP_WINDOW_MS] apart form a group; when the gap passes one request goes to
+     * [explanations] for the N consecutive phrases ending at the captured one, never moving the
+     * movie. The panel reads "Pensando…" from the first press on. While a request is on its way or
+     * once explained another UP changes nothing; after a failure it asks again.
      */
     private fun explainLine() {
         val controller = explanations ?: return
         val line = capture.captured.value ?: return
-        if (local.value.explainGathering) return
-        when (controller.state.value) {
-            is ExplanationUiState.Thinking, is ExplanationUiState.Shown -> return
-            ExplanationUiState.Idle, is ExplanationUiState.Unavailable -> Unit
+        if (explainPresses == 0) {
+            if (local.value.explainGathering) return
+            when (controller.state.value) {
+                is ExplanationUiState.Thinking, is ExplanationUiState.Shown -> return
+                ExplanationUiState.Idle, is ExplanationUiState.Unavailable -> Unit
+            }
         }
-        val known = (local.value.spanish as? SpanishAnswer.Aligned)?.line?.text
+        explainPresses++
+        local.update { it.copy(explainGathering = true) }
+        explainJob?.cancel()
         val opened = movie
         val title = local.value.title
-        local.update { it.copy(explainGathering = true) }
         explainJob =
             viewModelScope.launch {
-                val spanish = known ?: opened?.let { (id, file) -> spanishLines.lineFor(id, file, line.cue) }?.text
+                delay(EXPLAIN_GROUP_WINDOW_MS)
+                val phrases = explainPresses
+                explainPresses = 0
+                val track = hidden.track ?: SubtitleTrack(emptyList())
+                val cues = phrasesEndingAt(track, line.cue, phrases)
+                // The Spanish line only describes a single phrase; a longer span goes without it.
+                val spanish =
+                    if (cues.size ==
+                        1
+                    ) {
+                        opened?.let { (id, file) -> spanishLines.lineFor(id, file, line.cue) }?.text
+                    } else {
+                        null
+                    }
                 // Dismissed (or another line captured) while gathering: this request is stale.
                 if (capture.captured.value != line || !local.value.explainGathering) return@launch
-                val track = hidden.track ?: SubtitleTrack(emptyList())
-                controller.explain(ExplanationContext.of(track, line.cue, title, spanish))
+                controller.explain(ExplanationContext.of(track, cues, title, spanish))
                 local.update { it.copy(explainGathering = false) }
             }
+    }
+
+    /** The [count] consecutive cues of [track] ending at [cue], oldest first; fewer at the start of the track. */
+    private fun phrasesEndingAt(
+        track: SubtitleTrack,
+        cue: SubtitleCue,
+        count: Int,
+    ): List<SubtitleCue> {
+        if (track.cues.getOrNull(cue.index) != cue) return listOf(cue)
+        return track.cues.subList((cue.index - count + 1).coerceAtLeast(0), cue.index + 1)
     }
 
     private fun clearExplanation() {
         explainJob?.cancel()
         explainJob = null
+        explainPresses = 0
         local.update { it.copy(explainGathering = false) }
         explanations?.dismiss()
     }
@@ -673,6 +715,9 @@ class PlayerViewModel(
 
         /** How long an assistant message stays in the transport overlay. */
         const val MESSAGE_TIMEOUT_MS = 3_000L
+
+        /** UP presses less than this apart form one explain group (#347). */
+        const val EXPLAIN_GROUP_WINDOW_MS = 1_500L
 
         const val NO_SUBTITLES = "Esta película no tiene subtítulos en inglés"
         const val NO_SPANISH = "Sin subtítulos en español"

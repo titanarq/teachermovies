@@ -46,7 +46,7 @@ sealed interface AssistantAction {
  * null so the transport mapping of [RemoteKeyMapper] keeps handling it. With the overlay open every
  * key is taken: OK/ENTER/PLAY_PAUSE replay, DPAD_LEFT/DPAD_RIGHT rewind N phrases showing English /
  * Spanish (#347; also with the overlay closed while [assistantAvailable], else they seek),
- * BACK/DPAD_DOWN/CAPTIONS dismiss, and the rest -- DPAD_UP included -- is [AssistantAction.Consumed], so no transport action can run behind the overlay. The exception is
+ * DPAD_UP explains (#347; closed, UP still opens the tracks panel), BACK/DPAD_DOWN/CAPTIONS dismiss, and the rest is [AssistantAction.Consumed], so no transport action can run behind the overlay. The exception is
  * the volume keys (VOLUME_UP/DOWN/MUTE, #178): they are null in both modes so the system still
  * changes the TV volume while the overlay is open.
  */
@@ -66,6 +66,8 @@ object AssistantKeyMapper {
                 KeyEvent.KEYCODE_DPAD_LEFT -> AssistantAction.RewindEnglish
 
                 KeyEvent.KEYCODE_DPAD_RIGHT -> AssistantAction.RewindSpanish
+
+                KeyEvent.KEYCODE_DPAD_UP -> AssistantAction.ExplainLine
 
                 KeyEvent.KEYCODE_BACK,
                 KeyEvent.KEYCODE_DPAD_DOWN,
