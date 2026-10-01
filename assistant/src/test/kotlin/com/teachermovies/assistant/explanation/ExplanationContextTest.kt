@@ -105,4 +105,42 @@ class ExplanationContextTest {
         assertEquals(emptyList<String>(), context.before)
         assertEquals(emptyList<String>(), context.after)
     }
+
+    @Test
+    fun `a span joins its cues with a space and takes neighbours around the span`() {
+        val track = track(12)
+        val context = ExplanationContext.of(track, track.cues.subList(5, 8), "Heat", null)
+        assertEquals("line 5 line 6 line 7", context.line)
+        assertEquals(listOf("line 2", "line 3", "line 4"), context.before)
+        assertEquals(listOf("line 8", "line 9"), context.after)
+    }
+
+    @Test
+    fun `a span of one is exactly the single cue context`() {
+        val track = track(10)
+        assertEquals(
+            ExplanationContext.of(track, track.cues[5], "Heat", "x"),
+            ExplanationContext.of(track, listOf(track.cues[5]), "Heat", "x"),
+        )
+    }
+
+    @Test
+    fun `a span skips blank cues and the joined line is clipped`() {
+        val cues =
+            listOf(
+                SubtitleCue(0, 0, 500, "a".repeat(400)),
+                SubtitleCue(1, 1_000, 1_500, "  "),
+                SubtitleCue(2, 2_000, 2_500, "b".repeat(400)),
+            )
+        val context = ExplanationContext.of(SubtitleTrack(cues), cues, null, null)
+        assertEquals("a".repeat(400) + " " + "b".repeat(99), context.line)
+    }
+
+    @Test
+    fun `neighbours of a span respect the window from each end`() {
+        val track = track(10, stepMs = 8_000)
+        val context = ExplanationContext.of(track, track.cues.subList(4, 6), null, null)
+        assertEquals(listOf("line 2", "line 3"), context.before)
+        assertEquals(listOf("line 6", "line 7"), context.after)
+    }
 }

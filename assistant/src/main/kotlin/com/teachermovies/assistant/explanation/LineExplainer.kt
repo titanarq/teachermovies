@@ -129,7 +129,7 @@ class LineExplainer(
          * The explain prompt version the TV assumes until the bridge tags a reply (#291). Bump it
          * together with the bridge's prompt.
          */
-        const val PROMPT_VERSION = "explain-v1"
+        const val PROMPT_VERSION = "explain-v2"
 
         const val BLANK_LINE_REASON = "blank line"
 

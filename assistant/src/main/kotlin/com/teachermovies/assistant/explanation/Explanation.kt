@@ -19,6 +19,20 @@ data class Explanation(
     val subtitleNote: String?,
     val promptVersion: String?,
 ) {
+    /**
+     * The text to say aloud: the summary, then each point's expression and explanation, then the
+     * subtitle note if any; blank parts are skipped and the parts are joined with a space.
+     */
+    fun spokenText(): String =
+        buildList {
+            add(summary)
+            points.forEach {
+                add(it.expression)
+                add(it.explanation)
+            }
+            subtitleNote?.let(::add)
+        }.map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" ")
+
     companion object {
         /** Points the panel shows at most (#291's schema). */
         const val MAX_POINTS = 3

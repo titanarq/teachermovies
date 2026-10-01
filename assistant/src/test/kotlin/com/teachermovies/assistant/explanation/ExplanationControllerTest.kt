@@ -67,6 +67,26 @@ class ExplanationControllerTest {
         }
 
     @Test
+    fun `a request for a longer span cancels the pending one`() =
+        runTest {
+            val controller = controller()
+            gateway.delayMs = 1_000
+            gateway.documents["one"] = document("Uno")
+            gateway.documents["one two"] = document("Uno y dos")
+
+            controller.explain(context("one"))
+            runCurrent()
+            advanceTimeBy(500)
+            controller.explain(context("one two"))
+            settle()
+
+            val shown = controller.state.value as ExplanationUiState.Shown
+            assertEquals("one two", shown.line)
+            assertEquals("Uno y dos", shown.explanation.summary)
+            assertEquals(1, gateway.maxInFlight)
+        }
+
+    @Test
     fun `many quick lines in a row still keep one request in flight and show the last`() =
         runTest {
             val controller = controller()

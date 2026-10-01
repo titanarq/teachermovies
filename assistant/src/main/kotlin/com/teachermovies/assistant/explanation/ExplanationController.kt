@@ -113,3 +113,6 @@ class ExplanationController(
         const val OFFLINE_REASON = "bridge timed out or disconnected"
     }
 }
+
+/** The text to say aloud for what the panel shows: [Explanation.spokenText] of its explanation. */
+fun ExplanationUiState.Shown.spokenText(): String = explanation.spokenText()
