@@ -316,3 +316,10 @@ that dry run, `refiner_unattended` was flipped to `true` and the refiner has run
   after which the planner launched the validator. The fix is upstream: `open-pr` should emit
   `worker_finished` itself, or add the `wake:planner` label to the issue. **To report** to
   `titanarq/agent-os` (not yet filed).
+
+- **A worker that ends through `open-pr` emits no `worker_finished`, and a task with no
+  `status:*` label is never dispatched.** Found on #343 / PR #352 (2026-10-01): the planner
+  was not woken for the PR, and after the human's second-stage fix the issue sat with no
+  label. Workaround: validate the body, `issues.py move N ready`, then comment the reason and
+  add `wake:planner`; the next tick relaunched qwen (resume, stage 2) and the validator
+  re-approved the new head. Upstream: **to report** to `titanarq/agent-os` (not yet filed).
