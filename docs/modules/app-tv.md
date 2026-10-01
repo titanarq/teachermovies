@@ -296,8 +296,9 @@
   active one. Nothing else in the overlay changes, and `Repitiendo…` still shows while it plays.
 
 ## Asistente: modelo de teclas 2026-09-29 (ADR-0005 amendment; supersedes #86/#92/#288/#293/#339 keys)
-Target behaviour, delivered by the issues linked from the docs PR that added this section; until they
-land the sections above describe the code.
+Delivered in two stages (#347): LEFT/RIGHT rewind, subtitle line and menu hint are **actual** (stage 1,
+described under "Actual (stage 1)" below); UP explaining and the auto-fit panel are still target
+(stage 2) until that stage lands, and the older sections above still describe the explain/Spanish keys.
 - Menu closed: DPAD_DOWN opens the informational menu (pauses, shows the captured English line and
   the hint); DPAD_LEFT / DPAD_RIGHT no longer seek by 10 s while the assistant is available: they go
   back N phrases (N = presses in a group, gap < 1.5 s, `REWIND_GROUP_WINDOW_MS`), LEFT showing the
@@ -315,6 +316,28 @@ land the sections above describe the code.
   explanation is English only (no Spanish translation in the text or the TTS). The TV cannot scroll, so the panel
   auto-fits: font size and line spacing are computed so the full text fits, shrinking to a legible minimum and
   truncating with an ellipsis only below it.
+
+### Actual (stage 1, #347): phrase rewind
+- `AssistantKeyMapper.map(keyCode, overlayOpen, assistantAvailable = true)`: DPAD_LEFT/RIGHT are
+  `AssistantAction.RewindEnglish` / `RewindSpanish` with the menu open or closed; with
+  `assistantAvailable = false` (no English subtitles) they are null and `RemoteKeyMapper` seeks +-10 s.
+  Open menu: OK replays, BACK/DOWN/CAPTIONS dismiss, volume passes through, UP is still `Consumed`
+  (it explains in stage 2). The old LEFT = Spanish / RIGHT = Explicar menu keys are gone; the
+  `TranslateLine`/`ExplainLine` actions remain until stage 2 reworks them.
+- `PlayerViewModel(..., rewind: PhraseRewindController?, spanishText: MovieSpanishText?)`: a rewind
+  action is one `rewind.press(ENGLISH|SPANISH)`; grouping (1 500 ms, N = presses) lives in the
+  controller. An open menu closes on the first press (`capture.dismiss(resume = false)`, speech and
+  explanation reset): the movie stays paused through the group window and the controller then seeks
+  and plays, so the rewind starts from the captured position and ends with no menu. Transport
+  actions are not blocked. `PlayerUiState.rewindText` = `PhraseRewindController.displayText`
+  (null while `display` is `OFF`); `PlayerScreen` draws it bottom-centre over the video, independent
+  of the libVLC subtitle and of the tracks panel. The root box keeps key focus (no focus moves).
+- `MovieSpanishText` (a `SpanishTextSource`) is what `AppContainer.phraseRewindController` is built
+  over once; `open` loads its `SpanishCueTimeline` (#344) after hidden mode starts and `exit`
+  clears it. Without a timeline RIGHT draws nothing and shows `Sin subtítulos en español` for 3 s
+  (`NO_SPANISH`); LEFT is unaffected.
+- The menu (DOWN) is unchanged (pauses, shows the captured English line); its hint is
+  `ARRIBA Explicar · ATRÁS Cerrar`.
 
 ## Reproducir mientras descarga (#226)
 - Entry point: Descargas, OK on a row -> the action dialog starts with `Reproducir` (focused) when

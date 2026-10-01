@@ -184,6 +184,8 @@ class MainActivity : ComponentActivity() {
             streamingController = container.streamingPlaybackController,
             spanishLines = container.alignedSpanishSource,
             explanations = container.explanationController,
+            rewind = container.phraseRewindController,
+            spanishText = container.movieSpanishText,
         )
     }
 

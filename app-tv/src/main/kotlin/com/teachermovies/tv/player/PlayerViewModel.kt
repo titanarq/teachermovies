@@ -8,6 +8,8 @@ import com.teachermovies.assistant.CaptureResult
 import com.teachermovies.assistant.HiddenModeResult
 import com.teachermovies.assistant.HiddenSubtitleController
 import com.teachermovies.assistant.LineCaptureController
+import com.teachermovies.assistant.PhraseRewindController
+import com.teachermovies.assistant.SubtitleDisplay
 import com.teachermovies.assistant.TranslationUiState
 import com.teachermovies.assistant.explanation.ExplanationContext
 import com.teachermovies.assistant.explanation.ExplanationController
@@ -53,6 +55,9 @@ import java.io.File
  *
  * [streamStatus] (#226) is the streaming controller's `Preparing`/`Buffering` state as text while
  * an in-progress download is being played, null otherwise.
+ *
+ * [rewindText] (#347) is the phrase-rewind line drawn bottom-centre over the video while the
+ * rewind controller's display is not off; null otherwise.
  */
 data class PlayerUiState(
     val title: String = "",
@@ -68,6 +73,7 @@ data class PlayerUiState(
     val assistantAvailable: Boolean = false,
     val message: String? = null,
     val streamStatus: String? = null,
+    val rewindText: String? = null,
 )
 
 /**
@@ -144,6 +150,8 @@ class PlayerViewModel(
     private val repo: TorrentRepository? = null,
     private val spanishLines: AlignedSpanishSource = AlignedSpanishSource.NONE,
     private val explanations: ExplanationController? = null,
+    private val rewind: PhraseRewindController? = null,
+    private val spanishText: MovieSpanishText? = null,
 ) : ViewModel() {
     /** Where LEFT's Spanish line for the captured cue stands (#288); null until LEFT is pressed. */
     private sealed interface SpanishAnswer {
@@ -224,7 +232,16 @@ class PlayerViewModel(
 
     private val streamState = streamingController?.state ?: flowOf(StreamState.Idle)
 
-    private val panels = combine(tracks, assistant, streamState, ::Triple)
+    private val rewindText = rewind?.displayText ?: flowOf(null)
+
+    private class Panels(
+        val tracks: TracksPanelState?,
+        val assistant: AssistantOverlayState?,
+        val stream: StreamState,
+        val rewindText: String?,
+    )
+
+    private val panels = combine(tracks, assistant, streamState, rewindText, ::Panels)
 
     val uiState: StateFlow<PlayerUiState> =
         combine(
@@ -234,7 +251,9 @@ class PlayerViewModel(
             player.durationMs,
             panels,
         ) { local, state, position, duration, panels ->
-            val (tracks, assistant, stream) = panels
+            val tracks = panels.tracks
+            val assistant = panels.assistant
+            val stream = panels.stream
             val error = errorOf(local, state)
             // An error replaces the picture, assistant overlay included.
             val overlay = assistant.takeIf { error == null }
@@ -254,6 +273,7 @@ class PlayerViewModel(
                 assistantAvailable = local.assistantAvailable,
                 message = local.message,
                 streamStatus = if (local.streaming && error == null) streamStatusOf(stream) else null,
+                rewindText = panels.rewindText.takeIf { error == null },
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, PlayerUiState())
 
@@ -290,6 +310,7 @@ class PlayerViewModel(
                             )
                         val available = started is HiddenModeResult.Started
                         local.update { it.copy(assistantAvailable = available) }
+                        if (available) spanishText?.load(id, File(result.item.mainFilePath))
                     }
 
                     SessionResult.NotFound -> {
@@ -345,11 +366,33 @@ class PlayerViewModel(
         when (action) {
             AssistantAction.CaptureLine -> captureLine()
             AssistantAction.ReplayFragment -> capture.replay()
+            AssistantAction.RewindEnglish -> rewindPhrases(SubtitleDisplay.ENGLISH)
+            AssistantAction.RewindSpanish -> rewindPhrases(SubtitleDisplay.SPANISH)
             AssistantAction.TranslateLine -> showSpanish()
             AssistantAction.ExplainLine -> explainLine()
             AssistantAction.DismissOverlay -> dismissOverlay()
             AssistantAction.Consumed -> Unit
         }
+    }
+
+    /**
+     * LEFT/RIGHT (#347): one more press for [rewind], which groups the presses of a 1.5 s window
+     * and goes back N phrases once it closes, drawing [language]'s line ([PlayerUiState.rewindText]).
+     * An open menu closes with the first press -- the movie stays paused until the rewind fires --
+     * so the rewind starts from the captured position. RIGHT without a Spanish timeline draws
+     * nothing and says [NO_SPANISH] for [MESSAGE_TIMEOUT_MS]. Transport actions are not blocked.
+     */
+    private fun rewindPhrases(language: SubtitleDisplay) {
+        val controller = rewind ?: return
+        if (!local.value.assistantAvailable) return
+        if (capture.captured.value != null) {
+            clearSpanish()
+            clearExplanation()
+            speech.reset()
+            capture.dismiss(resume = false)
+        }
+        if (language == SubtitleDisplay.SPANISH && spanishText?.hasTimeline != true) showMessage(NO_SPANISH)
+        controller.press(language)
     }
 
     /**
@@ -534,6 +577,8 @@ class PlayerViewModel(
         clearExplanation()
         speech.reset()
         capture.dismiss(resume = false)
+        rewind?.cancel()
+        spanishText?.clear()
         hidden.stop()
     }
 
@@ -587,6 +632,8 @@ class PlayerViewModel(
         private val clock: () -> Long = System::currentTimeMillis,
         private val spanishLines: AlignedSpanishSource = AlignedSpanishSource.NONE,
         private val explanations: ExplanationController? = null,
+        private val rewind: PhraseRewindController? = null,
+        private val spanishText: MovieSpanishText? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -605,6 +652,8 @@ class PlayerViewModel(
                 repo = repo,
                 spanishLines = spanishLines,
                 explanations = explanations,
+                rewind = rewind,
+                spanishText = spanishText,
             ) as T
         }
     }
@@ -626,6 +675,7 @@ class PlayerViewModel(
         const val MESSAGE_TIMEOUT_MS = 3_000L
 
         const val NO_SUBTITLES = "Esta película no tiene subtítulos en inglés"
+        const val NO_SPANISH = "Sin subtítulos en español"
         const val NO_LINE = "No hay ninguna frase que capturar"
 
         /** Where LEFT's Spanish line came from (#288, ADR-0005 §5/§6). */

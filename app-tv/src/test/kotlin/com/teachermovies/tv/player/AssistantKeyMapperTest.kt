@@ -44,8 +44,6 @@ class AssistantKeyMapperTest {
                     KeyEvent.KEYCODE_ENTER,
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                     KeyEvent.KEYCODE_BACK,
-                    KeyEvent.KEYCODE_DPAD_LEFT,
-                    KeyEvent.KEYCODE_DPAD_RIGHT,
                 )
         fallThrough.forEach { keyCode ->
             assertNull("keyCode $keyCode", AssistantKeyMapper.map(keyCode, overlayOpen = false))
@@ -94,21 +92,31 @@ class AssistantKeyMapperTest {
     }
 
     @Test
-    fun withTheOverlayOpenRightExplainsTheLineAndLeftTranslatesIt() {
-        assertEquals(
-            AssistantAction.ExplainLine,
-            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = true),
-        )
-        assertEquals(
-            AssistantAction.TranslateLine,
-            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT, overlayOpen = true),
-        )
+    fun leftAndRightRewindEnglishAndSpanishWithTheOverlayOpenOrClosed() {
+        listOf(true, false).forEach { open ->
+            assertEquals(
+                AssistantAction.RewindEnglish,
+                AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT, overlayOpen = open),
+            )
+            assertEquals(
+                AssistantAction.RewindSpanish,
+                AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = open),
+            )
+        }
     }
 
     @Test
-    fun withTheOverlayClosedLeftAndRightStayWithTheTransportMapping() {
-        assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = false))
-        assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT, overlayOpen = false))
+    fun withoutAnAssistantLeftAndRightStayWithTheTransportMapping() {
+        assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = false, assistantAvailable = false))
+        assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT, overlayOpen = false, assistantAvailable = false))
+    }
+
+    @Test
+    fun withTheOverlayOpenUpMeansNothingYet() {
+        assertEquals(
+            AssistantAction.Consumed,
+            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP, overlayOpen = true),
+        )
     }
 
     @Test

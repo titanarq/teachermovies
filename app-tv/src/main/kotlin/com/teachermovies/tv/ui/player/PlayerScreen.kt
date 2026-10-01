@@ -30,6 +30,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.ViewModelProvider
@@ -67,7 +68,7 @@ fun PlayerRoute(
     PlayerScreen(
         state = state,
         surfaceHost = surfaceHost,
-        onKey = { keyCode -> dispatchKey(keyCode, viewModel) },
+        onKey = { keyCode -> dispatchKey(keyCode, viewModel, state.assistantAvailable) },
         onAssistantAction = viewModel::onAssistantAction,
         onBack = viewModel::back,
         onSelectAudio = viewModel::selectAudio,
@@ -84,8 +85,9 @@ fun PlayerRoute(
 private fun dispatchKey(
     keyCode: Int,
     viewModel: PlayerViewModel,
+    assistantAvailable: Boolean,
 ): Boolean {
-    val assistant = AssistantKeyMapper.map(keyCode, overlayOpen = false)
+    val assistant = AssistantKeyMapper.map(keyCode, overlayOpen = false, assistantAvailable = assistantAvailable)
     if (assistant != null) {
         viewModel.onAssistantAction(assistant)
         return true
@@ -168,6 +170,23 @@ fun PlayerScreen(
             )
         } else if (state.overlayVisible) {
             TransportOverlay(state = state, modifier = Modifier.align(Alignment.BottomCenter))
+        }
+
+        // The phrase-rewind line (#347): the assistant's own subtitle, not libVLC's.
+        val rewindText = state.rewindText
+        if (rewindText != null) {
+            Text(
+                text = rewindText,
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 96.dp, vertical = 56.dp)
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .padding(horizontal = 24.dp, vertical = 8.dp),
+            )
         }
 
         // Playing a download still in progress (#226): what the streaming controller waits for.

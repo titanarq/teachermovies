@@ -32,7 +32,7 @@ import com.teachermovies.tv.player.AssistantKeyMapper
 import com.teachermovies.tv.player.AssistantOverlayState
 
 /** The hint line under the captured text (#86, #293; ADR-0005 §7); [hintLine] says when it is replaced. */
-const val ASSISTANT_HINT = "OK Repetir · IZQUIERDA Español · DERECHA Explicar · ATRÁS Cerrar"
+const val ASSISTANT_HINT = "ARRIBA Explicar · ATRÁS Cerrar"
 
 /** Shown while the captured fragment is replaying (#86). */
 const val ASSISTANT_REPLAYING = "Repitiendo…"
@@ -118,8 +118,8 @@ fun hintLine(linesBack: Int): String = if (linesBack <= 0) ASSISTANT_HINT else "
  * ([explanationLines], #293) and a discreet indicator while [AssistantOverlayState.speaking].
  *
  * It takes focus as soon as it appears and maps every key-down through
- * [AssistantKeyMapper.map] with the overlay open, so OK/ENTER/PLAY_PAUSE replay, RIGHT explains the
- * line, LEFT shows it in Spanish, BACK/DOWN/CAPTIONS dismiss, and every other key is swallowed ([AssistantAction.Consumed]) -- key-ups included -- so
+ * [AssistantKeyMapper.map] with the overlay open, so OK/ENTER/PLAY_PAUSE replay, LEFT/RIGHT rewind
+ * (#347), BACK/DOWN/CAPTIONS dismiss, and every other key is swallowed ([AssistantAction.Consumed]) -- key-ups included -- so
  * nothing behind it reacts. When it leaves composition the player screen takes focus back.
  */
 @Composable
