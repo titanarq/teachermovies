@@ -7,6 +7,8 @@ import androidx.lifecycle.ViewModelStore
 import com.teachermovies.assistant.AssistantSpeechController
 import com.teachermovies.assistant.HiddenSubtitleController
 import com.teachermovies.assistant.LineCaptureController
+import com.teachermovies.assistant.PhraseRewindController
+import com.teachermovies.assistant.SpanishTextSource
 import com.teachermovies.assistant.SubtitleEngine
 import com.teachermovies.assistant.TranslationFailure
 import com.teachermovies.assistant.TranslationUiState
@@ -17,7 +19,9 @@ import com.teachermovies.assistant.explanation.ExplanationPoint
 import com.teachermovies.assistant.explanation.ExplanationUiState
 import com.teachermovies.assistant.explanation.LineExplainer
 import com.teachermovies.assistant.explanation.fake.FakeBridgeExplainGateway
+import com.teachermovies.assistant.explanation.spokenText
 import com.teachermovies.assistant.speech.SpeakerAvailability
+import com.teachermovies.assistant.speech.SpeakerState
 import com.teachermovies.assistant.speech.SpeechLanguage
 import com.teachermovies.assistant.speech.SpokenOutputSettings
 import com.teachermovies.assistant.speech.fake.FakeSpeaker
@@ -95,7 +99,7 @@ class PlayerViewModelTest {
      * not the optional-TTS setting (#294) -- gating each answer is `AssistantSpeechControllerTest`'s
      * job, and its default silences all three.
      */
-    private val allSpoken: StateFlow<SpokenOutputSettings> =
+    private val allSpoken: MutableStateFlow<SpokenOutputSettings> =
         MutableStateFlow(SpokenOutputSettings(englishLine = true, spanishLine = true, explanations = true))
 
     @Before
@@ -112,6 +116,12 @@ class PlayerViewModelTest {
     private lateinit var capture: LineCaptureController
     private lateinit var speech: AssistantSpeechController
     private lateinit var explanations: ExplanationController
+    private lateinit var rewind: PhraseRewindController
+
+    /** RIGHT's Spanish text (#347): [spanishCues] answers every position; null leaves no timeline. */
+    private var spanishCues: String? = null
+    private val spanishText =
+        MovieSpanishText { _, _ -> spanishCues?.let { text -> SpanishTextSource { text } } }
 
     /** The clock [capture] measures a run of OK presses with (#339); tests move it by hand. */
     private var nowMs = 1_000L
@@ -124,6 +134,7 @@ class PlayerViewModelTest {
         val engine = SubtitleEngine(player.positionMs, backgroundScope)
         hidden = HiddenSubtitleController(player, engine, backgroundScope, tmp.newFolder("cache"))
         capture = LineCaptureController(player, engine, backgroundScope, clock = { nowMs })
+        rewind = PhraseRewindController(player, engine, spanishText, backgroundScope, clock = { nowMs })
         speech = AssistantSpeechController(speaker, translations, backgroundScope, allSpoken)
         explanations =
             ExplanationController(
@@ -140,6 +151,8 @@ class PlayerViewModelTest {
             prepareDispatcher = dispatcher,
             spanishLines = spanishLines,
             explanations = explanations,
+            rewind = rewind,
+            spanishText = spanishText,
         )
     }
 
@@ -618,7 +631,12 @@ class PlayerViewModelTest {
 
     /** What the player screen does with a key: the assistant mapping first, then the transport one. */
     private fun PlayerViewModel.press(keyCode: Int) {
-        val assistantAction = AssistantKeyMapper.map(keyCode, overlayOpen = uiState.value.assistant != null)
+        val assistantAction =
+            AssistantKeyMapper.map(
+                keyCode,
+                overlayOpen = uiState.value.assistant != null,
+                assistantAvailable = uiState.value.assistantAvailable,
+            )
         if (assistantAction != null) onAssistantAction(assistantAction) else onAction(RemoteKeyMapper.map(keyCode))
     }
 
@@ -789,7 +807,6 @@ class PlayerViewModelTest {
             listOf(
                 KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
                 KeyEvent.KEYCODE_MEDIA_PLAY,
-                KeyEvent.KEYCODE_DPAD_UP,
                 KeyEvent.KEYCODE_SPACE,
             ).forEach { vm.press(it) }
             vm.onAction(PlayerAction.TogglePlayPause)
@@ -826,6 +843,19 @@ class PlayerViewModelTest {
         return vm
     }
 
+    /** [presses] UP presses [step] ms apart, then the group window closes and the request is sent. */
+    private fun TestScope.explain(
+        vm: PlayerViewModel,
+        presses: Int = 1,
+        step: Long = 100,
+    ) {
+        repeat(presses) {
+            vm.onAssistantAction(AssistantAction.ExplainLine)
+            if (it < presses - 1) advanceTimeBy(step)
+        }
+        advanceTimeBy(PlayerViewModel.EXPLAIN_GROUP_WINDOW_MS + 1)
+    }
+
     @Test
     fun openingPreparesTheSpeakerOnce() =
         runTest(dispatcher) {
@@ -838,13 +868,13 @@ class PlayerViewModelTest {
         }
 
     @Test
-    fun explainLineShowsThinkingThenTheExplanationAndSaysNothing() =
+    fun explainLineShowsThinkingThenTheExplanationAndSaysItInEnglish() =
         runTest(dispatcher) {
             explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
             explainGateway.delayMs = 500
             val vm = captured()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            explain(vm)
             runCurrent()
             assertEquals(
                 ExplanationUiState.Thinking("Hello there."),
@@ -864,7 +894,7 @@ class PlayerViewModelTest {
             assertEquals("Big Movie", asked.title)
             assertEquals("Hello there.", asked.line)
             assertNull("no aligned Spanish line", asked.spanishLine)
-            assertTrue("nothing is spoken", speaker.spoken.isEmpty())
+            assertEquals("said in English", 1, speaker.spoken.size)
             assertEquals("the movie stays paused", PlayerState.Paused, player.state.value)
             assertEquals(2_000L, player.positionMs.value)
         }
@@ -876,7 +906,7 @@ class PlayerViewModelTest {
             explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
             val vm = captured()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            explain(vm)
             runCurrent()
 
             assertEquals(
@@ -899,7 +929,7 @@ class PlayerViewModelTest {
             explainGateway.nextOutcome = BridgeExplainOutcome.NoBridge
             val vm = captured()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            explain(vm)
             runCurrent()
 
             val failed =
@@ -912,7 +942,7 @@ class PlayerViewModelTest {
             )
 
             explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            explain(vm)
             runCurrent()
 
             assertEquals(2, explainGateway.requests.size)
@@ -930,13 +960,13 @@ class PlayerViewModelTest {
             explainGateway.delayMs = 500
             val vm = captured()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            explain(vm)
             runCurrent()
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            explain(vm)
             runCurrent()
             advanceTimeBy(501)
             runCurrent()
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            explain(vm)
             runCurrent()
 
             assertEquals(1, explainGateway.requests.size)
@@ -947,12 +977,129 @@ class PlayerViewModelTest {
         }
 
     @Test
+    fun nPressesOfUpInsideTheGroupWindowSendOneRequestWithNPhrases() =
+        runTest(dispatcher) {
+            explainGateway.documents["Hello there. Bye now."] = EXPLANATION_DOCUMENT
+            val vm = playingWithTwoSubtitles()
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
+            advanceTimeBy(1_000)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
+            assertTrue(
+                "Thinking from the first press, menu still open",
+                vm.uiState.value.assistant!!
+                    .explanation is ExplanationUiState.Thinking,
+            )
+            advanceTimeBy(1_000)
+            assertTrue("the gap restarts with each press", explainGateway.requests.isEmpty())
+            advanceTimeBy(501)
+            runCurrent()
+
+            val asked = explainGateway.requests.single().context
+            assertEquals("Hello there. Bye now.", asked.line)
+            assertNull("no Spanish line for a span", asked.spanishLine)
+            assertEquals(PlayerState.Paused, player.state.value)
+            assertTrue(
+                vm.uiState.value.assistant!!
+                    .explanation is ExplanationUiState.Shown,
+            )
+        }
+
+    @Test
+    fun morePressesThanPhrasesBeforeTheCaptureAreClampedToTheTrack() =
+        runTest(dispatcher) {
+            explainGateway.documents["Hello there. Bye now."] = EXPLANATION_DOCUMENT
+            val vm = playingWithTwoSubtitles()
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+
+            repeat(4) {
+                vm.press(KeyEvent.KEYCODE_DPAD_UP)
+                advanceTimeBy(100)
+            }
+            advanceTimeBy(1_600)
+            runCurrent()
+
+            assertEquals(
+                "Hello there. Bye now.",
+                explainGateway.requests
+                    .single()
+                    .context.line,
+            )
+        }
+
+    @Test
+    fun upIsIgnoredWhileTheGroupRequestIsBeingGatheredOrAnswered() =
+        runTest(dispatcher) {
+            explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
+            explainGateway.delayMs = 500
+            alignedDelayMs = 300
+            val vm = captured()
+
+            explain(vm)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
+            advanceTimeBy(1_000)
+            runCurrent()
+
+            assertEquals(1, explainGateway.requests.size)
+        }
+
+    @Test
+    fun theExplanationIsSpokenInEnglishOnceShown() =
+        runTest(dispatcher) {
+            explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
+            val vm = captured()
+
+            explain(vm)
+            runCurrent()
+
+            val (text, language) = speaker.spoken.single()
+            assertEquals(SpeechLanguage.EN, language)
+            assertEquals(EXPLANATION.spokenText(), text)
+            vm.press(KeyEvent.KEYCODE_BACK)
+            runCurrent()
+            assertEquals("dismissing stops the speech", SpeakerState.Idle, speaker.state.value)
+        }
+
+    @Test
+    fun withTheExplanationSpeechOffTheExplanationIsOnlyShown() =
+        runTest(dispatcher) {
+            allSpoken.value = SpokenOutputSettings(englishLine = true, spanishLine = true, explanations = false)
+            explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
+            val vm = captured()
+
+            explain(vm)
+            runCurrent()
+
+            assertTrue(speaker.spoken.isEmpty())
+            val shown =
+                vm.uiState.value.assistant!!
+                    .explanation
+            assertTrue(shown is ExplanationUiState.Shown)
+            assertNull("no error message", vm.uiState.value.message)
+        }
+
+    @Test
+    fun anUnavailableExplanationIsNotSpoken() =
+        runTest(dispatcher) {
+            explainGateway.nextOutcome = BridgeExplainOutcome.NoBridge
+            val vm = captured()
+
+            explain(vm)
+            runCurrent()
+
+            assertTrue(speaker.spoken.isEmpty())
+        }
+
+    @Test
     fun dismissWhileThinkingDropsTheExplanation() =
         runTest(dispatcher) {
             explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
             explainGateway.delayMs = 500
             val vm = captured()
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            explain(vm)
             runCurrent()
 
             vm.press(KeyEvent.KEYCODE_BACK)
@@ -976,7 +1123,7 @@ class PlayerViewModelTest {
             translations.delayMs = 500
             val vm = captured()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            vm.onAssistantAction(AssistantAction.TranslateLine)
             runCurrent()
             assertEquals(
                 TranslationUiState.Loading,
@@ -1008,7 +1155,7 @@ class PlayerViewModelTest {
             translations.translations["Hello there."] = "Hola."
             val vm = captured()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            vm.onAssistantAction(AssistantAction.TranslateLine)
             runCurrent()
 
             val overlay = vm.uiState.value.assistant!!
@@ -1018,7 +1165,7 @@ class PlayerViewModelTest {
             assertTrue(speaker.spoken.isEmpty())
             assertEquals(PlayerState.Paused, player.state.value)
 
-            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            vm.onAssistantAction(AssistantAction.TranslateLine)
             runCurrent()
             assertEquals("a second LEFT does not look again", 1, alignedAsked.size)
         }
@@ -1029,7 +1176,7 @@ class PlayerViewModelTest {
             aligned = AlignedSpanishLine("Hola, güey.", latino = true)
             val vm = captured()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            vm.onAssistantAction(AssistantAction.TranslateLine)
             runCurrent()
 
             assertEquals(
@@ -1046,7 +1193,7 @@ class PlayerViewModelTest {
             alignedDelayMs = 300
             val vm = captured()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            vm.onAssistantAction(AssistantAction.TranslateLine)
             runCurrent()
             assertEquals(
                 TranslationUiState.Loading,
@@ -1069,7 +1216,7 @@ class PlayerViewModelTest {
             alignedDelayMs = 300
             translations.translations["Hello there."] = "Hola."
             val vm = captured()
-            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            vm.onAssistantAction(AssistantAction.TranslateLine)
             runCurrent()
 
             vm.press(KeyEvent.KEYCODE_BACK)
@@ -1087,7 +1234,7 @@ class PlayerViewModelTest {
         runTest(dispatcher) {
             translations.nextResult = TranslationResult.Offline
             val vm = captured()
-            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            vm.onAssistantAction(AssistantAction.TranslateLine)
             runCurrent()
             assertEquals(
                 TranslationUiState.Failed(TranslationFailure.OFFLINE),
@@ -1100,7 +1247,7 @@ class PlayerViewModelTest {
             )
 
             translations.translations["Hello there."] = "Hola."
-            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            vm.onAssistantAction(AssistantAction.TranslateLine)
             runCurrent()
 
             val overlay = vm.uiState.value.assistant!!
@@ -1117,7 +1264,7 @@ class PlayerViewModelTest {
             translations.translations["Hello there."] = "Hola."
             val vm = captured()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            vm.onAssistantAction(AssistantAction.TranslateLine)
             runCurrent()
 
             assertEquals(
@@ -1134,7 +1281,7 @@ class PlayerViewModelTest {
             translations.nextResult = TranslationResult.Offline
             val vm = captured()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            vm.onAssistantAction(AssistantAction.TranslateLine)
             runCurrent()
 
             assertEquals(
@@ -1151,7 +1298,7 @@ class PlayerViewModelTest {
         runTest(dispatcher) {
             val vm = captured()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            vm.onAssistantAction(AssistantAction.TranslateLine)
             runCurrent()
 
             assertEquals(
@@ -1168,8 +1315,8 @@ class PlayerViewModelTest {
             translations.translations["Hello there."] = "Hola."
             val vm = captured()
             explainGateway.documents["Hello there."] = EXPLANATION_DOCUMENT
-            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            vm.onAssistantAction(AssistantAction.TranslateLine)
+            explain(vm)
             runCurrent()
             assertEquals(TranslationUiState.Ready("Hola."), speech.state.value.translation)
             assertTrue(explanations.state.value is ExplanationUiState.Shown)
@@ -1196,8 +1343,8 @@ class PlayerViewModelTest {
         runTest(dispatcher) {
             val vm = captured()
 
-            listOf(KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT).forEach {
-                vm.press(it)
+            listOf(AssistantAction.ExplainLine, AssistantAction.TranslateLine, AssistantAction.ExplainLine).forEach {
+                vm.onAssistantAction(it)
                 runCurrent()
             }
 
@@ -1208,6 +1355,119 @@ class PlayerViewModelTest {
                 vm.uiState.value.assistant!!
                     .text,
             )
+        }
+
+    // -- LEFT / RIGHT phrase rewind (#347) ------------------------------------------------------
+
+    @Test
+    fun leftPressesInsideTheWindowGoBackThatManyPhrasesAndDrawTheEnglishLine() =
+        runTest(dispatcher) {
+            val vm = playingWithTwoSubtitles()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            nowMs += 400L
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+
+            assertEquals("Bye now.", vm.uiState.value.rewindText)
+            assertEquals("nothing is seeked while the group is open", 31_000L, player.positionMs.value)
+
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+            runCurrent()
+
+            assertEquals("two presses: the line before the current one", 700L, player.positionMs.value)
+            assertEquals(PlayerState.Playing, player.state.value)
+
+            player.emitPosition(31_000L)
+            runCurrent()
+
+            assertNull("the subtitle goes away once playback is back", vm.uiState.value.rewindText)
+        }
+
+    @Test
+    fun rightDrawsTheSpanishLineAndWithoutATimelineSaysSo() =
+        runTest(dispatcher) {
+            spanishCues = "Hola."
+            val vm = playingWithTwoSubtitles()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            runCurrent()
+
+            assertEquals("Hola.", vm.uiState.value.rewindText)
+            assertNull(vm.uiState.value.message)
+        }
+
+    @Test
+    fun rightWithoutASpanishTimelineShowsTheMessageForThreeSecondsAndNoLine() =
+        runTest(dispatcher) {
+            val vm = playingWithTwoSubtitles()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            runCurrent()
+
+            assertEquals(PlayerViewModel.NO_SPANISH, vm.uiState.value.message)
+            assertEquals("Sin subtítulos en español", vm.uiState.value.message)
+            assertNull(vm.uiState.value.rewindText)
+
+            advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
+            runCurrent()
+
+            assertNull(vm.uiState.value.message)
+        }
+
+    @Test
+    fun theRewindClosesAnOpenMenuAndTheMovieKeepsPlayingWithoutIt() =
+        runTest(dispatcher) {
+            val vm = playingWithTwoSubtitles()
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+            assertEquals(PlayerState.Paused, player.state.value)
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+
+            assertNull("the menu closes", vm.uiState.value.assistant)
+            assertEquals("Bye now.", vm.uiState.value.rewindText)
+
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+            runCurrent()
+
+            assertEquals(PlayerState.Playing, player.state.value)
+            assertEquals("one press: the captured line again", 29_700L, player.positionMs.value)
+            assertNull(vm.uiState.value.assistant)
+        }
+
+    @Test
+    fun transportActionsAreNotBlockedWhileTheRewindIsPending() =
+        runTest(dispatcher) {
+            val vm = playingWithTwoSubtitles()
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+
+            vm.onAction(PlayerAction.Pause)
+
+            assertEquals(PlayerState.Paused, player.state.value)
+        }
+
+    @Test
+    fun withoutAnAssistantLeftAndRightSeekByTenSeconds() =
+        runTest(dispatcher) {
+            seed(movieFile())
+            val vm = openedViewModel()
+            player.emitDuration(600_000L)
+            player.play()
+            player.emitPosition(60_000L)
+            runCurrent()
+            assertFalse(vm.uiState.value.assistantAvailable)
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+            assertEquals(50_000L, player.positionMs.value)
+
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            runCurrent()
+            assertEquals(60_000L, player.positionMs.value)
+            assertNull(vm.uiState.value.rewindText)
         }
 
     // -- Playing an in-progress download (#226) -------------------------------------------------

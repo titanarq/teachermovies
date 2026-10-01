@@ -8,7 +8,9 @@ import androidx.datastore.preferences.core.Preferences
 import com.teachermovies.assistant.AssistantSpeechController
 import com.teachermovies.assistant.HiddenSubtitleController
 import com.teachermovies.assistant.LineCaptureController
+import com.teachermovies.assistant.PhraseRewindController
 import com.teachermovies.assistant.SubtitleEngine
+import com.teachermovies.assistant.alignment.SpanishCueTimeline
 import com.teachermovies.assistant.alignment.SpanishLineLookup
 import com.teachermovies.assistant.explanation.ExplanationController
 import com.teachermovies.assistant.explanation.LineExplainer
@@ -61,6 +63,7 @@ import com.teachermovies.tv.log.LoggingSetup
 import com.teachermovies.tv.net.LanAddressResolver
 import com.teachermovies.tv.player.AlignedSpanishSource
 import com.teachermovies.tv.player.LookupAlignedSpanishSource
+import com.teachermovies.tv.player.MovieSpanishText
 import com.teachermovies.tv.player.SpanishSubtitleFinder
 import com.teachermovies.tv.subtitles.SubtitleNeedsCoordinator
 import kotlinx.coroutines.CoroutineScope
@@ -267,24 +270,44 @@ class AppContainer(
             assistantScope,
         )
 
+    private val spanishLineLookup =
+        SpanishLineLookup(
+            RoomSubtitleAlignmentRepository(torrentDatabase.subtitleAlignmentDao()),
+            nowMs = System::currentTimeMillis,
+        )
+
+    private val spanishSubtitleFinder =
+        SpanishSubtitleFinder(
+            fetches = RoomSubtitleFetchRepository(torrentDatabase.subtitleFetchStateDao()),
+            embedded = hiddenSubtitleController::embeddedSubtitle,
+        )
+
     /**
      * LEFT's first answer (#288, ADR-0005 §6): the Spanish subtitle line aligned to the captured
      * English one -- sidecar, embedded or bridge-downloaded -- with the alignments cached in Room.
      */
     val alignedSpanishSource: AlignedSpanishSource =
         LookupAlignedSpanishSource(
-            lookup =
-                SpanishLineLookup(
-                    RoomSubtitleAlignmentRepository(torrentDatabase.subtitleAlignmentDao()),
-                    nowMs = System::currentTimeMillis,
-                ),
+            lookup = spanishLineLookup,
             english = { hiddenSubtitleController.track },
-            find =
-                SpanishSubtitleFinder(
-                    fetches = RoomSubtitleFetchRepository(torrentDatabase.subtitleFetchStateDao()),
-                    embedded = hiddenSubtitleController::embeddedSubtitle,
-                )::find,
+            find = spanishSubtitleFinder::find,
         )
+
+    /**
+     * RIGHT's Spanish line for the phrase rewind (#347): the `SpanishCueTimeline` (#344) of the
+     * movie being played, built when it opens; none (RIGHT shows `Sin subtítulos en español`) when
+     * no Spanish subtitle aligns well enough.
+     */
+    val movieSpanishText: MovieSpanishText =
+        MovieSpanishText { id, file ->
+            val english = hiddenSubtitleController.track ?: return@MovieSpanishText null
+            val found = spanishSubtitleFinder.find(id, file)
+            SpanishCueTimeline.create(spanishLineLookup, id, english, found.map { it.candidate })
+        }
+
+    /** LEFT/RIGHT go back N phrases and draw the English / Spanish line (#343, #347). */
+    val phraseRewindController: PhraseRewindController =
+        PhraseRewindController(player, subtitleEngine, movieSpanishText, assistantScope)
 
     /**
      * PIN pairing and token validation (ADR-0002). One instance for the process, shared by every

@@ -3,12 +3,16 @@ package com.teachermovies.tv.ui.player
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -18,7 +22,10 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.MaterialTheme
@@ -30,9 +37,10 @@ import com.teachermovies.assistant.explanation.ExplanationUiState
 import com.teachermovies.tv.player.AssistantAction
 import com.teachermovies.tv.player.AssistantKeyMapper
 import com.teachermovies.tv.player.AssistantOverlayState
+import kotlin.math.roundToInt
 
 /** The hint line under the captured text (#86, #293; ADR-0005 §7); [hintLine] says when it is replaced. */
-const val ASSISTANT_HINT = "OK Repetir · IZQUIERDA Español · DERECHA Explicar · ATRÁS Cerrar"
+const val ASSISTANT_HINT = "ARRIBA Explicar · ATRÁS Cerrar"
 
 /** Shown while the captured fragment is replaying (#86). */
 const val ASSISTANT_REPLAYING = "Repitiendo…"
@@ -45,7 +53,7 @@ const val TRANSLATION_LOADING = "Traduciendo…"
 const val TRANSLATION_OFFLINE = "Sin conexión para traducir"
 const val TRANSLATION_UNAVAILABLE = "Traducción no disponible"
 
-/** RIGHT's explanation states (#293). */
+/** UP's explanation states (#293). */
 const val EXPLANATION_THINKING = "Pensando…"
 const val EXPLANATION_UNAVAILABLE = "Explicación no disponible (enciende el portátil)"
 
@@ -114,12 +122,12 @@ fun hintLine(linesBack: Int): String = if (linesBack <= 0) ASSISTANT_HINT else "
  * The captured-line overlay (#86): a dimmed band at the bottom of the video with the English
  * [AssistantOverlayState.text] in a large size, the hint line ([hintLine]) and a replaying
  * indicator. Under the English line (#92) it draws the Spanish translation or its status ([translationLine]) with its
- * [AssistantOverlayState.spanishLabel] ("subtítulo" or "IA", #288), RIGHT's explanation or its status
+ * [AssistantOverlayState.spanishLabel] ("subtítulo" or "IA", #288), UP's explanation (auto-fit panel, #347) or its status
  * ([explanationLines], #293) and a discreet indicator while [AssistantOverlayState.speaking].
  *
  * It takes focus as soon as it appears and maps every key-down through
- * [AssistantKeyMapper.map] with the overlay open, so OK/ENTER/PLAY_PAUSE replay, RIGHT explains the
- * line, LEFT shows it in Spanish, BACK/DOWN/CAPTIONS dismiss, and every other key is swallowed ([AssistantAction.Consumed]) -- key-ups included -- so
+ * [AssistantKeyMapper.map] with the overlay open, so OK/ENTER/PLAY_PAUSE replay, LEFT/RIGHT rewind
+ * (#347), UP explains, BACK/DOWN/CAPTIONS dismiss, and every other key is swallowed ([AssistantAction.Consumed]) -- key-ups included -- so
  * nothing behind it reacts. When it leaves composition the player screen takes focus back.
  */
 @Composable
@@ -177,21 +185,21 @@ fun AssistantOverlay(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        // RIGHT's explanation (#293): the summary stands out, points and note follow smaller.
+        // UP's explanation (#293, #347): Thinking/Unavailable are one line; Shown fills the auto-fit panel.
         val shown = state.explanation is ExplanationUiState.Shown
-        explanationLines(state.explanation).forEachIndexed { index, line ->
-            Text(
-                text = line,
-                style =
-                    if (shown && index == 0) {
-                        MaterialTheme.typography.titleLarge
-                    } else {
-                        MaterialTheme.typography.titleMedium
-                    },
-                color = if (shown) Color(0xFFB3E5FC) else Color.White.copy(alpha = 0.85f),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
+        val lines = explanationLines(state.explanation)
+        if (shown) {
+            ExplanationPanel(text = lines.joinToString("\n"), screen = rememberScreenMetrics())
+        } else {
+            lines.forEach { line ->
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White.copy(alpha = 0.85f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
         if (state.speaking) {
             Text(
@@ -220,4 +228,50 @@ fun AssistantOverlay(
         )
     }
     LaunchedEffect(Unit) { focus.requestFocus() }
+}
+
+/** The screen the window is drawn on (#347): its size in pixels and the density, from the configuration. */
+@Composable
+fun rememberScreenMetrics(): ScreenMetrics {
+    val density = LocalDensity.current.density
+    val configuration = LocalConfiguration.current
+    return remember(density, configuration.screenWidthDp, configuration.screenHeightDp) {
+        ScreenMetrics(
+            widthPx = (configuration.screenWidthDp * density).roundToInt(),
+            heightPx = (configuration.screenHeightDp * density).roundToInt(),
+            density = density,
+        )
+    }
+}
+
+/**
+ * The explanation panel (#347): no scrolling on a TV, so [ExplanationFit.fit] picks the font and line
+ * spacing for [screen] that show all of [text], cutting it with an ellipsis only below the minimum.
+ */
+@Composable
+fun ExplanationPanel(
+    text: String,
+    screen: ScreenMetrics,
+    modifier: Modifier = Modifier,
+) {
+    val fit = remember(text, screen) { ExplanationFit.fit(text, screen) }
+    Box(
+        modifier =
+            modifier
+                .width(ExplanationFit.panelWidthDp(screen).dp)
+                .height(ExplanationFit.panelHeightDp(screen).dp)
+                .padding(ExplanationFit.PADDING_DP.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            fontSize = fit.fontSp.sp,
+            lineHeight = fit.lineHeightSp.sp,
+            maxLines = fit.maxLines,
+            overflow = TextOverflow.Ellipsis,
+            color = Color(0xFFB3E5FC),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
 }
