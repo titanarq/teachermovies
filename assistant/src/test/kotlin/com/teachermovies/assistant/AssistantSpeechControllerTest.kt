@@ -542,7 +542,7 @@ class AssistantSpeechControllerTest {
         }
 
     @Test
-    fun `a controller built without the setting speaks nothing at all`() =
+    fun `a controller built without the setting speaks no line, only the explanation`() =
         runTest {
             val speaker = FakeSpeaker()
             val translations =
@@ -554,11 +554,20 @@ class AssistantSpeechControllerTest {
             controller.translateAndSpeak(hello)
             settle()
             assertFalse(controller.speakTranslation())
-            assertFalse(controller.speakExplanation("Es un modismo."))
-
             assertTrue(speaker.spoken.isEmpty())
             assertEquals(TranslationUiState.Ready("Hola."), controller.state.value.translation)
+
+            assertTrue(controller.speakExplanation("It is an idiom."))
+            assertEquals(listOf("It is an idiom." to SpeechLanguage.EN), speaker.spoken)
         }
+
+    @Test
+    fun `the default settings speak only the explanation`() {
+        assertEquals(
+            SpokenOutputSettings(englishLine = false, spanishLine = false, explanations = true),
+            SpokenOutputSettings(),
+        )
+    }
 
     @Test
     fun `with spoken English off the captured line is not said`() =
@@ -617,7 +626,7 @@ class AssistantSpeechControllerTest {
     @Test
     fun `with spoken explanations off the explanation is not said`() =
         runTest {
-            val f = fixture(SpokenOutputSettings(spanishLine = true))
+            val f = fixture(SpokenOutputSettings(spanishLine = true, explanations = false))
             f.controller.prepare()
 
             assertFalse(f.controller.speakExplanation("Es un modismo."))
@@ -626,7 +635,7 @@ class AssistantSpeechControllerTest {
         }
 
     @Test
-    fun `with only spoken explanations on the explanation is said in Spanish`() =
+    fun `with only spoken explanations on the explanation is said in English`() =
         runTest {
             val f = fixture(SpokenOutputSettings(explanations = true))
             f.controller.prepare()
@@ -636,7 +645,7 @@ class AssistantSpeechControllerTest {
             settle()
             assertTrue(f.controller.speakExplanation("Es un modismo."))
 
-            assertEquals(listOf("Es un modismo." to SpeechLanguage.ES), f.speaker.spoken)
+            assertEquals(listOf("Es un modismo." to SpeechLanguage.EN), f.speaker.spoken)
             assertEquals(TranslationUiState.Ready("Hola."), f.controller.state.value.translation)
         }
 }

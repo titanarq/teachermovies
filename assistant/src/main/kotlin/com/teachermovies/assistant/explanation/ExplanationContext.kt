@@ -36,37 +36,58 @@ data class ExplanationContext(
          */
         const val MAX_LINE_CHARS = 500
 
-        /**
-         * The context of [cue], a cue of [track] (matched by [SubtitleCue.index], the cue's position
-         * in its track): the nearest non-blank cues on each side whose start is at most [WINDOW_MS]
-         * from [cue]'s start, at most [MAX_BEFORE] before and [MAX_AFTER] after. A cue that is not
-         * in [track] (the track was reloaded under it) gets no neighbours rather than wrong ones.
-         * A blank [title] or [spanishLine] is null. Every line is trimmed, its inner line breaks
-         * joined with a space, and clipped to [MAX_LINE_CHARS].
-         */
+        /** The context of the single [cue]: [of] over a span of one. */
         fun of(
             track: SubtitleTrack,
             cue: SubtitleCue,
             title: String?,
             spanishLine: String?,
+        ): ExplanationContext = of(track, listOf(cue), title, spanishLine)
+
+        /**
+         * The context of [cues], the N consecutive cues of [track] ending at the captured one, oldest
+         * first (matched by [SubtitleCue.index], the cue's position in its track). The line is their
+         * non-blank texts joined with a single space and clipped to [MAX_LINE_CHARS]; the neighbours
+         * are the nearest non-blank cues on each side of that span whose start is at most [WINDOW_MS]
+         * from the span's first cue (before) or last cue (after), at most [MAX_BEFORE] before and
+         * [MAX_AFTER] after. A span end that is not in [track] (the track was reloaded under it) gets
+         * no neighbours on its side rather than wrong ones. A blank [title] or [spanishLine] is null.
+         * Every line is trimmed and its inner line breaks joined with a space; one cue gives exactly
+         * the context of that cue alone.
+         */
+        fun of(
+            track: SubtitleTrack,
+            cues: List<SubtitleCue>,
+            title: String?,
+            spanishLine: String?,
         ): ExplanationContext {
-            val position = cue.index.takeIf { track.cues.getOrNull(it) == cue }
+            require(cues.isNotEmpty()) { "at least one cue to explain" }
+            val first = cues.first()
+            val last = cues.last()
+            val firstPosition = first.index.takeIf { track.cues.getOrNull(it) == first }
+            val lastPosition = last.index.takeIf { track.cues.getOrNull(it) == last }
             val before =
-                if (position == null) {
+                if (firstPosition == null) {
                     emptyList()
                 } else {
-                    neighbours(cue, (position - 1 downTo 0).asSequence().map { track.cues[it] }, MAX_BEFORE)
+                    neighbours(first, (firstPosition - 1 downTo 0).asSequence().map { track.cues[it] }, MAX_BEFORE)
                         .reversed()
                 }
             val after =
-                if (position == null) {
+                if (lastPosition == null) {
                     emptyList()
                 } else {
-                    neighbours(cue, (position + 1 until track.cues.size).asSequence().map { track.cues[it] }, MAX_AFTER)
+                    val outward = (lastPosition + 1 until track.cues.size).asSequence().map { track.cues[it] }
+                    neighbours(last, outward, MAX_AFTER)
                 }
             return ExplanationContext(
                 title = title?.let(::clean)?.takeIf { it.isNotEmpty() },
-                line = clean(cue.text),
+                line =
+                    cues
+                        .map { clean(it.text) }
+                        .filter { it.isNotEmpty() }
+                        .joinToString(" ")
+                        .take(MAX_LINE_CHARS),
                 before = before,
                 after = after,
                 spanishLine = spanishLine?.let(::clean)?.takeIf { it.isNotEmpty() },

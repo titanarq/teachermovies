@@ -65,7 +65,7 @@ data class AssistantSpeechState(
  * [Speaker] and [TranslationProvider]; no Android, `TextToSpeech` or libVLC type is referenced here.
  *
  * Speaking is optional and off until the learner turns it on: [spokenOutput] gates every utterance,
- * per answer, and ADR-0005 §10's default [SpokenOutputSettings] silences all of them. The text on
+ * per answer, and the default [SpokenOutputSettings] silences the two lines and speaks the explanation. The text on
  * screen is never gated -- with speech off this is the translation-only controller the panel needs.
  *
  * Coroutines are started on [scope] only while there is something to follow: the mirror of
@@ -205,13 +205,13 @@ class AssistantSpeechController(
     }
 
     /**
-     * Says [text] -- the Spanish explanation of the captured line (ADR-0005 §7), which the screen
+     * Says [text] -- the English explanation of the captured line (ADR-0005 §7), which the screen
      * already shows -- and returns what [Speaker.speak] returned; `false` when
-     * [SpokenOutputSettings.explanations] is off or no ES voice is available. Explanations come from
+     * [SpokenOutputSettings.explanations] is off or no EN voice is available. Explanations come from
      * the laptop bridge, not from this controller, so the text arrives already rendered and saying
      * it aloud is the only thing left to do here.
      */
-    fun speakExplanation(text: String): Boolean = say(text, SpeechLanguage.ES, spokenOutput.value.explanations)
+    fun speakExplanation(text: String): Boolean = say(text, SpeechLanguage.EN, spokenOutput.value.explanations)
 
     /**
      * Silences the speaker, cancels every coroutine this controller started and returns the state

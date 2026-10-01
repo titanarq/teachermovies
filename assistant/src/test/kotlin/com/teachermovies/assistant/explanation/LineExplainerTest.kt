@@ -62,6 +62,33 @@ class LineExplainerTest {
         }
 
     @Test
+    fun `the prompt version is explain-v2 and no explain-v1 row is served`() =
+        runTest {
+            assertEquals("explain-v2", LineExplainer.PROMPT_VERSION)
+            cache.store("Heat", context.line, "explain-v1", document("Vieja"), now)
+            gateway.documents[context.line] = document("Nueva")
+
+            val result = explainer().explain(context) as ExplanationResult.Explained
+            assertEquals("Nueva", result.explanation.summary)
+            assertEquals(false, result.fromCache)
+        }
+
+    @Test
+    fun `a multi-phrase line is a different cache row from its first phrase`() =
+        runTest {
+            val longer = context.copy(line = context.line + " and the next one")
+            gateway.documents[context.line] = document("Una")
+            gateway.documents[longer.line] = document("Dos")
+            val explainer = explainer()
+
+            explainer.explain(context)
+            val result = explainer.explain(longer) as ExplanationResult.Explained
+            assertEquals("Dos", result.explanation.summary)
+            assertEquals(false, result.fromCache)
+            assertEquals(2, gateway.requests.size)
+        }
+
+    @Test
     fun `the cache key includes the prompt version`() =
         runTest {
             cache.store("Heat", context.line, "explain-v0", document("Respuesta vieja"), now)
