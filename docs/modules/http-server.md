@@ -139,7 +139,8 @@
     none connected it is a search that died with its laptop and becomes `pending` too, so the
     bridge picks it up on reconnect. Then `BridgeJobHub.notifySubtitlesNeeded(id)`.
   - `GET /api/library/{id}/subtitles` reports the same without changing anything.
-  Creating rows (which languages a movie needs) stays with `SubtitleNeedsCoordinator`; the manual
+  Creating rows (which languages a movie needs -- always `"en"` and `"es"` for every stored movie,
+  whether or not it already carries English, #359) stays with `SubtitleNeedsCoordinator`; the manual
   `POST /api/subtitles` is unchanged.
 - Errors are JSON `{"error":"<code>","message":"..."}` (StatusPages); `ApiError.id` is present
   only on `already_exists`: unknown `/api/*` route -> 404

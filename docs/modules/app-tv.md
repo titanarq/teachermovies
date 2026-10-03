@@ -471,25 +471,26 @@ sections above (#293 "DERECHA = Explicar", #288 LEFT = Spanish) are superseded b
   ERROR (module `app-tv`, thread name and stack trace) and then always chains to the handler that
   was there before, so the platform still reports the crash and kills the process.
 
-## Subtitle needs (#280, ADR-0005 §5)
+## Subtitle needs (#280, #359; ADR-0005 §5)
 - `AppContainer.subtitleFetchRepository: SubtitleFetchRepository` is
   `RoomSubtitleFetchRepository(torrentDatabase.subtitleFetchStateDao())`, the automatic-subtitle
   fetch state of #274, and is what `ServerDeps.subtitleFetches` hands to the bridge's subtitle
   routes. `AppContainer` now also owns the one `BridgeJobHub`, so the server's `/api/bridge/jobs`
   routes and the nudge below act on the same instance instead of one hub each.
 - `tv.subtitles.SubtitleNeedsCoordinator(library: TorrentRepository, fetches:
-  SubtitleFetchRepository, notify: (TorrentId) -> Unit, scope)` (no Android types; `embeddedLanguages`,
-  `nowMs` and `dispatcher` are injectable and default to `:player`'s `EmbeddedTextTracks.languagesOf`,
-  the wall clock and `Dispatchers.IO`): `start()` collects `observeLibrary()` and, for every movie of
-  every emission -- the ones already stored when it starts as well as each one that completes later --
-  writes that movie's fetch-state rows through `ensurePending`. `"es"` always; `"en"` only when the
-  movie has no English subtitle of its own, which is `SidecarSubtitles.findFor(file, "en")`
-  (`:assistant`) finding a sidecar next to it or the container carrying an English text track (a
-  language of `en`, `eng` or any `en-` variant). Both rows carry the moviehash of
-  `OpenSubtitlesHash.of` (`:assistant`, #279) when the file can be hashed, and null when it is too
-  short or unreadable. `ensurePending` leaves an existing row's state, attempts and retry clock
-  alone, so passing over the whole library on each emission is what fills in a hash that could not be
-  computed the first time and otherwise changes nothing. The rows are written on the IO dispatcher,
+  SubtitleFetchRepository, notify: (TorrentId) -> Unit, scope)` (no Android types; `nowMs` and
+  `dispatcher` are injectable and default to the wall clock and `Dispatchers.IO`): `start()` collects
+  `observeLibrary()` and, for every movie of every emission -- the ones already stored when it starts
+  as well as each one that completes later -- writes that movie's fetch-state rows through
+  `ensurePending`. Both `"es"` and `"en"`, always and for every movie (#359): an OpenSubtitles
+  download is wanted even where the movie already carries English, be it a sidecar next to it or a
+  text track inside its container, so the coordinator no longer probes either and this supersedes
+  the "English only if the movie has none" of ADR-0005 §5 on that point. Both rows carry the
+  moviehash of `OpenSubtitlesHash.of` (`:assistant`, #279) when the file can be hashed, and null when
+  it is too short or unreadable. `ensurePending` leaves an existing row's state, attempts and retry
+  clock alone, so passing over the whole library on each emission is what fills in a hash that could
+  not be computed the first time, and what gives a movie stored before the rule changed the `"en"`
+  row it is missing; otherwise it changes nothing. The rows are written on the IO dispatcher,
   and a movie whose rows cannot be stored is logged and skipped so the coordinator keeps following
   the library -- that is the only thing that publishes later downloads.
 - `notify` then fires once per id that is new since the previous emission, wired to
