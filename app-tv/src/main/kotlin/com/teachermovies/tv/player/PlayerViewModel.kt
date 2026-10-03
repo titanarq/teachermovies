@@ -427,8 +427,9 @@ class PlayerViewModel(
      * LEFT/RIGHT (#347): one more press for [rewind], which groups the presses of a 1.5 s window
      * and goes back N phrases once it closes, showing [language]'s subtitle as a temporary player track (#358); only when the
      * player cannot show one is the line drawn as [PlayerUiState.rewindText].
-     * An open menu closes with the first press -- the movie stays paused until the rewind fires --
-     * so the rewind starts from the captured position. RIGHT without a Spanish timeline draws
+     * The first press pauses a playing movie and nothing is shown until the window closes (#363), so
+     * the rewind starts from the position of that press and replays the phrase in progress too.
+     * An open menu closes with the first press -- the movie stays paused until the rewind fires. RIGHT without a Spanish timeline draws
      * nothing and says [NO_SPANISH] for [MESSAGE_TIMEOUT_MS]. Transport actions are not blocked.
      */
     private fun rewindPhrases(language: SubtitleDisplay) {

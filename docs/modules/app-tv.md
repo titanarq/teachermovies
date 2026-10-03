@@ -327,8 +327,10 @@ sections above (#293 "DERECHA = Explicar", #288 LEFT = Spanish) are superseded b
 - `PlayerViewModel(..., rewind: PhraseRewindController?, spanishText: MovieSpanishText?)`: a rewind
   action is one `rewind.press(ENGLISH|SPANISH)`; grouping (1 500 ms, N = presses) lives in the
   controller. An open menu closes on the first press (`capture.dismiss(resume = false)`, speech and
-  explanation reset): the movie stays paused through the group window and the controller then seeks
-  and plays, so the rewind starts from the captured position and ends with no menu. Transport
+  explanation reset). Since #363 the movie is paused through the group window in both cases (the
+  controller's first press pauses a playing movie; with the menu open it already was) and nothing
+  is drawn until the window closes; the controller then seeks and plays, so the rewind starts from
+  the position of the first press, replays the phrase in progress there and ends with no menu. Transport
   actions are not blocked. `PlayerUiState.rewindText` = `PhraseRewindController.displayText`
   (null while `display` is `OFF`); `PlayerScreen` draws it bottom-centre over the video, independent
   of the libVLC subtitle and of the tracks panel. The root box keeps key focus (no focus moves).

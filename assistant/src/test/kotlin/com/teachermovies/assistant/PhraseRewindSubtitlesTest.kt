@@ -422,4 +422,68 @@ class PhraseRewindSubtitlesTest {
             runCurrent()
             assertNull(f.selected())
         }
+
+    private suspend fun TestScope.burstOfThree(f: Fixture) {
+        f.player.emitPosition(51_000L)
+        runCurrent()
+        repeat(3) {
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            nowMs += 400L
+            advanceTimeBy(400L)
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun `a burst of three leaves the subtitle alone in the window, then one seek with the temporary track`() =
+        runTest {
+            val f = fixture()
+            burstOfThree(f)
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS - 1_200L - 1L)
+            runCurrent()
+
+            assertNull(f.selected())
+            assertTrue(f.player.externalSubtitleCalls.isEmpty())
+            assertEquals(PlayerState.Paused, f.player.state.value)
+            assertEquals(51_000L, f.player.positionMs.value)
+
+            settle()
+
+            val temp = f.selected()
+            assertNotNull(temp)
+            assertEquals(9_700L, f.player.positionMs.value)
+            assertEquals(PlayerState.Playing, f.player.state.value)
+
+            confirmSeek(f, 50_500L)
+            assertEquals(temp, f.selected())
+            f.player.emitPosition(50_999L)
+            runCurrent()
+            assertEquals(temp, f.selected())
+
+            f.player.emitPosition(51_000L)
+            runCurrent()
+            assertNull(f.selected())
+            assertEquals(PlayerState.Playing, f.player.state.value)
+            assertEquals(0, f.activeJobs)
+        }
+
+    @Test
+    fun `a viewer track stays selected through the window and the snapshot origin is the first press`() =
+        runTest {
+            val f = fixture(viewerId = "v1")
+            burstOfThree(f)
+            // A late libVLC event while paused must not move the origin.
+            f.player.emitPosition(52_500L)
+            runCurrent()
+            assertEquals("v1", f.selected())
+
+            settle()
+            val state = f.controller.subtitleState.value as RewindSubtitleState.Rewinding
+            assertEquals(RewindSnapshot(51_000L, "v1"), state.snapshot)
+
+            confirmSeek(f, 50_500L)
+            f.player.emitPosition(51_000L)
+            runCurrent()
+            assertEquals("v1", f.selected())
+        }
 }

@@ -78,7 +78,13 @@ sealed interface RewindSubtitleState {
  * [SubtitleEngine.cueForCapture] and [SubtitleEngine.cueLinesBefore], clamped at the track's first
  * cue -- and play from there, from a playing or a paused player alike.
  *
- * [display] says which language the assistant draws, from the group's first press on and with the
+ * The first press of a group pauses a playing movie, so the viewer hears nothing past the position
+ * where they pressed and that position -- the run's origin -- is the one the phrase count and the
+ * restore use. Nothing is shown while the window is open. A group that ends without seeking (no cue
+ * to rewind to) or a [onUserSeek] before its window closes plays again if, and only if, the rewind
+ * paused it; [cancel] leaves the player alone.
+ *
+ * [display] says which language the assistant draws, from the moment the window closes and with the
  * last press's language winning, and [displayText] the line of that language at the current
  * position: English from the loaded track, Spanish from [spanish], `null` when the chosen source has
  * nothing there. Once playback reaches the position of the run's first press -- its return point --
@@ -138,8 +144,9 @@ class PhraseRewindController(
     /**
      * One more rewind press, asking for the [language] line to be shown while it replays.
      *
-     * A press less than [REWIND_GROUP_WINDOW_MS] after the previous one joins its group and steps
-     * the rewind one more phrase back; a later one opens a group of its own at the current position,
+     * The first press of a group pauses a playing movie and shows nothing; the language only takes
+     * effect when the window closes. A press less than [REWIND_GROUP_WINDOW_MS] after the previous one
+     * joins its group and steps the rewind one more phrase back; a later one opens a group of its own at the current position,
      * joining the run in progress -- its return point and the display to restore unchanged -- or
      * starting one when nothing is being tracked. [SubtitleDisplay.OFF] is not a press the remote
      * can make and is ignored.
@@ -153,11 +160,16 @@ class PhraseRewindController(
             open.count += 1
             open.lastPressAtMs = now
         } else {
-            group = Group(firstPressPositionMs = positionMs, lastPressAtMs = now)
+            val opened = Group(firstPressPositionMs = positionMs, lastPressAtMs = now, language = language)
+            if (player.state.value is PlayerState.Playing) {
+                // Held where the viewer is while the burst arrives: the origin and the phrase count stay put.
+                player.pause()
+                opened.pausedByRewind = true
+            }
+            group = opened
             if (rewind == null) startRun(positionMs, language)
         }
-        mutableDisplay.value = language
-        publishNow()
+        group?.language = language
         restartSettle()
     }
 
@@ -166,9 +178,12 @@ class PhraseRewindController(
         dropRun()
     }
 
-    /** The viewer sought by hand: a run in progress ends at once, its subtitle selection restored. */
+    /**
+     * The viewer sought by hand: a run in progress ends at once, its subtitle selection restored,
+     * and a playback the rewind paused for a group still open plays again.
+     */
     fun onUserSeek() {
-        dropRun()
+        dropRun(resume = group?.pausedByRewind == true)
     }
 
     /** Starts the temporary-subtitle session of [mediaFile]; null when the movie is left. */
@@ -260,19 +275,21 @@ class PhraseRewindController(
         val cue = engine.cueForCapture(presses.firstPressPositionMs)
         if (cue == null) {
             // No line to rewind to: no track loaded, or a gap too long after the last one. Showing a
-            // language with no line under it is worse than showing nothing, so the run ends here.
-            dropRun()
+            // language with no line under it is worse than showing nothing, so the run ends here
+            // and the movie goes on from where the first press held it.
+            dropRun(resume = presses.pausedByRewind)
             return
         }
         val target = engine.cueLinesBefore(cue, presses.count - 1)?.cue ?: cue
         val run = rewind ?: return
-        val language = mutableDisplay.value
+        val language = presses.language
         val seekMs = maxOf(0L, target.startMs - preRollMs)
         applyJob?.cancel()
         applyJob =
             scope.launch {
                 // The track is chosen before the seek and play, so it is on screen from the first line.
                 selectTemporary(run, language)
+                mutableDisplay.value = language
                 run.rewound = true
                 run.confirmed = false
                 run.targetMs = seekMs
@@ -314,7 +331,8 @@ class PhraseRewindController(
         }
     }
 
-    private fun dropRun() {
+    private fun dropRun(resume: Boolean = false) {
+        if (resume) player.play()
         val finished = rewind ?: return
         rewind = null
         group = null
@@ -390,8 +408,13 @@ class PhraseRewindController(
     private class Group(
         val firstPressPositionMs: Long,
         var lastPressAtMs: Long,
+        /** The language of the last press, which wins. */
+        var language: SubtitleDisplay,
     ) {
         var count = 1
+
+        /** Whether the first press stopped a playing movie, so a group that seeks nowhere plays it again. */
+        var pausedByRewind = false
     }
 
     companion object {

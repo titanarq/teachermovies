@@ -1385,8 +1385,9 @@ class PlayerViewModelTest {
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
             runCurrent()
 
-            assertEquals("Bye now.", vm.uiState.value.rewindText)
+            assertNull("nothing is drawn while the group is open", vm.uiState.value.rewindText)
             assertEquals("nothing is seeked while the group is open", 31_000L, player.positionMs.value)
+            assertEquals("the movie is held while the group is open", PlayerState.Paused, player.state.value)
 
             advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
             runCurrent()
@@ -1453,6 +1454,11 @@ class PlayerViewModelTest {
             vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
             runCurrent()
 
+            assertNull("nothing is drawn while the window is open", vm.uiState.value.rewindText)
+
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+            runCurrent()
+
             assertEquals("Hola.", vm.uiState.value.rewindText)
             assertNull(vm.uiState.value.message)
         }
@@ -1487,7 +1493,8 @@ class PlayerViewModelTest {
             runCurrent()
 
             assertNull("the menu closes", vm.uiState.value.assistant)
-            assertEquals("Bye now.", vm.uiState.value.rewindText)
+            assertNull("nothing is drawn while the window is open", vm.uiState.value.rewindText)
+            assertEquals(PlayerState.Paused, player.state.value)
 
             advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
             runCurrent()

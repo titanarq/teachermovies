@@ -3,6 +3,7 @@ package com.teachermovies.assistant
 import com.teachermovies.assistant.fake.FakeSpanishTextSource
 import com.teachermovies.assistant.subtitles.SubtitleCue
 import com.teachermovies.assistant.subtitles.SubtitleTrack
+import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.fake.FakePlayer
 import kotlinx.coroutines.CoroutineScope
@@ -17,6 +18,30 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+
+/** Counts the calls that move playback, so a test can say how many seeks a burst made. */
+private class CountingPlayer(
+    private val inner: FakePlayer,
+) : Player by inner {
+    val seeks = mutableListOf<Long>()
+    var pauses = 0
+    var plays = 0
+
+    override fun seekTo(ms: Long) {
+        seeks += ms
+        inner.seekTo(ms)
+    }
+
+    override fun pause() {
+        pauses += 1
+        inner.pause()
+    }
+
+    override fun play() {
+        plays += 1
+        inner.play()
+    }
+}
 
 class PhraseRewindControllerTest {
     private val first = SubtitleCue(index = 0, startMs = 10_000L, endMs = 12_000L, text = "Hello.")
@@ -87,12 +112,13 @@ class PhraseRewindControllerTest {
             f.controller.press(SubtitleDisplay.ENGLISH)
             runCurrent()
 
-            // The language is on screen from the first press on, but nothing is sought yet.
-            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
-            assertEquals("Bye.", f.controller.displayText.value)
+            // Nothing is shown or sought while the window is open, and the movie is held.
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+            assertNull(f.controller.displayText.value)
             assertEquals(31_000L, f.player.positionMs.value)
 
             settle()
+            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
 
             assertEquals(second.startMs - 300L, f.player.positionMs.value)
             assertEquals(PlayerState.Playing, f.player.state.value)
@@ -266,15 +292,18 @@ class PhraseRewindControllerTest {
             runCurrent()
 
             f.controller.press(SubtitleDisplay.SPANISH)
-            assertEquals(SubtitleDisplay.SPANISH, f.controller.display.value)
-            assertEquals("Adios.", f.controller.displayText.value)
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
             nowMs += 400L
             f.controller.press(SubtitleDisplay.ENGLISH)
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+            assertNull(f.controller.displayText.value)
 
-            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
-            assertEquals("Bye.", f.controller.displayText.value)
             settle()
             assertEquals(first.startMs - 300L, f.player.positionMs.value)
+            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
+            f.player.emitPosition(30_500L)
+            runCurrent()
+            assertEquals("Bye.", f.controller.displayText.value)
         }
 
     @Test
@@ -285,15 +314,19 @@ class PhraseRewindControllerTest {
             runCurrent()
 
             f.controller.press(SubtitleDisplay.ENGLISH)
-            assertEquals("And?", f.controller.displayText.value)
+            assertNull(f.controller.displayText.value)
             nowMs += 400L
             f.controller.press(SubtitleDisplay.SPANISH)
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+            assertNull(f.controller.displayText.value)
 
-            assertEquals(SubtitleDisplay.SPANISH, f.controller.display.value)
-            assertEquals("Y que?", f.controller.displayText.value)
-            assertTrue(f.spanish.queries.contains(51_000L))
             settle()
             assertEquals(second.startMs - 300L, f.player.positionMs.value)
+            assertEquals(SubtitleDisplay.SPANISH, f.controller.display.value)
+            f.player.emitPosition(50_500L)
+            runCurrent()
+            assertEquals("Y que?", f.controller.displayText.value)
+            assertTrue(f.spanish.queries.contains(50_500L))
         }
 
     @Test
@@ -389,11 +422,14 @@ class PhraseRewindControllerTest {
             runCurrent()
 
             f.controller.press(SubtitleDisplay.SPANISH)
+            settle()
 
+            // The line at 71 000 is outside the three Spanish cues given.
+            f.player.emitPosition(71_000L)
+            runCurrent()
             assertNull(f.controller.displayText.value)
             assertTrue(f.spanish.queries.contains(71_000L))
 
-            settle()
             f.player.emitPosition(51_000L)
             runCurrent()
 
@@ -401,7 +437,7 @@ class PhraseRewindControllerTest {
         }
 
     @Test
-    fun `a press with no track loaded shows the language and then drops the run`() =
+    fun `a press with no track loaded shows nothing and drops the run`() =
         runTest {
             val f = fixture(loadTrack = false)
             f.player.emitPosition(31_000L)
@@ -409,7 +445,7 @@ class PhraseRewindControllerTest {
 
             f.controller.press(SubtitleDisplay.ENGLISH)
             runCurrent()
-            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
 
             settle()
 
@@ -550,5 +586,177 @@ class PhraseRewindControllerTest {
 
             assertEquals(71_000L, f.player.positionMs.value)
             assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+        }
+
+    /** A fixture whose controller drives a [CountingPlayer] over the fixture's [FakePlayer]. */
+    private fun TestScope.countingFixture(loadTrack: Boolean = true): Pair<Fixture, CountingPlayer> {
+        val f = fixture(loadTrack)
+        val counting = CountingPlayer(f.player)
+        val controllerJob = Job(backgroundScope.coroutineContext.job)
+        val controller =
+            PhraseRewindController(
+                counting,
+                f.engine,
+                f.spanish,
+                CoroutineScope(backgroundScope.coroutineContext + controllerJob),
+                clock = { nowMs },
+            )
+        return Fixture(f.player, f.engine, f.spanish, controllerJob, controller) to counting
+    }
+
+    @Test
+    fun `a burst of three pauses and shows nothing until the window closes, then seeks once`() =
+        runTest {
+            val (f, counting) = countingFixture()
+            f.player.emitPosition(51_000L)
+            runCurrent()
+
+            repeat(3) {
+                f.controller.press(SubtitleDisplay.ENGLISH)
+                nowMs += 400L
+                advanceTimeBy(400L)
+                runCurrent()
+            }
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS - 1_200L - 1L)
+            runCurrent()
+
+            // Still inside the window: paused where the viewer was, nothing on screen, nothing sought.
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+            assertNull(f.controller.displayText.value)
+            assertEquals(PlayerState.Paused, f.player.state.value)
+            assertEquals(51_000L, f.player.positionMs.value)
+            assertTrue(counting.seeks.isEmpty())
+
+            settle()
+
+            // Three presses from "And?": And?, Bye., Hello. -- the third phrase back is the first line.
+            assertEquals(listOf(first.startMs - 300L), counting.seeks)
+            assertEquals(PlayerState.Playing, f.player.state.value)
+            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
+
+            // The phrase in progress at the origin is shown on its way back, and kept until the origin.
+            confirmSeek(f, 50_500L)
+            assertEquals("And?", f.controller.displayText.value)
+            f.player.emitPosition(50_999L)
+            runCurrent()
+            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
+            assertEquals("And?", f.controller.displayText.value)
+
+            f.player.emitPosition(51_000L)
+            runCurrent()
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+            assertEquals(0, f.activeJobs)
+        }
+
+    @Test
+    fun `a single press pauses, shows nothing in the window, then seeks once and shows its phrase`() =
+        runTest {
+            val (f, counting) = countingFixture()
+            f.player.emitPosition(31_000L)
+            runCurrent()
+
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            runCurrent()
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+            assertNull(f.controller.displayText.value)
+            assertEquals(PlayerState.Paused, f.player.state.value)
+
+            settle()
+            assertEquals(listOf(29_700L), counting.seeks)
+            confirmSeek(f, 30_500L)
+            assertEquals("Bye.", f.controller.displayText.value)
+            f.player.emitPosition(30_999L)
+            runCurrent()
+            assertEquals("Bye.", f.controller.displayText.value)
+            f.player.emitPosition(31_000L)
+            runCurrent()
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+        }
+
+    @Test
+    fun `a position reported during the window does not move the origin`() =
+        runTest {
+            val f = fixture()
+            f.player.emitPosition(51_000L)
+            runCurrent()
+
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            // A late libVLC event while paused.
+            f.player.emitPosition(52_500L)
+            runCurrent()
+            settle()
+            confirmSeek(f, 50_000L)
+
+            // The origin is the first press's 51 000, not the 52 500 reported meanwhile.
+            f.player.emitPosition(51_000L)
+            runCurrent()
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+        }
+
+    @Test
+    fun `a press with no cue pauses and resumes playback once the window closes`() =
+        runTest {
+            val (f, counting) = countingFixture(loadTrack = false)
+            f.player.emitPosition(31_000L)
+            runCurrent()
+
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            runCurrent()
+            assertEquals(PlayerState.Paused, f.player.state.value)
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+
+            settle()
+
+            assertTrue(counting.seeks.isEmpty())
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+            assertEquals(PlayerState.Playing, f.player.state.value)
+            assertEquals(0, f.activeJobs)
+        }
+
+    @Test
+    fun `a press from a paused player with no cue leaves it paused`() =
+        runTest {
+            val f = fixture(loadTrack = false)
+            f.player.emitPosition(31_000L)
+            f.player.pause()
+            runCurrent()
+
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            settle()
+
+            assertEquals(PlayerState.Paused, f.player.state.value)
+        }
+
+    @Test
+    fun `a user seek inside the window resumes a playback the rewind paused`() =
+        runTest {
+            val f = fixture()
+            f.player.emitPosition(31_000L)
+            runCurrent()
+
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            assertEquals(PlayerState.Paused, f.player.state.value)
+            f.controller.onUserSeek()
+
+            assertEquals(PlayerState.Playing, f.player.state.value)
+            settle()
+            assertEquals(31_000L, f.player.positionMs.value)
+        }
+
+    @Test
+    fun `cancel inside the window seeks nothing and does not call play`() =
+        runTest {
+            val (f, counting) = countingFixture()
+            f.player.emitPosition(31_000L)
+            runCurrent()
+
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            f.controller.cancel()
+            advanceTimeBy(5_000L)
+            runCurrent()
+
+            assertTrue(counting.seeks.isEmpty())
+            assertEquals(0, counting.plays)
+            assertEquals(0, f.activeJobs)
         }
 }
