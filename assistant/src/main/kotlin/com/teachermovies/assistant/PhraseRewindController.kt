@@ -33,6 +33,10 @@ enum class SubtitleDisplay {
 
 /** What a rewind run has to put back: where it started and the subtitle selection it replaced. */
 data class RewindSnapshot(
+    /**
+     * Where the run ends and the subtitle comes back: the end of the phrase in progress at the first
+     * press, or the press position when it fell in a gap. Fixed once, by the first press.
+     */
     val originMs: Long,
     /** The subtitle track selected before the first press; null = no subtitle on screen. */
     val previousSubtitleId: String?,
@@ -78,13 +82,15 @@ sealed interface RewindSubtitleState {
  * [SubtitleEngine.cueForCapture] and [SubtitleEngine.cueLinesBefore], clamped at the track's first
  * cue -- and play from there, from a playing or a paused player alike.
  *
- * [display] says which language the assistant draws, from the group's first press on and with the
- * last press's language winning, and [displayText] the line of that language at the current
- * position: English from the loaded track, Spanish from [spanish], `null` when the chosen source has
- * nothing there. Once playback reaches the position of the run's first press -- its return point --
- * [display] goes back to the value it had before the run and nothing is tracked any more. A group
- * pressed again while rewound, before that point, rewinds from where playback is but keeps the
- * original return point and the original display to restore.
+ * A press paints nothing and never pauses: the movie keeps playing and [display] and [displayText]
+ * stay as they were while the window is open, the last press's language only being remembered. When
+ * the window closes [display] takes that language, and [displayText] is the line of that language at
+ * the current position: English from the loaded track, Spanish from [spanish], `null` when the chosen
+ * source has nothing there. The run's return point -- its origin -- is fixed by the first press: the
+ * end of the phrase in progress (so the phrase just heard is replayed whole), or the press position
+ * when it fell in a gap. Once playback reaches it, [display] goes back to the value it had before the
+ * run and nothing is tracked any more. A group pressed again while rewound, before that point,
+ * rewinds from where playback is but keeps the original origin and the original display to restore.
  *
  * The player ending or erroring, and [cancel], drop the run the same way; no coroutine this
  * controller starts outlives them. Playback is driven only through the [Player] interface.
@@ -152,12 +158,12 @@ class PhraseRewindController(
         if (open != null && now - open.lastPressAtMs < REWIND_GROUP_WINDOW_MS) {
             open.count += 1
             open.lastPressAtMs = now
+            open.language = language
         } else {
-            group = Group(firstPressPositionMs = positionMs, lastPressAtMs = now)
-            if (rewind == null) startRun(positionMs, language)
+            group = Group(firstPressPositionMs = positionMs, lastPressAtMs = now, language = language)
+            if (rewind == null) startRun(originFor(positionMs), language)
         }
-        mutableDisplay.value = language
-        publishNow()
+        // Nothing is painted and nothing is paused here: the language is applied by settle().
         restartSettle()
     }
 
@@ -179,6 +185,15 @@ class PhraseRewindController(
     /** Wires what keeps a temporary track out of the viewer's persisted choice. */
     fun attachSaveGuard(guard: SubtitleSaveGuard?) {
         subtitles?.attachSaveGuard(guard)
+    }
+
+    /**
+     * Where a run started at [positionMs] ends: the end of the phrase in progress, so the phrase just
+     * heard is replayed whole, or [positionMs] itself when it falls in a gap between phrases.
+     */
+    private fun originFor(positionMs: Long): Long {
+        val cue = engine.cueForCapture(positionMs)
+        return if (cue != null && cue.startMs <= positionMs && positionMs < cue.endMs) cue.endMs else positionMs
     }
 
     private fun startRun(
@@ -266,7 +281,8 @@ class PhraseRewindController(
         }
         val target = engine.cueLinesBefore(cue, presses.count - 1)?.cue ?: cue
         val run = rewind ?: return
-        val language = mutableDisplay.value
+        val language = presses.language
+        mutableDisplay.value = language
         val seekMs = maxOf(0L, target.startMs - preRollMs)
         applyJob?.cancel()
         applyJob =
@@ -352,13 +368,14 @@ class PhraseRewindController(
             }
     }
 
+    /** The engine's line trails a seek by a moment, so an English line the position is not in is not shown. */
     private fun overlayLine(
         positionMs: Long,
         english: SubtitleCue?,
     ): String? =
         when (mutableDisplay.value) {
             SubtitleDisplay.OFF -> null
-            SubtitleDisplay.ENGLISH -> english?.text
+            SubtitleDisplay.ENGLISH -> english?.takeIf { positionMs in it.startMs until it.endMs }?.text
             SubtitleDisplay.SPANISH -> spanish.textAt(positionMs)
         }
 
@@ -390,6 +407,8 @@ class PhraseRewindController(
     private class Group(
         val firstPressPositionMs: Long,
         var lastPressAtMs: Long,
+        /** The language of the last press: the one applied when the window closes. */
+        var language: SubtitleDisplay,
     ) {
         var count = 1
     }
