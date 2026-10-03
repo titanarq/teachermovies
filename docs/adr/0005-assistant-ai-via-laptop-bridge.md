@@ -89,6 +89,25 @@ of decisions 4, 6, 7 and 10 above with the one below. Where they disagree, this 
 - OK keeps its transport/replay meaning; the "OK N times walks back" run of #339 is superseded by
   LEFT/RIGHT and is no longer the way to step back.
 
+## Amendment 2026-10-03: English and Spanish subtitles are always fetched (human decision)
+
+The human replaced decision 5's "English only if the movie has none" with the rule below. Where they
+disagree, this amendment wins; the rest of decision 5 (search order, non-HI preference, no
+machine-translated subtitles, Castilian first, storage path, retry and quota rules, "Buscar
+subtítulos") stands.
+
+- **Both languages are always requested.** For every stored movie the TV publishes an English and a
+  Spanish subtitle need, also when the movie already carries an English track (embedded or
+  sidecar); the bridge tries to download both from OpenSubtitles. A failed or not-found download
+  changes nothing for playback (#359).
+- **The player loads the track that serves the feature best**, the movie's own or the downloaded
+  file; a downloaded subtitle is one more candidate, not a replacement (#358):
+  - **English** is the track the assistant's hidden mode reads (source priority unchanged:
+    sidecar, then embedded, then downloaded), so the line shown during a phrase rewind is the same
+    one whose cues define the phrases being counted and replayed.
+  - **Spanish** is the candidate that aligns best to that English track, whatever its source,
+    re-timed onto the English (playback) timeline before it is shown.
+
 ## Consequences
 
 - Explanations and the fallback translation need the laptop on and paired; aligned ES subtitles
