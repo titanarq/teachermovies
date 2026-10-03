@@ -3,11 +3,14 @@ package com.teachermovies.assistant
 import com.teachermovies.assistant.subtitles.SrtWriter
 import com.teachermovies.assistant.subtitles.SubtitleCue
 import com.teachermovies.assistant.subtitles.SubtitleTrack
+import com.teachermovies.player.api.ExternalSubtitleResult
+import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.SubtitleFormat
 import com.teachermovies.player.api.Track
 import com.teachermovies.player.fake.FakePlayer
 import com.teachermovies.player.session.SubtitleSaveGuard
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.job
@@ -66,8 +69,21 @@ class PhraseRewindSubtitlesTest {
         val controller: PhraseRewindController,
         val guard: RecordingGuard,
         val job: Job,
+        val gated: GatedPlayer,
     ) {
         val activeJobs: Int get() = job.children.count { it.isActive }
+    }
+
+    /** A player whose [addExternalSubtitleTrack] waits for [gate] while it is set. */
+    private class GatedPlayer(
+        private val fake: FakePlayer,
+    ) : Player by fake {
+        var gate: CompletableDeferred<Unit>? = null
+
+        override suspend fun addExternalSubtitleTrack(file: File): ExternalSubtitleResult {
+            gate?.await()
+            return fake.addExternalSubtitleTrack(file)
+        }
     }
 
     private val cacheDir get() = File(tempFolder.root, "cache")
@@ -93,7 +109,8 @@ class PhraseRewindSubtitlesTest {
         }
         viewerId?.let { player.selectSubtitle(it) }
         hidden.start(File(tempFolder.root, "movie.mkv"), viewerSubtitleId = viewerId)
-        val session = RewindSubtitleSession(player, hidden, { spanishCues }, cacheDir)
+        val gated = GatedPlayer(player)
+        val session = RewindSubtitleSession(gated, hidden, { spanishCues }, cacheDir)
         session.setMovie(File(tempFolder.root, "movie.mkv"))
         val guard = RecordingGuard()
         session.attachSaveGuard(guard)
@@ -109,7 +126,7 @@ class PhraseRewindSubtitlesTest {
             )
         player.emitPosition(71_000L)
         runCurrent()
-        return Fixture(player, hidden, controller, guard, job)
+        return Fixture(player, hidden, controller, guard, job, gated)
     }
 
     private suspend fun TestScope.settle() {
@@ -483,5 +500,131 @@ class PhraseRewindSubtitlesTest {
             f.player.selectSubtitle("other")
             runCurrent()
             assertNull(f.selected())
+        }
+
+    @Test
+    fun `a press made while the track selection is in flight is applied and not undone by the old origin`() =
+        runTest {
+            val f = fixture()
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            settle()
+            confirmSeek(f, 70_000L)
+
+            // The Spanish SRT takes a while to add to the player.
+            val gate = CompletableDeferred<Unit>()
+            f.gated.gate = gate
+            nowMs += 2_000L
+            f.controller.press(SubtitleDisplay.SPANISH)
+            settle()
+            // Playback crosses the old run's origin while the selection is still pending.
+            f.player.emitPosition(72_000L)
+            runCurrent()
+            assertTrue(f.controller.subtitleState.value is RewindSubtitleState.PlayingWithTempSubs)
+            assertEquals(2, f.activeJobs)
+
+            gate.complete(Unit)
+            runCurrent()
+
+            assertEquals(69_700L, f.player.positionMs.value)
+            assertTrue(f.selected().toString(), f.selected()?.contains("spanish") == true)
+            assertTrue(f.controller.subtitleState.value is RewindSubtitleState.Rewinding)
+
+            confirmSeek(f, 70_000L)
+            f.player.emitPosition(72_000L)
+            runCurrent()
+            assertEquals(RewindSubtitleState.Idle, f.controller.subtitleState.value)
+            assertNull(f.selected())
+            assertEquals(0, f.activeJobs)
+        }
+
+    /** Every way a run ends leaves the controller as it was before it and nothing pending. */
+    private suspend fun TestScope.assertEndedClean(
+        f: Fixture,
+        expectedSelected: String?,
+    ) {
+        assertEquals(RewindSubtitleState.Idle, f.controller.subtitleState.value)
+        assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+        assertNull(f.hidden.temporaryId.value)
+        assertEquals(expectedSelected, f.selected())
+        assertEquals(0, f.activeJobs)
+        val position = f.player.positionMs.value
+        advanceTimeBy(5_000L)
+        runCurrent()
+        assertEquals(position, f.player.positionMs.value)
+        assertEquals(expectedSelected, f.selected())
+        assertEquals(0, f.activeJobs)
+    }
+
+    private suspend fun TestScope.runningReplay(): Fixture {
+        val f = fixture(viewerId = "v1")
+        f.controller.press(SubtitleDisplay.ENGLISH)
+        settle()
+        confirmSeek(f, 70_000L)
+        assertNotNull(f.hidden.temporaryId.value)
+        return f
+    }
+
+    @Test
+    fun `reaching the origin leaves everything as before`() =
+        runTest {
+            val f = runningReplay()
+            f.player.emitPosition(72_000L)
+            runCurrent()
+            assertEndedClean(f, "v1")
+        }
+
+    @Test
+    fun `cancel leaves everything as before`() =
+        runTest {
+            val f = runningReplay()
+            f.controller.cancel()
+            assertEndedClean(f, "v1")
+        }
+
+    @Test
+    fun `a hand seek leaves everything as before`() =
+        runTest {
+            val f = runningReplay()
+            f.controller.onUserSeek()
+            assertEndedClean(f, "v1")
+        }
+
+    @Test
+    fun `the video ending leaves everything as before`() =
+        runTest {
+            val f = runningReplay()
+            f.player.end()
+            runCurrent()
+            assertEndedClean(f, "v1")
+        }
+
+    @Test
+    fun `a player error leaves everything as before`() =
+        runTest {
+            val f = runningReplay()
+            f.player.fail("codec")
+            runCurrent()
+            assertEndedClean(f, "v1")
+        }
+
+    @Test
+    fun `a viewer track change leaves the viewer's choice and nothing pending`() =
+        runTest {
+            val f = runningReplay()
+            f.hidden.selectByViewer("v2")
+            runCurrent()
+            assertEndedClean(f, "v2")
+        }
+
+    @Test
+    fun `no cue under the first press leaves everything as before`() =
+        runTest {
+            val f = fixture(viewerId = "v1")
+            f.player.emitPosition(99_000L)
+            runCurrent()
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            settle()
+            assertEndedClean(f, "v1")
+            assertTrue(f.player.externalSubtitleCalls.isEmpty())
         }
 }
