@@ -49,6 +49,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -158,7 +159,13 @@ class PlayerViewModelTest {
                 backgroundScope,
             )
         return PlayerViewModel(
-            PlaybackSession(player, repo, backgroundScope, clock = { 0L }),
+            PlaybackSession(
+                player,
+                repo,
+                backgroundScope,
+                clock = { 0L },
+                blockingDispatcher = UnconfinedTestDispatcher(testScheduler),
+            ),
             player,
             hidden,
             capture,
@@ -1573,7 +1580,13 @@ class PlayerViewModelTest {
                 minWindowMoveBytes = piece.toLong(),
             )
         return PlayerViewModel(
-            PlaybackSession(player, repo, backgroundScope, clock = { 0L }),
+            PlaybackSession(
+                player,
+                repo,
+                backgroundScope,
+                clock = { 0L },
+                blockingDispatcher = UnconfinedTestDispatcher(testScheduler),
+            ),
             player,
             hidden,
             capture,

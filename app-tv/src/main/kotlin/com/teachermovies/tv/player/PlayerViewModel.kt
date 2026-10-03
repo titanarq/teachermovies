@@ -121,6 +121,12 @@ data class AssistantOverlayState(
  * [prepareDispatcher] without waiting for it. No panel key touches the player, so the movie stays
  * paused until [AssistantAction.DismissOverlay], which also resets [speech].
  *
+ * [prepareDispatcher] is everything an open or an exit does that must not block the main thread
+ * (#262): that speaker preparation, the hidden subtitle's sidecar scan and whole-file parse, and
+ * the [Player.release] of an open cut while it was still waiting for ranges. The player controls and
+ * the disk work inside [PlaybackSession.open]/[PlaybackSession.close] run on the dispatcher the
+ * session is built with, for the same reason.
+ *
  * LEFT, [AssistantAction.TranslateLine] (#288, ADR-0005 §6), shows the line in Spanish and says
  * nothing: the Spanish subtitle aligned to it from [spanishLines], labelled [LABEL_SUBTITLE], when
  * one aligns well enough; otherwise [speech]'s translation -- the laptop bridge in production --
@@ -328,11 +334,15 @@ class PlayerViewModel(
                         local.update { it.copy(title = result.item.title) }
                         movie = id to File(result.item.mainFilePath)
                         // The subtitle track the viewer chose last time stays on (#248).
+                        // The sidecar scan and the whole-file parse of the hidden subtitle block
+                        // just like the player's controls do, and this is still the open (#262).
                         val started =
-                            hidden.start(
-                                File(result.item.mainFilePath),
-                                viewerSubtitleId = result.item.subtitleTrackId,
-                            )
+                            withContext(prepareDispatcher) {
+                                hidden.start(
+                                    File(result.item.mainFilePath),
+                                    viewerSubtitleId = result.item.subtitleTrackId,
+                                )
+                            }
                         val available = started is HiddenModeResult.Started
                         local.update { it.copy(assistantAvailable = available) }
                         rewind?.setMovie(File(result.item.mainFilePath))
@@ -620,8 +630,10 @@ class PlayerViewModel(
                 // Nothing was opened for close() to save; stop the controller and the player in
                 // case the wait was cancelled just after opening the file.
                 openJob?.cancelAndJoin()
-                streamingController?.stop()
-                player.release()
+                withContext(prepareDispatcher) {
+                    streamingController?.stop()
+                    player.release()
+                }
             } else {
                 // Let a pending open finish so close() sees the item it has to save.
                 openJob?.join()
@@ -690,8 +702,10 @@ class PlayerViewModel(
         if (!closed) {
             closeScope?.launch {
                 if (streamingOpenCut) {
-                    streamingController?.stop()
-                    player.release()
+                    withContext(prepareDispatcher) {
+                        streamingController?.stop()
+                        player.release()
+                    }
                 }
                 session.close()
             }
@@ -700,7 +714,8 @@ class PlayerViewModel(
 
     /**
      * Builds the ViewModel from `AppContainer`'s bindings (ADR-0003 rule 1). The session runs on
-     * its own main-thread scope, which also closes it if the ViewModel is cleared without an Exit.
+     * its own main-thread scope, which also closes it if the ViewModel is cleared without an Exit;
+     * the player and disk work inside its open/close is what runs on `Dispatchers.IO` (#262).
      */
     class Factory(
         private val player: Player,
@@ -722,7 +737,7 @@ class PlayerViewModel(
             }
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
             return PlayerViewModel(
-                PlaybackSession(player, repo, scope, clock),
+                PlaybackSession(player, repo, scope, clock, blockingDispatcher = Dispatchers.IO),
                 player,
                 hidden,
                 capture,
