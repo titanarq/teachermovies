@@ -2,13 +2,11 @@ package com.teachermovies.tv.subtitles
 
 import com.teachermovies.assistant.subtitles.MovieHashResult
 import com.teachermovies.assistant.subtitles.OpenSubtitlesHash
-import com.teachermovies.assistant.subtitles.SidecarSubtitles
 import com.teachermovies.core.log.AppLog
 import com.teachermovies.core.model.LibraryItem
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.SubtitleFetchRepository
 import com.teachermovies.core.repo.TorrentRepository
-import com.teachermovies.player.api.EmbeddedTextTracks
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -17,19 +15,21 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.Locale
 
 /**
  * Publishes what every stored movie still needs subtitled, and nudges the laptop bridge when a movie
  * finishes downloading (#280, ADR-0005 §5).
  *
  * On each emission of `observeLibrary()` -- the movies already stored when [start] runs as well as
- * every one that completes later -- it writes each movie's fetch-state rows: `"es"` always, and
- * `"en"` only when the movie has no English subtitle of its own, which is a sidecar file next to it
- * or a text track inside its container. Both carry the moviehash of #279 whenever the file can be
+ * every one that completes later -- it writes both of each movie's fetch-state rows, `"es"` and
+ * `"en"`, whatever the movie already carries: an English sidecar next to it or an English text track
+ * inside its container no longer cancels the English download, because the assistant wants the
+ * OpenSubtitles one for every movie (#359, which supersedes the "English only if the movie has none"
+ * of ADR-0005 §5 on this point). Both rows carry the moviehash of #279 whenever the file can be
  * hashed, so `GET /api/bridge/subtitle-needs` can publish them. `ensurePending` leaves a row that
  * already exists as it is, so passing over the whole library again only fills in a hash that could
- * not be computed the first time and otherwise changes nothing.
+ * not be computed the first time and otherwise changes nothing -- which is also how a movie stored
+ * before this rule existed picks up the `"en"` row it is missing.
  *
  * [notify] is called only for the ids that are new since the previous emission, and only once their
  * rows are on disk: a nudge means "a download just completed and its needs are published", and the
@@ -47,7 +47,6 @@ class SubtitleNeedsCoordinator(
     private val fetches: SubtitleFetchRepository,
     private val notify: (TorrentId) -> Unit,
     private val scope: CoroutineScope,
-    private val embeddedLanguages: (File) -> List<String> = EmbeddedTextTracks::languagesOf,
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -73,16 +72,15 @@ class SubtitleNeedsCoordinator(
         previous = ids
     }
 
-    /** [item]'s `"es"` row, plus its `"en"` one when the movie carries no English subtitle yet. */
+    /** Both of [item]'s fetch-state rows, `"es"` and `"en"`: neither depends on what it already has. */
     private suspend fun writeNeeds(
         item: LibraryItem,
         now: Long,
     ) {
         try {
-            val file = File(item.mainFilePath)
-            val hash = movieHashOf(file)
+            val hash = movieHashOf(File(item.mainFilePath))
             fetches.ensurePending(item.id, SPANISH, hash, now)
-            if (!hasEnglishSubtitle(file)) fetches.ensurePending(item.id, ENGLISH, hash, now)
+            fetches.ensurePending(item.id, ENGLISH, hash, now)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -96,14 +94,6 @@ class SubtitleNeedsCoordinator(
             is MovieHashResult.Computed -> result.hash
             is MovieHashResult.TooSmall, is MovieHashResult.Unreadable -> null
         }
-
-    /**
-     * Whether the movie already has English: a sidecar next to it, or a text track in its container.
-     * The prefix test covers `en`, `eng` and a tagged variant such as `en-US` alike.
-     */
-    private fun hasEnglishSubtitle(file: File): Boolean =
-        SidecarSubtitles.findFor(file, ENGLISH) != null ||
-            embeddedLanguages(file).any { it.lowercase(Locale.ROOT).startsWith(ENGLISH) }
 
     private companion object {
         const val LOG_MODULE = "app-tv"
