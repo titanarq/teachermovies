@@ -326,9 +326,13 @@ sections above (#293 "DERECHA = Explicar", #288 LEFT = Spanish) are superseded b
   `TranslateLine` action stays defined but no key maps to it.
 - `PlayerViewModel(..., rewind: PhraseRewindController?, spanishText: MovieSpanishText?)`: a rewind
   action is one `rewind.press(ENGLISH|SPANISH)`; grouping (1 500 ms, N = presses) lives in the
-  controller. An open menu closes on the first press (`capture.dismiss(resume = false)`, speech and
-  explanation reset): the movie stays paused through the group window and the controller then seeks
-  and plays, so the rewind starts from the captured position and ends with no menu. Transport
+  controller. A press paints nothing and never pauses (#365): `rewindText`, the display and the
+  player's subtitle stay as they were until the window closes, then one seek goes N phrases back and
+  the previous state comes back at the end of the phrase that was playing at the first press (the
+  press position when it fell in a gap). An open menu closes on the first press
+  (`capture.dismiss(resume = false)`, speech and explanation reset): the movie, already paused by
+  the menu, stays paused through the group window and the controller then seeks and plays, so the
+  rewind starts from the captured position and ends with no menu. Transport
   actions are not blocked. `PlayerUiState.rewindText` = `PhraseRewindController.displayText`
   (null while `display` is `OFF`); `PlayerScreen` draws it bottom-centre over the video, independent
   of the libVLC subtitle and of the tracks panel. The root box keeps key focus (no focus moves).
@@ -336,7 +340,7 @@ sections above (#293 "DERECHA = Explicar", #288 LEFT = Spanish) are superseded b
   over once; `open` loads its `SpanishCueTimeline` (#344) after hidden mode starts and `exit`
   clears it. Without a timeline RIGHT draws nothing and shows `Sin subtítulos en español` for 3 s
   (`NO_SPANISH`); LEFT is unaffected.
-- Rewind subtitle on the player (#358): `AppContainer.phraseRewindController` is built with a `RewindSubtitleSession`, so LEFT/RIGHT select the English/Spanish subtitle as a temporary libVLC track and hot-restore the previous selection (a viewer track, or none) when playback is back at the first press; `rewindText` is therefore null while that track shows (it only draws when there is no session). `MovieSpanishText` also implements `SpanishCueSource` (the loaded timeline's cues on the playback timeline). `PlayerViewModel` attaches the playback session as save guard, calls `rewind.setMovie(file)` after hidden mode starts, `rewind.onUserSeek()` on `PlayerAction.SeekBy` (restores at once), `rewind.cancel()`/`setMovie(null)` in `stopAssistant` -- before `session.close()` -- and shows `NO_SPANISH`/`NO_SUBTITLES` when the controller's `unavailable` fires. Manual TV check: LEFT x2 then RIGHT x1 while playing, with subtitles off and with a viewer-chosen track; the temporary subtitle shows during the replay and the previous state returns at the first-press position without a pause.
+- Rewind subtitle on the player (#358): `AppContainer.phraseRewindController` is built with a `RewindSubtitleSession`, so LEFT/RIGHT select the English/Spanish subtitle as a temporary libVLC track and hot-restore the previous selection (a viewer track, or none) when playback reaches the end of the phrase in progress at the first press; `rewindText` is therefore null while that track shows (it only draws when there is no session). `MovieSpanishText` also implements `SpanishCueSource` (the loaded timeline's cues on the playback timeline). `PlayerViewModel` attaches the playback session as save guard, calls `rewind.setMovie(file)` after hidden mode starts, `rewind.onUserSeek()` on `PlayerAction.SeekBy` (restores at once), `rewind.cancel()`/`setMovie(null)` in `stopAssistant` -- before `session.close()` -- and shows `NO_SPANISH`/`NO_SUBTITLES` when the controller's `unavailable` fires. Manual TV check: LEFT x2 then RIGHT x1 while playing, with subtitles off and with a viewer-chosen track; the temporary subtitle shows during the replay and nothing shows and the movie does not pause while pressing, and the previous state returns at the end of the phrase heard when pressing.
 - The menu (DOWN) is unchanged (pauses, shows the captured English line); its hint is
   `ARRIBA Explicar · ATRÁS Cerrar`.
 
