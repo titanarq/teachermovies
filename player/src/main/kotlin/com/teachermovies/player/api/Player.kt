@@ -83,6 +83,17 @@ interface Player {
     )
 
     /**
+     * Adds [file] as one more subtitle track of the open media, never selecting it, and resolves the
+     * [Track] the player created for it: the one entry [subtitleTracks] gained, which a later
+     * [selectSubtitle] can name.
+     *
+     * It never throws; see [ExternalSubtitleResult]. A track cannot be removed again -- libVLC 3 has
+     * no way to drop a slave -- so "unloading" a temporary subtitle means selecting whatever was
+     * selected before it.
+     */
+    suspend fun addExternalSubtitleTrack(file: File): ExternalSubtitleResult
+
+    /**
      * Writes the embedded text subtitle track [trackId] (an id published in [subtitleTracks]) of the
      * media currently opened with [open] to [destination] as a standalone, timed `.srt`/`.ass`.
      *

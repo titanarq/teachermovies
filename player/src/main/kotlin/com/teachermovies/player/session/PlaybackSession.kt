@@ -41,7 +41,7 @@ class PlaybackSession(
     private val repo: TorrentRepository,
     private val scope: CoroutineScope,
     private val clock: () -> Long,
-) {
+) : SubtitleSaveGuard {
     @Volatile private var current: LibraryItem? = null
 
     @Volatile private var job: Job? = null
@@ -57,6 +57,20 @@ class PlaybackSession(
     @Volatile private var subtitleApplied = false
 
     @Volatile private var lastSavedAtMs = 0L
+
+    /** The temporary subtitle track and the selection it stands in for; see [SubtitleSaveGuard]. */
+    @Volatile private var held: Pair<String, String?>? = null
+
+    override fun hold(
+        tempId: String,
+        previousId: String?,
+    ) {
+        held = tempId to previousId
+    }
+
+    override fun release() {
+        held = null
+    }
 
     /** The controller supervising the item opened with [openStreaming]; null for a plain [open]. */
     @Volatile private var streaming: StreamingPlaybackController? = null
@@ -277,7 +291,11 @@ class PlaybackSession(
         positionMs: Long,
     ) {
         val audio = if (tracksApplied) player.selectedAudioId.value else item.audioTrackId
-        val subtitle = if (subtitleApplied) player.selectedSubtitleId.value else item.subtitleTrackId
+        val selected = player.selectedSubtitleId.value
+        // A temporary track (the phrase rewind's) is never the viewer's choice: save what it replaced.
+        val guard = held
+        val shown = if (guard != null && guard.first == selected) guard.second else selected
+        val subtitle = if (subtitleApplied) shown else item.subtitleTrackId
         lastSavedAtMs = clock()
         repo.updatePlayback(item.id, positionMs, audio, subtitle)
     }

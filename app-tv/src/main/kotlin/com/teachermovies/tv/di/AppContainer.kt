@@ -9,6 +9,7 @@ import com.teachermovies.assistant.AssistantSpeechController
 import com.teachermovies.assistant.HiddenSubtitleController
 import com.teachermovies.assistant.LineCaptureController
 import com.teachermovies.assistant.PhraseRewindController
+import com.teachermovies.assistant.RewindSubtitleSession
 import com.teachermovies.assistant.SubtitleEngine
 import com.teachermovies.assistant.alignment.SpanishCueTimeline
 import com.teachermovies.assistant.alignment.SpanishLineLookup
@@ -307,7 +308,19 @@ class AppContainer(
 
     /** LEFT/RIGHT go back N phrases and draw the English / Spanish line (#343, #347). */
     val phraseRewindController: PhraseRewindController =
-        PhraseRewindController(player, subtitleEngine, movieSpanishText, assistantScope)
+        PhraseRewindController(
+            player,
+            subtitleEngine,
+            movieSpanishText,
+            assistantScope,
+            subtitles =
+                RewindSubtitleSession(
+                    player,
+                    hiddenSubtitleController,
+                    movieSpanishText,
+                    cacheDir = application.cacheDir,
+                ),
+        )
 
     /**
      * PIN pairing and token validation (ADR-0002). One instance for the process, shared by every

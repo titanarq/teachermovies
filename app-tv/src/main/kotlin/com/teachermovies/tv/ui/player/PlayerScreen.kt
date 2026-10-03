@@ -172,7 +172,7 @@ fun PlayerScreen(
             TransportOverlay(state = state, modifier = Modifier.align(Alignment.BottomCenter))
         }
 
-        // The phrase-rewind line (#347): the assistant's own subtitle, not libVLC's.
+        // The phrase-rewind line (#347): only drawn when no player track shows it (#358).
         val rewindText = state.rewindText
         if (rewindText != null) {
             Text(

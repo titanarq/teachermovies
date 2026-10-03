@@ -1,5 +1,6 @@
 package com.teachermovies.player.fake
 
+import com.teachermovies.player.api.ExternalSubtitleResult
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.SubtitleExtraction
 import com.teachermovies.player.api.SubtitleFormat
@@ -213,6 +214,20 @@ class FakePlayerTest {
         )
         assertEquals("ext:Movie.eng.srt", player.selectedSubtitleId.value)
     }
+
+    @Test
+    fun addExternalSubtitleTrackReturnsTheNewTrackWithoutSelectingIt() =
+        kotlinx.coroutines.test.runTest {
+            player.emitTracks(audio = emptyList(), subs = listOf(Track("s1", "English", "eng")))
+            player.selectSubtitle("s1")
+
+            val result = player.addExternalSubtitleTrack(File("/cache/rewind/Movie.es.srt"))
+
+            val expected = Track("ext:Movie.es.srt", "Movie.es.srt", null)
+            assertEquals(ExternalSubtitleResult.Added(expected), result)
+            assertEquals("s1", player.selectedSubtitleId.value)
+            assertEquals(expected, player.subtitleTracks.value.last())
+        }
 
     @Test
     fun addExternalSubtitleWithoutSelectKeepsTheCurrentSelection() {
