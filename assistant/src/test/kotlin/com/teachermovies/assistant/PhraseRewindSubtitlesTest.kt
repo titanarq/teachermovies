@@ -141,7 +141,7 @@ class PhraseRewindSubtitlesTest {
             assertNotNull(temp)
             assertEquals(1, f.player.externalSubtitleCalls.size)
             val first = f.controller.subtitleState.value as RewindSubtitleState.Rewinding
-            assertEquals(RewindSnapshot(originMs = 71_000L, previousSubtitleId = null), first.snapshot)
+            assertEquals(RewindSnapshot(originMs = 72_000L, previousSubtitleId = null), first.snapshot)
             assertEquals(PlayerState.Playing, f.player.state.value)
             // One rendering path: the player draws it, so there is no overlay line.
             f.player.emitPosition(70_500L)
@@ -152,7 +152,7 @@ class PhraseRewindSubtitlesTest {
             assertTrue(f.controller.subtitleState.value is RewindSubtitleState.PlayingWithTempSubs)
             assertEquals(temp, f.selected())
 
-            f.player.emitPosition(71_000L)
+            f.player.emitPosition(72_000L)
             runCurrent()
 
             assertNull(f.selected())
@@ -161,6 +161,68 @@ class PhraseRewindSubtitlesTest {
             assertEquals(PlayerState.Playing, f.player.state.value)
             assertEquals(1, f.guard.releases)
             assertEquals(0, f.activeJobs)
+        }
+
+    private fun TestScope.burst(
+        f: Fixture,
+        times: Int,
+    ) {
+        repeat(times) {
+            if (it > 0) nowMs += 400L
+            f.controller.press(SubtitleDisplay.ENGLISH)
+        }
+        runCurrent()
+    }
+
+    @Test
+    fun `a burst of three keeps the selection during the window and restores hot at the end of the phrase`() =
+        runTest {
+            val f = fixture()
+            f.player.emitPosition(51_000L)
+            runCurrent()
+            burst(f, 3)
+            advanceTimeBy(1_000L)
+            runCurrent()
+
+            assertNull(f.selected())
+            assertTrue(f.player.externalSubtitleCalls.isEmpty())
+            assertEquals(PlayerState.Playing, f.player.state.value)
+
+            settle()
+            val temp = f.selected()
+            assertNotNull(temp)
+            assertEquals(9_700L, f.player.positionMs.value)
+            confirmSeek(f, 10_500L)
+            f.player.emitPosition(52_999L)
+            runCurrent()
+            assertEquals(temp, f.selected())
+            f.player.emitPosition(53_000L)
+            runCurrent()
+
+            assertNull(f.selected())
+            assertEquals(PlayerState.Playing, f.player.state.value)
+            assertEquals(0, f.activeJobs)
+        }
+
+    @Test
+    fun `a viewer track stays selected during the window and comes back at the origin`() =
+        runTest {
+            val f = fixture(viewerId = "v1")
+            f.player.emitPosition(31_000L)
+            runCurrent()
+            burst(f, 1)
+            advanceTimeBy(1_000L)
+            runCurrent()
+            assertEquals("v1", f.selected())
+
+            settle()
+            assertTrue("v1" != f.selected())
+            confirmSeek(f, 30_500L)
+            f.player.emitPosition(33_000L)
+            runCurrent()
+
+            assertEquals("v1", f.selected())
+            assertEquals(PlayerState.Playing, f.player.state.value)
         }
 
     @Test
@@ -205,11 +267,11 @@ class PhraseRewindSubtitlesTest {
             settle()
 
             val state = f.controller.subtitleState.value as RewindSubtitleState.Rewinding
-            assertEquals(RewindSnapshot(71_000L, "v1"), state.snapshot)
+            assertEquals(RewindSnapshot(72_000L, "v1"), state.snapshot)
             assertEquals(1, f.player.externalSubtitleCalls.size)
 
             confirmSeek(f, 69_900L)
-            f.player.emitPosition(71_000L)
+            f.player.emitPosition(72_000L)
             runCurrent()
 
             assertEquals("v1", f.selected())
@@ -234,7 +296,7 @@ class PhraseRewindSubtitlesTest {
             assertEquals("ext:movie.spanish.srt", f.selected())
             assertTrue(englishTrack != f.selected())
             val state = f.controller.subtitleState.value as RewindSubtitleState.Rewinding
-            assertEquals(RewindSnapshot(71_000L, "v1"), state.snapshot)
+            assertEquals(RewindSnapshot(72_000L, "v1"), state.snapshot)
             assertEquals(listOf("ext:movie.spanish.srt" to "v1"), f.guard.holds.takeLast(1))
 
             f.controller.cancel()
@@ -249,7 +311,7 @@ class PhraseRewindSubtitlesTest {
             f.controller.press(SubtitleDisplay.ENGLISH)
             settle()
             confirmSeek(f, 70_000L)
-            f.player.emitPosition(71_000L)
+            f.player.emitPosition(72_000L)
             runCurrent()
             assertEquals(RewindSubtitleState.Idle, f.controller.subtitleState.value)
 
@@ -323,7 +385,7 @@ class PhraseRewindSubtitlesTest {
             assertTrue(f.controller.subtitleState.value is RewindSubtitleState.PlayingWithTempSubs)
 
             f.player.play()
-            f.player.emitPosition(71_000L)
+            f.player.emitPosition(72_000L)
             runCurrent()
 
             assertNull(f.selected())
@@ -385,7 +447,7 @@ class PhraseRewindSubtitlesTest {
             assertEquals(PlayerState.Playing, f.player.state.value)
 
             confirmSeek(f, 70_000L)
-            f.player.emitPosition(71_000L)
+            f.player.emitPosition(72_000L)
             runCurrent()
             assertEquals("v1", f.selected())
             assertEquals(RewindSubtitleState.Idle, f.controller.subtitleState.value)

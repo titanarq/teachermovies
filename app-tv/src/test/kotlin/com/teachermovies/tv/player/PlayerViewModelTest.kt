@@ -1385,8 +1385,9 @@ class PlayerViewModelTest {
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
             runCurrent()
 
-            assertEquals("Bye now.", vm.uiState.value.rewindText)
+            assertNull("a press paints nothing while the group is open", vm.uiState.value.rewindText)
             assertEquals("nothing is seeked while the group is open", 31_000L, player.positionMs.value)
+            assertEquals(PlayerState.Playing, player.state.value)
 
             advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
             runCurrent()
@@ -1400,7 +1401,11 @@ class PlayerViewModelTest {
             nowMs += PhraseRewindController.SEEK_CONFIRM_MS + 100L
             player.emitPosition(1_000L)
             runCurrent()
-            player.emitPosition(31_000L)
+            // The origin is the end of "Bye now." (33 s), not the press position.
+            player.emitPosition(32_999L)
+            runCurrent()
+            assertEquals("Bye now.", vm.uiState.value.rewindText)
+            player.emitPosition(33_000L)
             runCurrent()
 
             assertNull("the subtitle goes away once playback is back", vm.uiState.value.rewindText)
@@ -1453,6 +1458,10 @@ class PlayerViewModelTest {
             vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
             runCurrent()
 
+            assertNull("nothing is drawn before the window closes", vm.uiState.value.rewindText)
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+            runCurrent()
+
             assertEquals("Hola.", vm.uiState.value.rewindText)
             assertNull(vm.uiState.value.message)
         }
@@ -1487,7 +1496,8 @@ class PlayerViewModelTest {
             runCurrent()
 
             assertNull("the menu closes", vm.uiState.value.assistant)
-            assertEquals("Bye now.", vm.uiState.value.rewindText)
+            assertNull(vm.uiState.value.rewindText)
+            assertEquals("the video stays paused through the window", PlayerState.Paused, player.state.value)
 
             advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
             runCurrent()

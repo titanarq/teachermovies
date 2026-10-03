@@ -8,6 +8,7 @@ import com.teachermovies.player.fake.FakePlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -38,6 +39,7 @@ class PhraseRewindControllerTest {
 
     private class Fixture(
         val player: FakePlayer,
+        val counter: CountingPlayer,
         val engine: SubtitleEngine,
         val spanish: FakeSpanishTextSource,
         val controllerJob: Job,
@@ -60,15 +62,16 @@ class PhraseRewindControllerTest {
         val source = FakeSpanishTextSource(spanish)
         // A child scope of its own, so the test can count the controller's coroutines.
         val controllerJob = Job(backgroundScope.coroutineContext.job)
+        val counter = CountingPlayer(player)
         val controller =
             PhraseRewindController(
-                player,
+                counter,
                 engine,
                 source,
                 CoroutineScope(backgroundScope.coroutineContext + controllerJob),
                 clock = { nowMs },
             )
-        return Fixture(player, engine, source, controllerJob, controller)
+        return Fixture(player, counter, engine, source, controllerJob, controller)
     }
 
     /** Lets the group window close with no further press, which is what seeks. */
@@ -87,9 +90,9 @@ class PhraseRewindControllerTest {
             f.controller.press(SubtitleDisplay.ENGLISH)
             runCurrent()
 
-            // The language is on screen from the first press on, but nothing is sought yet.
-            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
-            assertEquals("Bye.", f.controller.displayText.value)
+            // A press paints nothing and seeks nothing: the language waits for the window to close.
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+            assertNull(f.controller.displayText.value)
             assertEquals(31_000L, f.player.positionMs.value)
 
             settle()
@@ -104,6 +107,251 @@ class PhraseRewindControllerTest {
             runCurrent()
 
             assertEquals("Bye.", f.controller.displayText.value)
+        }
+
+    private fun Fixture.assertQuiet() {
+        assertEquals(SubtitleDisplay.OFF, controller.display.value)
+        assertNull(controller.displayText.value)
+        assertEquals(PlayerState.Playing, player.state.value)
+        assertTrue(counter.seeks.isEmpty())
+        assertEquals(0, counter.pauses)
+    }
+
+    /** Presses LEFT [times] times 400 ms apart from [positionMs] and returns while the window is open. */
+    private fun TestScope.burst(
+        f: Fixture,
+        positionMs: Long,
+        times: Int,
+        language: SubtitleDisplay = SubtitleDisplay.ENGLISH,
+    ) {
+        f.player.emitPosition(positionMs)
+        runCurrent()
+        repeat(times) {
+            if (it > 0) nowMs += 400L
+            f.controller.press(language)
+        }
+        runCurrent()
+    }
+
+    private fun Fixture.origin(): Long? =
+        (controller.subtitleState.value as? RewindSubtitleState.Rewinding)?.snapshot?.originMs
+
+    @Test
+    fun `a burst of three leaves the screen alone, seeks once and restores at the end of the phrase`() =
+        runTest {
+            val f = fixture()
+            burst(f, 51_000L, 3)
+
+            // Nothing is painted, paused or sought while the burst is open, and it is still open.
+            advanceTimeBy(1_000L)
+            runCurrent()
+            f.assertQuiet()
+            assertEquals(53_000L, f.origin())
+
+            settle()
+            assertEquals(listOf(9_700L), f.counter.seeks)
+            assertEquals(0, f.counter.pauses)
+            assertEquals(PlayerState.Playing, f.player.state.value)
+            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
+
+            val shown = mutableListOf<String?>()
+            for (position in listOf(10_500L, 30_500L, 50_500L)) {
+                confirmSeek(f, position)
+                shown += f.controller.displayText.value
+            }
+            assertEquals(listOf<String?>("Hello.", "Bye.", "And?"), shown)
+
+            f.player.emitPosition(52_999L)
+            runCurrent()
+            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
+            f.player.emitPosition(53_000L)
+            runCurrent()
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+            assertNull(f.controller.displayText.value)
+            assertEquals(0, f.counter.pauses)
+            assertEquals(0, f.activeJobs)
+        }
+
+    @Test
+    fun `a single press in the middle of a phrase paints nothing and restores at the end of that phrase`() =
+        runTest {
+            val f = fixture()
+            burst(f, 31_000L, 1)
+            advanceTimeBy(1_000L)
+            runCurrent()
+            f.assertQuiet()
+
+            settle()
+            assertEquals(listOf(29_700L), f.counter.seeks)
+            confirmSeek(f, 30_500L)
+            assertEquals("Bye.", f.controller.displayText.value)
+            f.player.emitPosition(32_500L)
+            runCurrent()
+            assertEquals("Bye.", f.controller.displayText.value)
+            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
+            f.player.emitPosition(33_000L)
+            runCurrent()
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+            assertEquals(0, f.counter.pauses)
+        }
+
+    @Test
+    fun `a press exactly at a phrase start has the end of that phrase as origin`() =
+        runTest {
+            val f = fixture()
+            burst(f, 30_000L, 1)
+            assertEquals(33_000L, f.origin())
+            settle()
+            assertEquals(listOf(29_700L), f.counter.seeks)
+            confirmSeek(f, 30_100L)
+            f.player.emitPosition(32_999L)
+            runCurrent()
+            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
+            f.player.emitPosition(33_000L)
+            runCurrent()
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+        }
+
+    @Test
+    fun `a press at a phrase end or in a gap has the press position as origin`() =
+        runTest {
+            for (pressAt in listOf(33_000L, 34_500L)) {
+                nowMs += 10_000L
+                val f = fixture()
+                burst(f, pressAt, 1)
+                assertEquals(pressAt, f.origin())
+                settle()
+                assertEquals(listOf(29_700L), f.counter.seeks)
+                confirmSeek(f, 30_500L)
+                assertEquals("Bye.", f.controller.displayText.value)
+                f.player.emitPosition(pressAt - 1)
+                runCurrent()
+                assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
+                f.player.emitPosition(pressAt)
+                runCurrent()
+                assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+                f.controller.cancel()
+            }
+        }
+
+    @Test
+    fun `a video already past the origin when the window closes does not end the run or move the origin`() =
+        runTest {
+            val f = fixture()
+            burst(f, 32_800L, 1)
+            f.player.emitPosition(33_500L)
+            runCurrent()
+            f.player.emitPosition(34_200L)
+            runCurrent()
+            f.assertQuiet()
+            assertEquals(33_000L, f.origin())
+
+            settle()
+            assertEquals(listOf(29_700L), f.counter.seeks)
+            assertEquals(33_000L, f.origin())
+            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
+
+            confirmSeek(f, 30_500L)
+            assertEquals("Bye.", f.controller.displayText.value)
+            f.player.emitPosition(33_000L)
+            runCurrent()
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+            assertEquals(0, f.counter.pauses)
+        }
+
+    @Test
+    fun `later presses, positions and groups never overwrite the origin`() =
+        runTest {
+            val f = fixture()
+            burst(f, 51_000L, 3)
+            assertEquals(53_000L, f.origin())
+            f.player.emitPosition(60_000L)
+            runCurrent()
+            assertEquals(53_000L, f.origin())
+            settle()
+            assertEquals(53_000L, f.origin())
+
+            confirmSeek(f, 30_500L)
+            nowMs += 2_000L
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            assertEquals(53_000L, f.origin())
+            settle()
+            assertEquals(53_000L, f.origin())
+            assertEquals(listOf(9_700L, 29_700L), f.counter.seeks)
+        }
+
+    @Test
+    fun `a subtitle shown before the run is untouched during the window and back at the origin`() =
+        runTest {
+            val f = fixture()
+            // An earlier run left the English display on; the viewer then pressed again mid-run.
+            burst(f, 71_000L, 1)
+            settle()
+            confirmSeek(f, 70_100L)
+            assertEquals("Go.", f.controller.displayText.value)
+
+            nowMs += 2_000L
+            f.controller.press(SubtitleDisplay.SPANISH)
+            advanceTimeBy(1_000L)
+            runCurrent()
+            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
+            assertEquals("Go.", f.controller.displayText.value)
+            settle()
+            assertEquals(SubtitleDisplay.SPANISH, f.controller.display.value)
+
+            confirmSeek(f, 70_000L)
+            f.player.emitPosition(72_000L)
+            runCurrent()
+            // The display saved by the first press (OFF) is what comes back.
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+        }
+
+    @Test
+    fun `only the replayed phrases are ever published and nothing before the seek`() =
+        runTest {
+            val f = fixture()
+            val published = mutableListOf<String?>()
+            backgroundScope.launch { f.controller.displayText.collect { published += it } }
+            runCurrent()
+
+            burst(f, 51_000L, 3)
+            settle()
+            assertEquals(listOf<String?>(null), published)
+            for (position in listOf(10_500L, 30_500L, 50_500L, 53_000L)) {
+                confirmSeek(f, position)
+            }
+            val expected = listOf<String?>(null, "Hello.", "Bye.", "And?", null)
+            assertEquals(expected, published)
+        }
+
+    @Test
+    fun `cancel and a user seek during the window seek nothing and never touch play or pause`() =
+        runTest {
+            for (action in listOf<(PhraseRewindController) -> Unit>({ it.cancel() }, { it.onUserSeek() })) {
+                nowMs += 10_000L
+                val f = fixture()
+                val playsBefore = f.counter.plays
+                burst(f, 51_000L, 2)
+                action(f.controller)
+                settle()
+                assertTrue(f.counter.seeks.isEmpty())
+                assertEquals(0, f.counter.pauses)
+                assertEquals(playsBefore, f.counter.plays)
+                assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+                assertEquals(0, f.activeJobs)
+            }
+        }
+
+    @Test
+    fun `no pause across a rewind with no track loaded`() =
+        runTest {
+            val f = fixture(loadTrack = false)
+            burst(f, 31_000L, 2)
+            settle()
+            assertEquals(0, f.counter.pauses)
+            assertTrue(f.counter.seeks.isEmpty())
+            assertEquals(PlayerState.Playing, f.player.state.value)
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
         }
 
     /** Lets [SEEK_CONFIRM_MS][PhraseRewindController.SEEK_CONFIRM_MS] pass and reports [positionMs]. */
@@ -266,15 +514,19 @@ class PhraseRewindControllerTest {
             runCurrent()
 
             f.controller.press(SubtitleDisplay.SPANISH)
-            assertEquals(SubtitleDisplay.SPANISH, f.controller.display.value)
-            assertEquals("Adios.", f.controller.displayText.value)
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+            assertNull(f.controller.displayText.value)
             nowMs += 400L
             f.controller.press(SubtitleDisplay.ENGLISH)
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
 
-            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
-            assertEquals("Bye.", f.controller.displayText.value)
+            // The last press's language wins, applied when the window closes.
             settle()
+            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
             assertEquals(first.startMs - 300L, f.player.positionMs.value)
+            f.player.emitPosition(10_500L)
+            runCurrent()
+            assertEquals("Hello.", f.controller.displayText.value)
         }
 
     @Test
@@ -285,15 +537,19 @@ class PhraseRewindControllerTest {
             runCurrent()
 
             f.controller.press(SubtitleDisplay.ENGLISH)
-            assertEquals("And?", f.controller.displayText.value)
+            assertNull(f.controller.displayText.value)
             nowMs += 400L
             f.controller.press(SubtitleDisplay.SPANISH)
 
-            assertEquals(SubtitleDisplay.SPANISH, f.controller.display.value)
-            assertEquals("Y que?", f.controller.displayText.value)
-            assertTrue(f.spanish.queries.contains(51_000L))
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+            assertNull(f.controller.displayText.value)
             settle()
+            assertEquals(SubtitleDisplay.SPANISH, f.controller.display.value)
             assertEquals(second.startMs - 300L, f.player.positionMs.value)
+            f.player.emitPosition(30_500L)
+            runCurrent()
+            assertEquals("Adios.", f.controller.displayText.value)
+            assertTrue(f.spanish.queries.contains(30_500L))
         }
 
     @Test
@@ -328,12 +584,16 @@ class PhraseRewindControllerTest {
             assertEquals(fourth.startMs - 300L, f.player.positionMs.value)
             confirmSeek(f, 70_000L)
 
-            f.player.emitPosition(70_999L)
+            // The origin is the end of "Go.", not the press position.
+            f.player.emitPosition(71_000L)
+            runCurrent()
+            assertEquals(SubtitleDisplay.SPANISH, f.controller.display.value)
+            f.player.emitPosition(71_999L)
             runCurrent()
             assertEquals(SubtitleDisplay.SPANISH, f.controller.display.value)
             assertEquals(1, f.activeJobs)
 
-            f.player.emitPosition(71_000L)
+            f.player.emitPosition(72_000L)
             runCurrent()
 
             assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
@@ -373,7 +633,7 @@ class PhraseRewindControllerTest {
             assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
             assertEquals(1, f.activeJobs)
 
-            f.player.emitPosition(71_000L)
+            f.player.emitPosition(72_000L)
             runCurrent()
 
             assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
@@ -391,7 +651,6 @@ class PhraseRewindControllerTest {
             f.controller.press(SubtitleDisplay.SPANISH)
 
             assertNull(f.controller.displayText.value)
-            assertTrue(f.spanish.queries.contains(71_000L))
 
             settle()
             f.player.emitPosition(51_000L)
@@ -401,7 +660,7 @@ class PhraseRewindControllerTest {
         }
 
     @Test
-    fun `a press with no track loaded shows the language and then drops the run`() =
+    fun `a press with no track loaded shows nothing and then drops the run`() =
         runTest {
             val f = fixture(loadTrack = false)
             f.player.emitPosition(31_000L)
@@ -409,7 +668,7 @@ class PhraseRewindControllerTest {
 
             f.controller.press(SubtitleDisplay.ENGLISH)
             runCurrent()
-            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
 
             settle()
 
