@@ -16,9 +16,9 @@ import java.io.File
  *
  * It never touches libVLC or the filesystem -- [open] and [addExternalSubtitle] only read a file's
  * name -- so it runs as a plain JVM test double. A test drives what the real implementation would
- * learn from the media itself through [emitTracks], [emitPosition], [emitDuration], [end] and
- * [fail], and reads the result straight off the `StateFlow`s: every control updates them
- * synchronously, before it returns.
+ * learn from the media itself through [emitTracks], [emitPosition], [emitDuration],
+ * [deselectTracks], [end] and [fail], and reads the result straight off the `StateFlow`s: every
+ * control updates them synchronously, before it returns.
  */
 class FakePlayer : Player {
     private val mutableState = MutableStateFlow<PlayerState>(PlayerState.Idle)
@@ -198,9 +198,23 @@ class FakePlayer : Player {
         mutableDurationMs.value = ms
     }
 
-    /** Simulates running out of media: [PlayerState.Ended], at the end of the known duration. */
+    /**
+     * Reports the all-null selection libVLC leaves behind when it deselects every elementary
+     * stream, without a state change: the shape its `ESSelected` read-back takes when it arrives
+     * before [PlayerState.Ended] does (#261). [end] does it too, together with the state change.
+     */
+    fun deselectTracks() {
+        mutableSelectedAudioId.value = null
+        mutableSelectedSubtitleId.value = null
+    }
+
+    /**
+     * Simulates running out of media: [PlayerState.Ended], at the end of the known duration, with
+     * every stream deselected the way libVLC leaves them around the end (#261).
+     */
     fun end() {
         mutablePositionMs.value = mutableDurationMs.value
+        deselectTracks()
         mutableState.value = PlayerState.Ended
     }
 
