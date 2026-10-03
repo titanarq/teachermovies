@@ -247,15 +247,38 @@ class FakePlayerTest {
     }
 
     @Test
-    fun endMovesToTheEndOfTheMedia() {
+    fun endMovesToTheEndOfTheMediaAndDeselectsEveryStream() {
         player.open(movie)
         player.play()
         player.emitDuration(90_000L)
+        player.emitTracks(
+            audio = listOf(Track("a1", "English 5.1", "eng")),
+            subs = listOf(Track("s1", "English", "eng")),
+        )
+        player.selectAudio("a1")
+        player.selectSubtitle("s1")
 
         player.end()
 
         assertEquals(PlayerState.Ended, player.state.value)
         assertEquals(90_000L, player.positionMs.value)
+        // libVLC deselects every elementary stream around the end of the media (#261).
+        assertNull(player.selectedAudioId.value)
+        assertNull(player.selectedSubtitleId.value)
+    }
+
+    @Test
+    fun deselectTracksReportsTheAllNullSelectionAndLeavesTheStateAlone() {
+        player.open(movie)
+        player.play()
+        player.selectAudio("a1")
+        player.selectSubtitle("s1")
+
+        player.deselectTracks()
+
+        assertEquals(PlayerState.Playing, player.state.value)
+        assertNull(player.selectedAudioId.value)
+        assertNull(player.selectedSubtitleId.value)
     }
 
     @Test

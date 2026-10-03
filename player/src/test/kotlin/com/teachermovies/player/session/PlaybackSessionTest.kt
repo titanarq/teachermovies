@@ -403,6 +403,64 @@ class PlaybackSessionTest {
         }
 
     @Test
+    fun endOfMediaKeepsTheStoredTracks() =
+        runTest {
+            seed(movieFile(), positionMs = 600_000L, audioTrackId = "a1", subtitleTrackId = "s2")
+            val session = session()
+            session.open(id)
+            player.emitDuration(7_200_000L)
+            player.play()
+            runCurrent()
+            player.emitTracks(audio = listOf(audioEs, audioEn), subs = listOf(subEn, subEs))
+            runCurrent()
+            assertEquals("a1", player.selectedAudioId.value)
+            assertEquals("s2", player.selectedSubtitleId.value)
+
+            // libVLC deselects every elementary stream around the end of the media (#261).
+            player.end()
+            runCurrent()
+
+            assertNull(player.selectedAudioId.value)
+            assertNull(player.selectedSubtitleId.value)
+            val item = persisted()
+            assertEquals("a1", item.audioTrackId)
+            assertEquals("s2", item.subtitleTrackId)
+            assertEquals(0L, item.lastPositionMs)
+
+            // Leaving the movie afterwards stores the same choice, not the all-null read-back.
+            session.close()
+            assertEquals("a1", persisted().audioTrackId)
+            assertEquals("s2", persisted().subtitleTrackId)
+            assertEquals(0L, persisted().lastPositionMs)
+        }
+
+    @Test
+    fun aDeselectionThatArrivesBeforeThePlayerEndsKeepsTheStoredTracks() =
+        runTest {
+            seed(movieFile(), audioTrackId = "a1", subtitleTrackId = "s2")
+            session().open(id)
+            player.emitDuration(7_200_000L)
+            player.play()
+            runCurrent()
+            player.emitTracks(audio = listOf(audioEs, audioEn), subs = listOf(subEn, subEs))
+            runCurrent()
+
+            player.deselectTracks()
+            runCurrent()
+            assertEquals("a1", persisted().audioTrackId)
+            assertEquals("s2", persisted().subtitleTrackId)
+
+            // A periodic save inside that window writes the choice back, not the read-back.
+            now += PlaybackSession.SAVE_INTERVAL_MS
+            player.emitPosition(888_000L)
+            runCurrent()
+            val item = persisted()
+            assertEquals("a1", item.audioTrackId)
+            assertEquals("s2", item.subtitleTrackId)
+            assertEquals(888_000L, item.lastPositionMs)
+        }
+
+    @Test
     fun closeSavesThePositionAndReleasesThePlayer() =
         runTest {
             seed(movieFile())
