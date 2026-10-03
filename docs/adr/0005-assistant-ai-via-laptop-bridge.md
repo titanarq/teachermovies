@@ -108,6 +108,22 @@ subtítulos") stands.
   - **Spanish** is the candidate that aligns best to that English track, whatever its source,
     re-timed onto the English (playback) timeline before it is shown.
 
+## Amendment 2026-10-03: phrase-rewind restore point (human decision after testing #358 on the TV)
+
+The human tried the LEFT/RIGHT phrase rewind of the 2026-09-29 amendment on the TV and found the
+phrase they had just heard cut short (#363): playback went on during the 1.5 s group window, so the
+restore point "where the first press happened" fell at the start of that phrase. The restore
+condition of that amendment is replaced by the one below; "rewinds N phrases and resumes playback"
+and the rest of it stand. Where they disagree, this amendment wins.
+
+- **Restore point.** The previous subtitle state is restored when playback reaches **the end of the
+  phrase in progress at the moment of the first press** (or the position of the press, if it falls
+  in a gap between phrases). The phrase in progress counts as phrase 1 when going back, so the
+  phrase just heard is replayed whole, with the chosen subtitle.
+- The restore point is fixed once, at the first press of the run, and later presses never move it.
+- Playback is **not paused** while the group window is open; the rewind is a single seek when the
+  window closes.
+
 ## Consequences
 
 - Explanations and the fallback translation need the laptop on and paired; aligned ES subtitles
