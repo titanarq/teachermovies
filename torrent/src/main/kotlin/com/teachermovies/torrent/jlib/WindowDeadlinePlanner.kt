@@ -5,8 +5,8 @@ import com.teachermovies.torrent.api.RangeReadiness
 
 /**
  * What [JLibTorrentEngine.prioritizeWindow] applies to a torrent's handle when its read-ahead
- * window moves: [deadlines] maps each piece that entered the window to its deadline in
- * milliseconds, and [reset] lists, ascending, the pieces that left it.
+ * window moves: [deadlines] maps each piece that entered the window (or stayed in it still
+ * missing, #257) to its deadline in milliseconds, and [reset] lists, ascending, the pieces that left it.
  */
 internal data class WindowDeadlinePlan(
     val deadlines: Map<Int, Int>,
@@ -38,18 +38,24 @@ internal object WindowDeadlinePlanner {
      * should follow ([piecesOf]); [previous] is the window set last, null when none is. Pieces of
      * [current] not in [previous] get deadlines [deadlineStepMs], 2 x [deadlineStepMs], ... in
      * [current]'s order; pieces of [previous] not in [current] are reset, ascending.
+     *
+     * A piece in both windows that [have] does not report yet is scheduled again too (#257): its
+     * old deadline may have lapsed on a request stuck with a slow peer, and one such straggler
+     * holds the contiguous readiness of its range low until it arrives. [have] defaults to
+     * "everything is on disk", i.e. no refresh.
      */
     fun plan(
         previous: List<Int>?,
         current: List<Int>,
         deadlineStepMs: Int,
+        have: (Int) -> Boolean = { true },
     ): WindowDeadlinePlan {
         val before = previous?.toHashSet() ?: emptySet()
         val after = current.toHashSet()
         val deadlines = LinkedHashMap<Int, Int>()
         var step = 0
         for (piece in current) {
-            if (piece in before || piece in deadlines) continue
+            if (piece in deadlines || (piece in before && have(piece))) continue
             step += 1
             deadlines[piece] = deadlineStepMs * step
         }
@@ -97,4 +103,17 @@ internal fun readinessFor(
     val contiguousEnd = missing.firstOrNull()?.let { it.toLong() * pieceLengthBytes } ?: Long.MAX_VALUE
     val readyBytes = (minOf(end, contiguousEnd) - start).coerceAtLeast(0L)
     return RangeReadiness(ready = missing.isEmpty(), readyBytes = readyBytes, missingPieces = missing)
+}
+
+/**
+ * libtorrent timeouts the engine tightens for streaming (#257), in seconds. The defaults (60 and
+ * 20) let a deadline block requested from a slow peer or the web seed stay outstanding for tens of
+ * seconds, long enough for the playback gate to wait on a single straggling piece.
+ */
+internal object StreamingTimeouts {
+    /** `request_timeout`: seconds before an unanswered block request is dropped and re-requested. */
+    const val REQUEST_TIMEOUT_S = 10
+
+    /** `piece_timeout`: seconds a piece request may wait before another peer is tried. */
+    const val PIECE_TIMEOUT_S = 5
 }
