@@ -1,6 +1,8 @@
 package com.teachermovies.tv.player
 
+import com.teachermovies.assistant.SpanishCueSource
 import com.teachermovies.assistant.SpanishTextSource
+import com.teachermovies.assistant.subtitles.SubtitleTrack
 import com.teachermovies.core.log.AppLog
 import com.teachermovies.core.model.TorrentId
 import java.io.File
@@ -16,13 +18,17 @@ import kotlin.coroutines.cancellation.CancellationException
  */
 class MovieSpanishText(
     private val build: suspend (TorrentId, File) -> SpanishTextSource?,
-) : SpanishTextSource {
+) : SpanishTextSource,
+    SpanishCueSource {
     @Volatile
     private var timeline: SpanishTextSource? = null
 
     val hasTimeline: Boolean get() = timeline != null
 
     override fun textAt(positionMs: Long): String? = timeline?.textAt(positionMs)
+
+    /** The loaded timeline's cues on the playback timeline, for the player-track rewind (#358). */
+    override fun playbackCues(): SubtitleTrack? = (timeline as? SpanishCueSource)?.playbackCues()
 
     /** Builds the timeline of [mediaFile]; a failing build is logged and leaves none. */
     suspend fun load(

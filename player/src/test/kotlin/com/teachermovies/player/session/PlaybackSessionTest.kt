@@ -229,6 +229,50 @@ class PlaybackSessionTest {
         }
 
     @Test
+    fun aTemporarySubtitleIsNeverSavedAsTheViewersChoice() =
+        runTest {
+            seed(movieFile(), audioTrackId = "a1", subtitleTrackId = "s1")
+            val session = session()
+            session.open(id)
+            runCurrent()
+            player.emitTracks(audio = listOf(audioEs, audioEn), subs = listOf(subEn, Track("tmp", "tmp", null)))
+            runCurrent()
+            assertEquals("s1", player.selectedSubtitleId.value)
+
+            session.hold("tmp", previousId = "s1")
+            player.selectSubtitle("tmp")
+            runCurrent()
+            assertEquals("s1", persisted().subtitleTrackId)
+
+            // Leaving the movie inside the temporary state saves the snapshot as well.
+            player.emitPosition(25_000L)
+            session.close()
+            assertEquals("tmp", player.selectedSubtitleId.value)
+            assertEquals("s1", persisted().subtitleTrackId)
+            assertEquals(25_000L, persisted().lastPositionMs)
+        }
+
+    @Test
+    fun aViewerChoiceDuringTheTemporarySubtitleIsSaved() =
+        runTest {
+            seed(movieFile(), audioTrackId = "a1", subtitleTrackId = null)
+            val session = session()
+            session.open(id)
+            runCurrent()
+            player.emitTracks(audio = listOf(audioEs, audioEn), subs = listOf(subEn, Track("tmp", "tmp", null)))
+            runCurrent()
+
+            session.hold("tmp", previousId = null)
+            player.selectSubtitle("tmp")
+            runCurrent()
+            assertNull(persisted().subtitleTrackId)
+
+            player.selectSubtitle("s1")
+            runCurrent()
+            assertEquals("s1", persisted().subtitleTrackId)
+        }
+
+    @Test
     fun persistedSubtitleIsKeptWhenItsTrackNeverAppears() =
         runTest {
             seed(movieFile(), audioTrackId = "a1", subtitleTrackId = "s2")

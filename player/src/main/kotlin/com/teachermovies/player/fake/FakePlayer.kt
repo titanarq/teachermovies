@@ -1,5 +1,6 @@
 package com.teachermovies.player.fake
 
+import com.teachermovies.player.api.ExternalSubtitleResult
 import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.SubtitleExtraction
@@ -35,6 +36,13 @@ class FakePlayer : Player {
     /** Every `trackId` [extractTextSubtitle] was called with, in call order. */
     val extractionCalls: List<String>
         get() = recordedExtractionCalls.toList()
+
+    private val recordedExternalSubtitleCalls = mutableListOf<File>()
+    private var externalSubtitleFailure: ExternalSubtitleResult? = null
+
+    /** Every file [addExternalSubtitleTrack] was called with, in call order. */
+    val externalSubtitleCalls: List<File>
+        get() = recordedExternalSubtitleCalls.toList()
 
     /** The arguments of the last [open], or null when [open] was never called. */
     var lastOpen: OpenCall? = null
@@ -106,6 +114,23 @@ class FakePlayer : Player {
         if (select) {
             selectSubtitle(track.id)
         }
+    }
+
+    /**
+     * Appends the `ext:` track [addExternalSubtitle] would, unselected, and returns it. Every file is
+     * recorded in [externalSubtitleCalls]; [emitExternalSubtitleResult] makes later calls fail instead.
+     */
+    override suspend fun addExternalSubtitleTrack(file: File): ExternalSubtitleResult {
+        recordedExternalSubtitleCalls += file
+        externalSubtitleFailure?.let { return it }
+        val track = Track(id = "ext:${file.name}", name = file.name, language = null)
+        mutableSubtitleTracks.value = mutableSubtitleTracks.value + track
+        return ExternalSubtitleResult.Added(track)
+    }
+
+    /** Makes later [addExternalSubtitleTrack] calls return [result], or succeed again with null. */
+    fun emitExternalSubtitleResult(result: ExternalSubtitleResult?) {
+        externalSubtitleFailure = result
     }
 
     /**

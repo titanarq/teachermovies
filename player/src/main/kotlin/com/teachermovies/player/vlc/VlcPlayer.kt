@@ -5,6 +5,7 @@ import android.net.Uri
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import com.teachermovies.core.log.AppLog
+import com.teachermovies.player.api.ExternalSubtitleResult
 import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.SubtitleExtraction
@@ -14,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeoutOrNull
 import org.videolan.libvlc.LibVLC
@@ -208,6 +210,24 @@ class VlcPlayer(
     }
 
     /**
+     * Adds [file] as an unselected slave and waits, up to [SLAVE_TRACK_TIMEOUT_MS], for the `ESAdded`
+     * that publishes the track it created: the id [subtitleTracks] gained over the list before.
+     */
+    override suspend fun addExternalSubtitleTrack(file: File): ExternalSubtitleResult {
+        val player = mediaPlayer ?: return ExternalSubtitleResult.NotAdded("no media is open")
+        val before = mutableSubtitleTracks.value.map { it.id }.toSet()
+        if (!player.addSlave(IMedia.Slave.Type.Subtitle, Uri.fromFile(file), false)) {
+            return ExternalSubtitleResult.NotAdded("the player refused ${file.name}")
+        }
+        publishTracks()
+        val added =
+            withTimeoutOrNull(SLAVE_TRACK_TIMEOUT_MS) {
+                mutableSubtitleTracks.first { tracks -> tracks.any { it.id !in before } }
+            }?.firstOrNull { it.id !in before }
+        return if (added == null) ExternalSubtitleResult.TimedOut else ExternalSubtitleResult.Added(added)
+    }
+
+    /**
      * Reads the embedded track straight out of the file -- libVLC 3 has no SRT/ASS muxer (#115) --
      * with [EmbeddedSubtitles], which picks the Matroska or MP4 reader by the container, on
      * [Dispatchers.IO] under [extractionTimeout]. It only reads the file passed to [open]; the
@@ -348,6 +368,9 @@ class VlcPlayer(
     private companion object {
         /** [AppLog] module of the track-selection debug lines: requests and libVLC's read-backs. */
         const val LOG_MODULE = "player"
+
+        /** How long [addExternalSubtitleTrack] waits for libVLC to publish the track of a new slave. */
+        const val SLAVE_TRACK_TIMEOUT_MS = 3_000L
 
         /** [fileCachingMs] unless the caller tunes it: three seconds of read cache on a growing file. */
         const val DEFAULT_FILE_CACHING_MS = 3000

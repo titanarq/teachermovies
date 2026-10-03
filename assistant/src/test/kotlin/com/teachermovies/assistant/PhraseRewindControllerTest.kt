@@ -106,6 +106,34 @@ class PhraseRewindControllerTest {
             assertEquals("Bye.", f.controller.displayText.value)
         }
 
+    /** Lets [SEEK_CONFIRM_MS][PhraseRewindController.SEEK_CONFIRM_MS] pass and reports [positionMs]. */
+    private suspend fun TestScope.confirmSeek(
+        f: Fixture,
+        positionMs: Long,
+    ) {
+        nowMs += PhraseRewindController.SEEK_CONFIRM_MS + 100L
+        f.player.emitPosition(positionMs)
+        runCurrent()
+    }
+
+    @Test
+    fun `a stale pre-seek position right after the seek does not end the run`() =
+        runTest {
+            val f = fixture()
+            f.player.emitPosition(31_000L)
+            runCurrent()
+
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            settle()
+            assertEquals(second.startMs - 300L, f.player.positionMs.value)
+
+            // libVLC delivers a TimeChanged still carrying the pre-seek time after setTime (H1).
+            f.player.emitPosition(32_500L)
+            runCurrent()
+
+            assertEquals(SubtitleDisplay.ENGLISH, f.controller.display.value)
+        }
+
     @Test
     fun `a press from a paused player rewinds and plays`() =
         runTest {
@@ -298,6 +326,7 @@ class PhraseRewindControllerTest {
             f.controller.press(SubtitleDisplay.SPANISH)
             settle()
             assertEquals(fourth.startMs - 300L, f.player.positionMs.value)
+            confirmSeek(f, 70_000L)
 
             f.player.emitPosition(70_999L)
             runCurrent()
@@ -324,6 +353,7 @@ class PhraseRewindControllerTest {
             }
             settle()
             assertEquals(second.startMs - 300L, f.player.positionMs.value)
+            confirmSeek(f, 30_000L)
 
             f.player.emitPosition(51_000L)
             runCurrent()
@@ -335,6 +365,7 @@ class PhraseRewindControllerTest {
 
             // One phrase back from where playback is, not from where the run started.
             assertEquals(third.startMs - 300L, f.player.positionMs.value)
+            confirmSeek(f, 50_000L)
 
             f.player.emitPosition(55_000L)
             runCurrent()

@@ -197,6 +197,16 @@ class PlayerViewModel(
     private val explanationState = explanations?.state ?: flowOf(ExplanationUiState.Idle)
 
     init {
+        // Keeps the phrase rewind's temporary subtitle track out of the persisted subtitle choice (#358).
+        rewind?.attachSaveGuard(session)
+        // A language the rewind found no subtitle for says so, as RIGHT without a timeline always did.
+        rewind?.let { controller ->
+            viewModelScope.launch {
+                controller.unavailable.collect { language ->
+                    showMessage(if (language == SubtitleDisplay.SPANISH) NO_SPANISH else NO_SUBTITLES)
+                }
+            }
+        }
         // A shown explanation is said in English (off or no voice: text only); dismissing resets [speech].
         viewModelScope.launch {
             explanationState.filterIsInstance<ExplanationUiState.Shown>().collect {
@@ -325,6 +335,7 @@ class PlayerViewModel(
                             )
                         val available = started is HiddenModeResult.Started
                         local.update { it.copy(assistantAvailable = available) }
+                        rewind?.setMovie(File(result.item.mainFilePath))
                         if (available) spanishText?.load(id, File(result.item.mainFilePath))
                     }
 
@@ -357,13 +368,35 @@ class PlayerViewModel(
         if (exiting || capture.captured.value != null) return
         showOverlay()
         when (action) {
-            PlayerAction.TogglePlayPause -> player.togglePlayPause()
-            PlayerAction.Play -> player.play()
-            PlayerAction.Pause -> player.pause()
-            is PlayerAction.SeekBy -> player.seekBy(action.deltaMs)
-            PlayerAction.ShowTracks -> local.update { it.copy(tracksPanelOpen = true) }
-            PlayerAction.Exit -> back()
-            null -> Unit
+            PlayerAction.TogglePlayPause -> {
+                player.togglePlayPause()
+            }
+
+            PlayerAction.Play -> {
+                player.play()
+            }
+
+            PlayerAction.Pause -> {
+                player.pause()
+            }
+
+            is PlayerAction.SeekBy -> {
+                // A hand seek ends a phrase rewind at once, its subtitle selection put back (#358).
+                rewind?.onUserSeek()
+                player.seekBy(action.deltaMs)
+            }
+
+            PlayerAction.ShowTracks -> {
+                local.update { it.copy(tracksPanelOpen = true) }
+            }
+
+            PlayerAction.Exit -> {
+                back()
+            }
+
+            null -> {
+                Unit
+            }
         }
     }
 
@@ -392,7 +425,8 @@ class PlayerViewModel(
 
     /**
      * LEFT/RIGHT (#347): one more press for [rewind], which groups the presses of a 1.5 s window
-     * and goes back N phrases once it closes, drawing [language]'s line ([PlayerUiState.rewindText]).
+     * and goes back N phrases once it closes, showing [language]'s subtitle as a temporary player track (#358); only when the
+     * player cannot show one is the line drawn as [PlayerUiState.rewindText].
      * An open menu closes with the first press -- the movie stays paused until the rewind fires --
      * so the rewind starts from the captured position. RIGHT without a Spanish timeline draws
      * nothing and says [NO_SPANISH] for [MESSAGE_TIMEOUT_MS]. Transport actions are not blocked.
@@ -619,7 +653,9 @@ class PlayerViewModel(
         clearExplanation()
         speech.reset()
         capture.dismiss(resume = false)
+        // Before the player is released or the session saves: the snapshot selection comes back first.
         rewind?.cancel()
+        rewind?.setMovie(null)
         spanishText?.clear()
         hidden.stop()
     }

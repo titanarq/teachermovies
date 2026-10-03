@@ -843,4 +843,49 @@ class HiddenSubtitleControllerTest {
 
             """.trimIndent()
     }
+
+    @Test
+    fun `a temporary track is not reverted and ending it restores the given id`() =
+        runTest {
+            writeSubtitle("movie.en.srt")
+            val player = FakePlayer()
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            controller.start(mediaFile, viewerSubtitleId = "viewer")
+            runCurrent()
+
+            controller.selectTemporary("tmp")
+            runCurrent()
+            assertEquals("tmp", player.selectedSubtitleId.value)
+            assertEquals("tmp", controller.temporaryId.value)
+
+            controller.endTemporary("viewer")
+            runCurrent()
+            assertEquals("viewer", player.selectedSubtitleId.value)
+            assertNull(controller.temporaryId.value)
+
+            // Reasserting is back: any other selection is reverted to the viewer's track or off.
+            player.selectSubtitle("stray")
+            runCurrent()
+            assertNull(player.selectedSubtitleId.value)
+        }
+
+    @Test
+    fun `a viewer choice during a temporary track ends it and wins`() =
+        runTest {
+            writeSubtitle("movie.en.srt")
+            val player = FakePlayer()
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            controller.start(mediaFile)
+            controller.selectTemporary("tmp")
+            runCurrent()
+
+            controller.selectByViewer("chosen")
+            controller.endTemporary(null)
+            runCurrent()
+
+            assertNull(controller.temporaryId.value)
+            assertEquals("chosen", player.selectedSubtitleId.value)
+        }
 }

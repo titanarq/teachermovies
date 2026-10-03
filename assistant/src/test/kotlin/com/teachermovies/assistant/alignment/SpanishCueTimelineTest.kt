@@ -141,4 +141,24 @@ class SpanishCueTimelineTest {
 
             assertNull(timeline.textAt(0))
         }
+
+    @Test
+    fun `playback cues apply the alignment inversely so they agree with textAt`() =
+        runTest {
+            cache("/a.srt", 500, 2.0, 0.9)
+            val track = es(Triple(10_500L, 12_500L, "uno"), Triple(100L, 400L, "antes"))
+            val timeline =
+                SpanishCueTimeline.create(
+                    lookup,
+                    torrent,
+                    english,
+                    listOf(candidate(SpanishSubtitleSource.SIDECAR, "/a.srt", track)),
+                )!!
+
+            val cues = timeline.playbackCues().cues
+
+            // esMs = enMs * 2 + 500: Spanish 10_500..12_500 is playback 5_000..6_000; the cue before 0 is dropped.
+            assertEquals(listOf(SubtitleCue(0, 5_000L, 6_000L, "uno")), cues)
+            assertEquals("uno", timeline.textAt(cues[0].startMs))
+        }
 }

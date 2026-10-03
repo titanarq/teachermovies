@@ -1,5 +1,6 @@
 package com.teachermovies.assistant.alignment
 
+import com.teachermovies.assistant.SpanishCueSource
 import com.teachermovies.assistant.SpanishTextSource
 import com.teachermovies.assistant.subtitles.SubtitleCue
 import com.teachermovies.assistant.subtitles.SubtitleTrack
@@ -18,7 +19,8 @@ import kotlinx.coroutines.CancellationException
 class SpanishCueTimeline internal constructor(
     spanish: SubtitleTrack,
     private val alignment: SubtitleAlignment,
-) : SpanishTextSource {
+) : SpanishTextSource,
+    SpanishCueSource {
     private val cues: List<SubtitleCue> = spanish.cues.sortedBy { it.startMs }
 
     override fun textAt(positionMs: Long): String? {
@@ -36,6 +38,22 @@ class SpanishCueTimeline internal constructor(
             }
         }
         return cues.getOrNull(found)?.takeIf { esMs < it.endMs }?.text
+    }
+
+    /**
+     * The chosen candidate's cues on the playback timeline: [textAt]'s mapping applied inversely
+     * (`enMs = (esMs - offsetMs) / frameRateScale`), so a player showing them as a subtitle track
+     * lines them up with the movie. Cues that land before 0 are dropped.
+     */
+    override fun playbackCues(): SubtitleTrack {
+        val scale = if (alignment.frameRateScale > 0.0) alignment.frameRateScale else 1.0
+        val shifted =
+            cues.mapNotNull { cue ->
+                val start = ((cue.startMs - alignment.offsetMs) / scale).toLong()
+                val end = ((cue.endMs - alignment.offsetMs) / scale).toLong()
+                if (end <= 0L) null else cue.copy(startMs = maxOf(0L, start), endMs = end)
+            }
+        return SubtitleTrack(shifted.mapIndexed { index, cue -> cue.copy(index = index) }, language = "es")
     }
 
     companion object {

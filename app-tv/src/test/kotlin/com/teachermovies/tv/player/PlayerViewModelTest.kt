@@ -8,6 +8,8 @@ import com.teachermovies.assistant.AssistantSpeechController
 import com.teachermovies.assistant.HiddenSubtitleController
 import com.teachermovies.assistant.LineCaptureController
 import com.teachermovies.assistant.PhraseRewindController
+import com.teachermovies.assistant.RewindSubtitleSession
+import com.teachermovies.assistant.RewindSubtitleState
 import com.teachermovies.assistant.SpanishTextSource
 import com.teachermovies.assistant.SubtitleEngine
 import com.teachermovies.assistant.TranslationFailure
@@ -55,6 +57,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -120,6 +123,9 @@ class PlayerViewModelTest {
 
     /** RIGHT's Spanish text (#347): [spanishCues] answers every position; null leaves no timeline. */
     private var spanishCues: String? = null
+
+    /** Builds the rewind with the player-track session of #358; off, the overlay line is all there is. */
+    private var rewindOnPlayerTrack = false
     private val spanishText =
         MovieSpanishText { _, _ -> spanishCues?.let { text -> SpanishTextSource { text } } }
 
@@ -134,7 +140,17 @@ class PlayerViewModelTest {
         val engine = SubtitleEngine(player.positionMs, backgroundScope)
         hidden = HiddenSubtitleController(player, engine, backgroundScope, tmp.newFolder("cache"))
         capture = LineCaptureController(player, engine, backgroundScope, clock = { nowMs })
-        rewind = PhraseRewindController(player, engine, spanishText, backgroundScope, clock = { nowMs })
+        val cacheDir = tmp.newFolder("rewind-cache")
+        rewind =
+            PhraseRewindController(
+                player,
+                engine,
+                spanishText,
+                backgroundScope,
+                clock = { nowMs },
+                subtitles =
+                    RewindSubtitleSession(player, hidden, spanishText, cacheDir).takeIf { rewindOnPlayerTrack },
+            )
         speech = AssistantSpeechController(speaker, translations, backgroundScope, allSpoken)
         explanations =
             ExplanationController(
@@ -1381,7 +1397,51 @@ class PlayerViewModelTest {
             player.emitPosition(31_000L)
             runCurrent()
 
+            nowMs += PhraseRewindController.SEEK_CONFIRM_MS + 100L
+            player.emitPosition(1_000L)
+            runCurrent()
+            player.emitPosition(31_000L)
+            runCurrent()
+
             assertNull("the subtitle goes away once playback is back", vm.uiState.value.rewindText)
+        }
+
+    @Test
+    fun theRewindShowsThePlayerTrackNotTheOverlayLineAndAHandSeekRestores() =
+        runTest(dispatcher) {
+            rewindOnPlayerTrack = true
+            val vm = playingWithTwoSubtitles()
+            assertNull(player.selectedSubtitleId.value)
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+            runCurrent()
+            player.emitPosition(29_900L)
+            runCurrent()
+
+            assertNotNull("a temporary player track is selected", player.selectedSubtitleId.value)
+            assertNull("one rendering path", vm.uiState.value.rewindText)
+
+            vm.onAction(PlayerAction.SeekBy(10_000L))
+            runCurrent()
+
+            assertNull("the snapshot (no subtitle) is back at once", player.selectedSubtitleId.value)
+            assertEquals(RewindSubtitleState.Idle, rewind.subtitleState.value)
+        }
+
+    @Test
+    fun rightWithoutSpanishCuesOnThePlayerTrackSaysSoAndRewindsAnyway() =
+        runTest(dispatcher) {
+            rewindOnPlayerTrack = true
+            val vm = playingWithTwoSubtitles()
+
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+            runCurrent()
+
+            assertEquals(PlayerViewModel.NO_SPANISH, vm.uiState.value.message)
+            assertNull(player.selectedSubtitleId.value)
+            assertEquals(29_700L, player.positionMs.value)
         }
 
     @Test

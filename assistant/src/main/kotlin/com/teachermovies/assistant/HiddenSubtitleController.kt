@@ -95,6 +95,22 @@ class HiddenSubtitleController(
 
     private var reassertJob: Job? = null
 
+    private val mutableTemporaryId = MutableStateFlow<String?>(null)
+
+    /**
+     * The subtitle track shown temporarily through [selectTemporary] (the phrase rewind's, #358), or
+     * null. [reassertJob] leaves it alone; a [selectByViewer] clears it.
+     */
+    val temporaryId: StateFlow<String?> = mutableTemporaryId.asStateFlow()
+
+    /**
+     * The player track hidden mode's English cues were extracted from (the embedded one), or null
+     * when they came from a sidecar or downloaded file -- no single player track stands for those.
+     */
+    @Volatile
+    var sourceTrackId: String? = null
+        private set
+
     /**
      * The cues hidden mode is reading right now, null outside it: what LEFT aligns the Spanish
      * subtitles against (#288, ADR-0005 §6).
@@ -153,6 +169,7 @@ class HiddenSubtitleController(
 
         engine.load(track)
         this.track = track
+        sourceTrackId = resolved.trackId
         // The viewer's persisted choice may already be applied: selecting null here would both hide
         // it and let the session persist that null over it (#248).
         revertUnlessViewerChoice(player.selectedSubtitleId.value, viewerSubtitleId)
@@ -173,9 +190,31 @@ class HiddenSubtitleController(
      * reverted.
      */
     fun selectByViewer(id: String?) {
+        mutableTemporaryId.value = null
         reassertJob?.cancel()
         reassertJob = null
         player.selectSubtitle(id)
+    }
+
+    /**
+     * Shows [id] on the player as a temporary track (#358) without hidden mode turning it back off:
+     * while it is the [temporaryId], [reassertJob] does not revert it. Whoever calls this owes an
+     * [endTemporary]; a viewer choice through [selectByViewer] ends it on its own and wins.
+     */
+    fun selectTemporary(id: String) {
+        mutableTemporaryId.value = id
+        player.selectSubtitle(id)
+    }
+
+    /**
+     * Ends the temporary track: selects [restoreId] (null = off) and goes back to reverting every
+     * selection that is not the viewer's choice, with the same choice as before. A no-op when no
+     * temporary track is active, so a viewer choice made meanwhile is not overwritten.
+     */
+    fun endTemporary(restoreId: String?) {
+        if (mutableTemporaryId.value == null) return
+        mutableTemporaryId.value = null
+        player.selectSubtitle(restoreId)
     }
 
     /**
@@ -189,8 +228,10 @@ class HiddenSubtitleController(
         generation.value += 1
         reassertJob?.cancel()
         reassertJob = null
+        mutableTemporaryId.value = null
         engine.load(null)
         track = null
+        sourceTrackId = null
         mutableActive.value = false
     }
 
@@ -225,7 +266,7 @@ class HiddenSubtitleController(
         selected: String?,
         viewerSubtitleId: String?,
     ) {
-        if (selected == null || selected == viewerSubtitleId) return
+        if (selected == null || selected == viewerSubtitleId || selected == mutableTemporaryId.value) return
         val restorable = viewerSubtitleId != null && player.subtitleTracks.value.any { it.id == viewerSubtitleId }
         if (restorable) {
             player.selectSubtitle(viewerSubtitleId)
@@ -252,7 +293,7 @@ class HiddenSubtitleController(
             return Resolved(SubtitleSource.SIDECAR, parse(it))
         }
         val candidate = EmbeddedSubtitleTracks.pick(publishedSubtitleTracks(session), language)
-        if (candidate != null) return Resolved(SubtitleSource.EMBEDDED, embedded(mediaFile, candidate))
+        if (candidate != null) return Resolved(SubtitleSource.EMBEDDED, embedded(mediaFile, candidate), candidate.id)
         if (generation.value != session) return null
         val downloaded = DownloadedSubtitles.findFor(mediaFile, language) ?: return null
         return Resolved(SubtitleSource.DOWNLOADED, parse(downloaded))
@@ -336,6 +377,7 @@ class HiddenSubtitleController(
     private data class Resolved(
         val source: SubtitleSource,
         val parsing: Parsing,
+        val trackId: String? = null,
     )
 
     private sealed interface Extracting {
