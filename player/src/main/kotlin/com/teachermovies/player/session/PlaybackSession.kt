@@ -31,7 +31,8 @@ import java.io.File
  * Progress is written every [SAVE_INTERVAL_MS] of [clock] time while [PlayerState.Playing] (checked
  * on each position update the player reports), when playback pauses, when the viewer changes a
  * track, and on [close]; when playback ends on its own the position is stored as `0` so the next
- * open starts over.
+ * open starts over. The streams libVLC deselects around the end of the media are not a viewer
+ * change, so the stored track ids survive them (#261).
  *
  * [scope] runs the session's collectors (the screen's scope, on one thread) and [clock] returns
  * epoch milliseconds; both are injected so a JVM test drives them deterministically.
@@ -55,6 +56,15 @@ class PlaybackSession(
      * tracks -- the sidecar files added as slaves -- after its audio tracks (#248).
      */
     @Volatile private var subtitleApplied = false
+
+    /**
+     * The last selection [player] reported for the media it was playing, seeded with the one
+     * [applyTracksWhenKnown] applies. libVLC deselects every elementary stream around the end of
+     * the media and reads back `audioTrack = -1`/`spuTrack = -1` on the resulting `ESSelected`
+     * events, which is not a viewer choice: from then on saves keep writing this instead of what
+     * the player reports (#261).
+     */
+    @Volatile private var lastSelection: Pair<String?, String?> = null to null
 
     @Volatile private var lastSavedAtMs = 0L
 
@@ -191,6 +201,7 @@ class PlaybackSession(
         current = item
         tracksApplied = false
         subtitleApplied = false
+        lastSelection = item.audioTrackId to item.subtitleTrackId
         lastSavedAtMs = clock()
         job = scope.launch { watch(item) }
     }
@@ -242,7 +253,9 @@ class PlaybackSession(
     /**
      * Waits for the player to report the media's audio tracks and applies [TrackPolicy] with the
      * persisted audio id; then re-applies the persisted subtitle id once that track is published,
-     * and from then on saves whenever the viewer picks another track.
+     * and from then on saves whenever the viewer picks another track. A change the player makes on
+     * its own -- the deselection around the end of the media -- is not the viewer's and is passed
+     * over ([reportedSelection], #261).
      *
      * libVLC publishes the tracks as it discovers them (one `ESAdded` each), so the subtitle list
      * can still lack the persisted track -- a sidecar file added as a slave -- when audio first
@@ -271,33 +284,57 @@ class PlaybackSession(
             }
         }
 
+        // What the player reports now is the choice just applied: from here on it is what a save
+        // writes once libVLC has stopped reporting one of its own (#261).
+        lastSelection = player.selectedAudioId.value to player.selectedSubtitleId.value
+
         combine(player.selectedAudioId, player.selectedSubtitleId) { audio, sub -> audio to sub }
             .distinctUntilChanged()
             // The first value is the selection just applied, not a change by the viewer.
             .drop(1)
             .collect {
+                // libVLC dropping every stream around the end of the media is not a choice (#261).
+                val changed = reportedSelection() ?: return@collect
+                lastSelection = changed
                 subtitleApplied = true
                 save(item, player.positionMs.value)
             }
     }
 
     /**
+     * The selection [player] reports for the media it is playing, or null when what it reports is
+     * no longer its own: after [PlayerState.Ended]/[PlayerState.Idle], and while every stream is
+     * deselected -- the two shapes the read-back libVLC leaves around the end of the media takes.
+     * Neither can be a viewer's choice (the tracks panel offers no "audio off", so both ids null
+     * is never one), so neither is counted as one nor stored (#261).
+     */
+    private fun reportedSelection(): Pair<String?, String?>? {
+        val state = player.state.value
+        if (state == PlayerState.Ended || state == PlayerState.Idle) return null
+        val audio = player.selectedAudioId.value
+        val subtitle = player.selectedSubtitleId.value
+        return if (audio == null && subtitle == null) null else audio to subtitle
+    }
+
+    /**
      * Writes [positionMs] and the chosen tracks: the player's selection once [TrackPolicy] has been
      * applied (the subtitle once the persisted track has been re-applied), the persisted ids before
-     * that, so a save while still opening never clears them.
+     * that, so a save while still opening never clears them. Once the player no longer reports a
+     * selection of its own ([reportedSelection]), the last one it did report is written instead, so
+     * the streams libVLC drops at the end of the media never clear them either (#261).
      */
     private suspend fun save(
         item: LibraryItem,
         positionMs: Long,
     ) {
-        val audio = if (tracksApplied) player.selectedAudioId.value else item.audioTrackId
-        val selected = player.selectedSubtitleId.value
+        val (audio, selected) = reportedSelection() ?: lastSelection
+        val storedAudio = if (tracksApplied) audio else item.audioTrackId
         // A temporary track (the phrase rewind's) is never the viewer's choice: save what it replaced.
         val guard = held
         val shown = if (guard != null && guard.first == selected) guard.second else selected
         val subtitle = if (subtitleApplied) shown else item.subtitleTrackId
         lastSavedAtMs = clock()
-        repo.updatePlayback(item.id, positionMs, audio, subtitle)
+        repo.updatePlayback(item.id, positionMs, storedAudio, subtitle)
     }
 
     internal companion object {
