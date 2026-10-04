@@ -83,7 +83,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private val libraryViewModel: LibraryViewModel by viewModels {
-        LibraryViewModel.Factory(repo = (application as TeacherMoviesApp).container.torrentRepository)
+        val container = (application as TeacherMoviesApp).container
+        LibraryViewModel.Factory(
+            repo = container.torrentRepository,
+            subtitleFetches = container.subtitleFetchRepository,
+        )
     }
 
     private val firstRunViewModel: FirstRunViewModel by viewModels {

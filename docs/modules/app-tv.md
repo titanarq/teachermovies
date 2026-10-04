@@ -116,14 +116,25 @@
   `AppContainer.torrentEngine`.
 
 ## Biblioteca (#72)
-- `LibraryViewModel(repo: TorrentRepository)` exposes `StateFlow<LibraryUiState(items: List<LibraryCard>)>`
-  mapped from `observeLibrary()` (newest completed first). `LibraryCard(id, title, sizeText,
-  resumeText?)`: `sizeText` is `Formatters.bytes(sizeBytes)`, `resumeText` is
+- `LibraryViewModel(repo: TorrentRepository, subtitleFetches: SubtitleFetchRepository)` exposes
+  `StateFlow<LibraryUiState(items: List<LibraryCard>)>`: `observeLibrary()` (newest completed first)
+  combined with `SubtitleFetchRepository.observeAll()`. `LibraryCard(id, title, sizeText, resumeText?,
+  subtitleBadges)`: `sizeText` is `Formatters.bytes(sizeBytes)`, `resumeText` is
   `"Continuar en " + Formatters.eta(lastPositionMs / 1000)` when `lastPositionMs > 0`, else null.
-- `LibraryScreen`: `LazyVerticalGrid` of tv `Card`s (title, ▶ `100 %`, size, optional resume text);
-  DOWN from the tab row enters on the first card (`focusRestorer`, then the last focused card); OK
-  calls `onPlay(id)`. No movies -> `Tu biblioteca está vacía`, nothing focusable (focus stays on
-  the tab row). The shell takes it as the `libraryContent` slot.
+- Subtitle badges (#375): `subtitleBadges` is `["EN", "ES"]` kept down to the languages whose
+  `subtitle_fetch_state` row of that movie is `SubtitleFetchState.Downloaded`, always in that order;
+  `Pending`, `Searching`, `NotFound`, `Failed` or no row give no badge, and rows of a movie that is not
+  in the library are ignored. It is the same row the web's "Buscar subtítulos" reports
+  (`GET /api/library/{id}/subtitles`), written by `POST /api/bridge/subtitles`, so a download that
+  lands while the screen is open adds its badge without a reopen, and nothing here reads the disk.
+- `LibraryScreen`: `LazyVerticalGrid` of tv `Card`s (title, ▶ `100 %`, size, optional resume text, and
+  the badges at the bottom-right end of the card's last line -- one small rounded `labelSmall` label
+  per language, not focusable and described to TalkBack as `Subtítulos en inglés descargados` /
+  `Subtítulos en español descargados`, so the card stays the only D-pad target); DOWN from the tab row
+  enters on the first card (`focusRestorer`, then the last focused card); OK calls `onPlay(id)`. No
+  movies -> `Tu biblioteca está vacía`, nothing focusable (focus stays on the tab row). The shell takes
+  it as the `libraryContent` slot. `MainActivity` builds the ViewModel out of
+  `AppContainer.torrentRepository` and `AppContainer.subtitleFetchRepository`.
 - Navigation: `MainUiState.route: AppRoute` is `Shell` or `Player(id)` (`player/{id}`);
   `MainViewModel.openPlayer(id)` / `closePlayer()`. `MainActivity` shows the player route (#78)
   instead of the shell for `Player`.
