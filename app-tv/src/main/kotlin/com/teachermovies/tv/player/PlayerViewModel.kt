@@ -17,6 +17,7 @@ import com.teachermovies.assistant.explanation.ExplanationUiState
 import com.teachermovies.assistant.explanation.spokenText
 import com.teachermovies.assistant.subtitles.SubtitleCue
 import com.teachermovies.assistant.subtitles.SubtitleTrack
+import com.teachermovies.core.log.AppLog
 import com.teachermovies.core.model.DownloadState
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.TorrentRepository
@@ -53,7 +54,7 @@ import java.io.File
  * side panel (#79), null while it is closed.
  *
  * [assistant] is the captured-line overlay (#86), null while no line is captured;
- * [assistantAvailable] says whether hidden English subtitles were found for this movie, and
+ * [assistantState] says how hidden English subtitles stand for this movie (#374), and
  * [message] is a short notice shown in the transport overlay (e.g. no line to capture).
  *
  * [streamStatus] (#226) is the streaming controller's `Preparing`/`Buffering` state as text while
@@ -73,11 +74,21 @@ data class PlayerUiState(
     val exited: Boolean = false,
     val tracksPanel: TracksPanelState? = null,
     val assistant: AssistantOverlayState? = null,
-    val assistantAvailable: Boolean = false,
+    val assistantState: AssistantState = AssistantState.Starting,
     val message: String? = null,
     val streamStatus: String? = null,
     val rewindText: String? = null,
-)
+) {
+    /** Whether hidden English subtitles are ready for this movie. */
+    val assistantAvailable: Boolean get() = assistantState == AssistantState.Available
+}
+
+/**
+ * Where hidden English mode is for the open movie (#374): [Starting] until `hidden.start` returns,
+ * then [Available], [NoSubtitles] (no English subtitle file) or [Unreadable] (a file that gave no
+ * cues). LEFT/RIGHT only rewind by phrases in [Available].
+ */
+enum class AssistantState { Starting, Available, NoSubtitles, Unreadable }
 
 /**
  * The captured-line overlay (#86): the English cue [text] the viewer froze and whether its audio
@@ -181,7 +192,7 @@ class PlayerViewModel(
         val error: String? = null,
         val exited: Boolean = false,
         val tracksPanelOpen: Boolean = false,
-        val assistantAvailable: Boolean = false,
+        val assistantState: AssistantState = AssistantState.Starting,
         val message: String? = null,
         val streaming: Boolean = false,
         val spanish: SpanishAnswer? = null,
@@ -209,7 +220,9 @@ class PlayerViewModel(
         rewind?.let { controller ->
             viewModelScope.launch {
                 controller.unavailable.collect { language ->
-                    showMessage(if (language == SubtitleDisplay.SPANISH) NO_SPANISH else NO_SUBTITLES)
+                    showMessage(
+                        if (language == SubtitleDisplay.SPANISH) NO_SPANISH else englishUnavailableMessage(),
+                    )
                 }
             }
         }
@@ -300,7 +313,7 @@ class PlayerViewModel(
                 // An error replaces the picture, panel included.
                 tracksPanel = tracks.takeIf { local.tracksPanelOpen && error == null },
                 assistant = overlay,
-                assistantAvailable = local.assistantAvailable,
+                assistantState = local.assistantState,
                 message = local.message,
                 streamStatus = if (local.streaming && error == null) streamStatusOf(stream) else null,
                 rewindText = panels.rewindText.takeIf { error == null },
@@ -344,7 +357,16 @@ class PlayerViewModel(
                                 )
                             }
                         val available = started is HiddenModeResult.Started
-                        local.update { it.copy(assistantAvailable = available) }
+                        val state =
+                            when (started) {
+                                is HiddenModeResult.Started -> AssistantState.Available
+                                HiddenModeResult.NoSubtitleFile -> AssistantState.NoSubtitles
+                                is HiddenModeResult.Unreadable -> AssistantState.Unreadable
+                            }
+                        if (started is HiddenModeResult.Unreadable) {
+                            AppLog.w(LOG_MODULE, "English subtitles unreadable: ${started.reason}")
+                        }
+                        local.update { it.copy(assistantState = state) }
                         rewind?.setMovie(File(result.item.mainFilePath))
                         if (available) spanishText?.load(id, File(result.item.mainFilePath))
                     }
@@ -444,8 +466,23 @@ class PlayerViewModel(
      * nothing and says [NO_SPANISH] for [MESSAGE_TIMEOUT_MS]. Transport actions are not blocked.
      */
     private fun rewindPhrases(language: SubtitleDisplay) {
-        val controller = rewind ?: return
-        if (!local.value.assistantAvailable) return
+        val key = if (language == SubtitleDisplay.SPANISH) "RIGHT" else "LEFT"
+        val state = local.value.assistantState
+        val controller = rewind
+        if (state != AssistantState.Available || controller == null) {
+            // Never a silent seek: the viewer is told why the phrase rewind is not there (#374).
+            val message = englishUnavailableMessage(withSeek = true)
+            if (state == AssistantState.Starting) {
+                AppLog.i(LOG_MODULE, "$key: hidden mode starting, ignored")
+                showMessage(message)
+            } else {
+                val delta = RemoteKeyMapper.SHORT_SEEK_MS * if (language == SubtitleDisplay.SPANISH) 1 else -1
+                AppLog.i(LOG_MODULE, "$key: hidden mode ${state.logName()}, seek ${if (delta > 0) "+" else "-"}10s")
+                onAction(PlayerAction.SeekBy(delta))
+                showMessage(message)
+            }
+            return
+        }
         if (capture.captured.value != null) {
             clearSpanish()
             clearExplanation()
@@ -562,9 +599,9 @@ class PlayerViewModel(
 
     private fun captureLine() {
         if (capture.captured.value != null) return
-        if (!local.value.assistantAvailable) {
+        if (local.value.assistantState != AssistantState.Available) {
             // Nothing to read the line from: say so and leave the movie running.
-            showMessage(NO_SUBTITLES)
+            showMessage(englishUnavailableMessage())
             return
         }
         val wasPlaying = player.state.value == PlayerState.Playing
@@ -674,6 +711,27 @@ class PlayerViewModel(
         hidden.stop()
     }
 
+    private fun AssistantState.logName(): String =
+        when (this) {
+            AssistantState.Starting -> "starting"
+            AssistantState.Available -> "available"
+            AssistantState.NoSubtitles -> "none"
+            AssistantState.Unreadable -> "unreadable"
+        }
+
+    /**
+     * Why English is not available now; [withSeek] adds that LEFT/RIGHT seek 10 s instead.
+     * `Available` here is the rewind's own `unavailable` (or a rewind-less seek): the subtitles were
+     * found, the player would not take the temporary track -- never "no subtitles" (#374).
+     */
+    private fun englishUnavailableMessage(withSeek: Boolean = false): String =
+        when (local.value.assistantState) {
+            AssistantState.Starting -> STARTING_SUBTITLES
+            AssistantState.Unreadable -> if (withSeek) UNREADABLE_SEEK else UNREADABLE_SUBTITLES
+            AssistantState.Available -> TRACK_NOT_SHOWN
+            AssistantState.NoSubtitles -> if (withSeek) NO_SUBTITLES_SEEK else NO_SUBTITLES
+        }
+
     private fun showMessage(text: String) {
         messageJob?.cancel()
         local.update { it.copy(message = text) }
@@ -773,6 +831,12 @@ class PlayerViewModel(
         const val EXPLAIN_GROUP_WINDOW_MS = 1_500L
 
         const val NO_SUBTITLES = "Esta película no tiene subtítulos en inglés"
+        const val NO_SUBTITLES_SEEK = "Sin subtítulos en inglés: ← → saltan 10 s"
+        const val UNREADABLE_SUBTITLES = "No se pudieron leer los subtítulos en inglés"
+        const val UNREADABLE_SEEK = "No se pudieron leer los subtítulos en inglés: ← → saltan 10 s"
+        const val TRACK_NOT_SHOWN = "No se pudo mostrar el subtítulo en inglés"
+        const val STARTING_SUBTITLES = "Preparando subtítulos en inglés…"
+        const val LOG_MODULE = "app-tv"
         const val NO_SPANISH = "Sin subtítulos en español"
         const val NO_LINE = "No hay ninguna frase que capturar"
 

@@ -45,7 +45,7 @@ sealed interface AssistantAction {
  * With the overlay closed only the capture keys (DPAD_DOWN, CAPTIONS) are taken; every other key is
  * null so the transport mapping of [RemoteKeyMapper] keeps handling it. With the overlay open every
  * key is taken: OK/ENTER/PLAY_PAUSE replay, DPAD_LEFT/DPAD_RIGHT rewind N phrases showing English /
- * Spanish (#347; also with the overlay closed while [assistantAvailable], else they seek),
+ * Spanish (#347; also with the overlay closed, where the view model seeks 10 s when there are no English subtitles, #374),
  * DPAD_UP explains (#347; closed, UP still opens the tracks panel), BACK/DPAD_DOWN/CAPTIONS dismiss, and the rest is [AssistantAction.Consumed], so no transport action can run behind the overlay. The exception is
  * the volume keys (VOLUME_UP/DOWN/MUTE, #178): they are null in both modes so the system still
  * changes the TV volume while the overlay is open.
@@ -54,7 +54,6 @@ object AssistantKeyMapper {
     fun map(
         keyCode: Int,
         overlayOpen: Boolean,
-        assistantAvailable: Boolean = true,
     ): AssistantAction? =
         if (overlayOpen) {
             when (keyCode) {
@@ -87,10 +86,11 @@ object AssistantKeyMapper {
                 KeyEvent.KEYCODE_CAPTIONS,
                 -> AssistantAction.CaptureLine
 
-                // Without an assistant LEFT/RIGHT stay the 10 s seek of RemoteKeyMapper.
-                KeyEvent.KEYCODE_DPAD_LEFT -> AssistantAction.RewindEnglish.takeIf { assistantAvailable }
+                // Always the assistant's (#374): without hidden English subtitles the view model
+                // itself seeks 10 s and says why, or ignores the key while they are starting.
+                KeyEvent.KEYCODE_DPAD_LEFT -> AssistantAction.RewindEnglish
 
-                KeyEvent.KEYCODE_DPAD_RIGHT -> AssistantAction.RewindSpanish.takeIf { assistantAvailable }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> AssistantAction.RewindSpanish
 
                 else -> null
             }

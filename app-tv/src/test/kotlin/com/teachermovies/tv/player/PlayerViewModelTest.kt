@@ -29,11 +29,15 @@ import com.teachermovies.assistant.speech.SpokenOutputSettings
 import com.teachermovies.assistant.speech.fake.FakeSpeaker
 import com.teachermovies.assistant.translation.TranslationResult
 import com.teachermovies.assistant.translation.fake.FakeTranslationProvider
+import com.teachermovies.core.log.AppLog
+import com.teachermovies.core.log.LogEntry
+import com.teachermovies.core.log.LogSink
 import com.teachermovies.core.model.DownloadState
 import com.teachermovies.core.model.Torrent
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.fake.InMemoryExplanationCacheRepository
 import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
+import com.teachermovies.player.api.ExternalSubtitleResult
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.Track
 import com.teachermovies.player.fake.FakePlayer
@@ -42,12 +46,14 @@ import com.teachermovies.player.streaming.StreamPolicy
 import com.teachermovies.player.streaming.StreamingPlaybackController
 import com.teachermovies.torrent.fake.FakeTorrentEngine
 import com.teachermovies.tv.ui.player.explanationLines
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -130,6 +136,9 @@ class PlayerViewModelTest {
     private val spanishText =
         MovieSpanishText { _, _ -> spanishCues?.let { text -> SpanishTextSource { text } } }
 
+    /** A dispatcher for the open's hidden-mode start that tests drive by hand; null = [dispatcher]. */
+    private var prepareOverride: CoroutineDispatcher? = null
+
     /** The clock [capture] measures a run of OK presses with (#339); tests move it by hand. */
     private var nowMs = 1_000L
 
@@ -171,7 +180,7 @@ class PlayerViewModelTest {
             capture,
             speech,
             backgroundScope,
-            prepareDispatcher = dispatcher,
+            prepareDispatcher = prepareOverride ?: dispatcher,
             spanishLines = spanishLines,
             explanations = explanations,
             rewind = rewind,
@@ -217,6 +226,14 @@ class PlayerViewModelTest {
     private fun TestScope.openedViewModel(): PlayerViewModel {
         val vm = viewModel()
         vm.open(id)
+        runCurrent()
+        return vm
+    }
+
+    /** Opened with no English subtitles: waits out the track-list timeout so hidden mode has answered. */
+    private fun TestScope.openedWithoutSubtitles(): PlayerViewModel {
+        val vm = openedViewModel()
+        advanceTimeBy(5_000L)
         runCurrent()
         return vm
     }
@@ -654,12 +671,7 @@ class PlayerViewModelTest {
 
     /** What the player screen does with a key: the assistant mapping first, then the transport one. */
     private fun PlayerViewModel.press(keyCode: Int) {
-        val assistantAction =
-            AssistantKeyMapper.map(
-                keyCode,
-                overlayOpen = uiState.value.assistant != null,
-                assistantAvailable = uiState.value.assistantAvailable,
-            )
+        val assistantAction = AssistantKeyMapper.map(keyCode, overlayOpen = uiState.value.assistant != null)
         if (assistantAction != null) onAssistantAction(assistantAction) else onAction(RemoteKeyMapper.map(keyCode))
     }
 
@@ -803,7 +815,7 @@ class PlayerViewModelTest {
     fun withoutEnglishSubtitlesCaptureShowsTheMessageAndDoesNotPause() =
         runTest(dispatcher) {
             seed(movieFile())
-            val vm = openedViewModel()
+            val vm = openedWithoutSubtitles()
             player.play()
             player.emitPosition(2_000L)
             runCurrent()
@@ -1527,10 +1539,146 @@ class PlayerViewModelTest {
         }
 
     @Test
+    fun whileHiddenModeIsStartingLeftAndRightDoNotSeekAndSayPreparing() =
+        runTest(dispatcher) {
+            seed(movieWithEnglishSubtitles())
+            prepareOverride = StandardTestDispatcher(TestCoroutineScheduler())
+            val vm = openedViewModel()
+            player.emitDuration(600_000L)
+            player.play()
+            player.emitPosition(60_000L)
+            runCurrent()
+            assertEquals(AssistantState.Starting, vm.uiState.value.assistantState)
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+            assertEquals(60_000L, player.positionMs.value)
+            assertEquals("Preparando subtítulos en inglés…", vm.uiState.value.message)
+
+            advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            runCurrent()
+            assertEquals(60_000L, player.positionMs.value)
+            assertEquals(PlayerViewModel.STARTING_SUBTITLES, vm.uiState.value.message)
+        }
+
+    @Test
+    fun withNoEnglishSubtitleFileLeftAndRightSeekAndSayWhyEveryTime() =
+        runTest(dispatcher) {
+            seed(movieFile())
+            val vm = openedWithoutSubtitles()
+            player.emitDuration(600_000L)
+            player.play()
+            player.emitPosition(60_000L)
+            runCurrent()
+            assertEquals(AssistantState.NoSubtitles, vm.uiState.value.assistantState)
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+            assertEquals(50_000L, player.positionMs.value)
+            assertEquals("Sin subtítulos en inglés: ← → saltan 10 s", vm.uiState.value.message)
+
+            advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
+            assertNull(vm.uiState.value.message)
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            runCurrent()
+            assertEquals(60_000L, player.positionMs.value)
+            assertEquals(PlayerViewModel.NO_SUBTITLES_SEEK, vm.uiState.value.message)
+        }
+
+    @Test
+    fun withAnUnreadableEnglishFileLeftAndRightSeekAndSayItCouldNotBeRead() =
+        runTest(dispatcher) {
+            val movie = movieFile()
+            movie.resolveSibling("Big Movie.en.srt").writeText("not a subtitle file at all")
+            seed(movie)
+            val vm = openedViewModel()
+            player.emitDuration(600_000L)
+            player.play()
+            player.emitPosition(60_000L)
+            runCurrent()
+            assertEquals(AssistantState.Unreadable, vm.uiState.value.assistantState)
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+            assertEquals(50_000L, player.positionMs.value)
+            assertEquals("No se pudieron leer los subtítulos en inglés: ← → saltan 10 s", vm.uiState.value.message)
+
+            advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
+            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            runCurrent()
+            assertEquals(60_000L, player.positionMs.value)
+
+            advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+            assertEquals("No se pudieron leer los subtítulos en inglés", vm.uiState.value.message)
+        }
+
+    @Test
+    fun aLeftOrRightThatDoesNotReachTheRewindLogsTheKeyTheStateAndWhatWasDone() =
+        runTest(dispatcher) {
+            val lines = mutableListOf<LogEntry>()
+            val sink = LogSink { lines += it }
+            AppLog.install(sink)
+            try {
+                seed(movieFile())
+                val vm = openedWithoutSubtitles()
+                player.emitDuration(600_000L)
+                player.play()
+                player.emitPosition(60_000L)
+                runCurrent()
+
+                vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+                runCurrent()
+
+                assertTrue(
+                    lines.toString(),
+                    lines.any { it.module == "app-tv" && it.message == "RIGHT: hidden mode none, seek +10s" },
+                )
+            } finally {
+                AppLog.uninstall(sink)
+            }
+        }
+
+    @Test
+    fun whenThePlayerRefusesTheTemporaryEnglishTrackTheMessageNeverSaysThereAreNoSubtitles() =
+        runTest(dispatcher) {
+            rewindOnPlayerTrack = true
+            seed(movieWithTwoEnglishSubtitles())
+            val vm = openedViewModel()
+            player.emitDuration(600_000L)
+            player.play()
+            player.emitPosition(31_000L)
+            runCurrent()
+            assertEquals(AssistantState.Available, vm.uiState.value.assistantState)
+            player.emitExternalSubtitleResult(ExternalSubtitleResult.NotAdded("refused"))
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+            runCurrent()
+
+            assertEquals(PlayerViewModel.TRACK_NOT_SHOWN, vm.uiState.value.message)
+            assertEquals("No se pudo mostrar el subtítulo en inglés", vm.uiState.value.message)
+        }
+
+    @Test
+    fun withHiddenModeStartedLeftAndRightNeverSeek() =
+        runTest(dispatcher) {
+            val vm = playingWithTwoSubtitles()
+            assertEquals(AssistantState.Available, vm.uiState.value.assistantState)
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+
+            assertEquals("the rewind has not fired yet: no seek", 31_000L, player.positionMs.value)
+        }
+
+    @Test
     fun withoutAnAssistantLeftAndRightSeekByTenSeconds() =
         runTest(dispatcher) {
             seed(movieFile())
-            val vm = openedViewModel()
+            val vm = openedWithoutSubtitles()
             player.emitDuration(600_000L)
             player.play()
             player.emitPosition(60_000L)
