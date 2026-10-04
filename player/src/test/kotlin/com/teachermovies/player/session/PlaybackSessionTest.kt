@@ -21,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -44,7 +45,13 @@ class PlaybackSessionTest {
     private var now = 1_000_000L
 
     private fun TestScope.session(scope: CoroutineScope = backgroundScope) =
-        PlaybackSession(player, repo, scope, clock = { now })
+        PlaybackSession(
+            player,
+            repo,
+            scope,
+            clock = { now },
+            blockingDispatcher = UnconfinedTestDispatcher(testScheduler),
+        )
 
     /** A completed library item whose main file is [movie], with the given persisted playback. */
     private suspend fun seed(
@@ -207,7 +214,14 @@ class PlaybackSessionTest {
 
             // Cold reopen (the app was force-stopped): a fresh player and session read the row back.
             val coldPlayer = FakePlayer()
-            val second = PlaybackSession(coldPlayer, repo, backgroundScope, clock = { now })
+            val second =
+                PlaybackSession(
+                    coldPlayer,
+                    repo,
+                    backgroundScope,
+                    clock = { now },
+                    blockingDispatcher = UnconfinedTestDispatcher(testScheduler),
+                )
             second.open(id)
             coldPlayer.play()
             runCurrent()

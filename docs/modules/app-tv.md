@@ -216,7 +216,11 @@
 - `PlayerViewModel(session, player, hidden, capture, speech: AssistantSpeechController, closeScope,
   prepareDispatcher = Dispatchers.Default)`; `Factory(player, repo, hidden, capture, speech)`.
   `open` prepares the speaker once on `prepareDispatcher`, never awaited by playback; an unavailable
-  speaker only removes the spoken answers. `SpeakOriginal` -> `speakOriginal(line)`, `false` ->
+  speaker only removes the spoken answers. `prepareDispatcher` also carries the rest of what an open
+  or an exit must not do on the main thread (#262): `hidden.start`'s sidecar scan and whole-file
+  parse, and the `player.release()` of an open cut while it was still waiting for its ranges. The
+  `Factory` builds the session with `blockingDispatcher = Dispatchers.IO` for the same reason.
+  `SpeakOriginal` -> `speakOriginal(line)`, `false` ->
   `Voz no disponible` for 3 s and nothing else. `TranslateLine` -> `translateAndSpeak(line)`.
   `DismissOverlay` (and BACK, exit, clear) also calls `reset()`. None of these keys resumes the movie.
 - `AppContainer`: `speaker = AndroidTextToSpeechSpeaker(application)`, translation provider

@@ -11,6 +11,7 @@ import com.teachermovies.player.streaming.StreamResult
 import com.teachermovies.player.streaming.StreamingPlaybackController
 import com.teachermovies.torrent.api.EngineError
 import com.teachermovies.torrent.api.EngineResult
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
@@ -36,12 +38,20 @@ import java.io.File
  *
  * [scope] runs the session's collectors (the screen's scope, on one thread) and [clock] returns
  * epoch milliseconds; both are injected so a JVM test drives them deterministically.
+ *
+ * [Player]'s controls are synchronous JNI on the caller's thread, and opening a file also scans two
+ * directories for sidecar subtitles, so [open], [openStreaming] and [close] run everything that
+ * reaches the player or the disk on [blockingDispatcher] instead of on their caller's -- the main
+ * thread, in the app. A cold open there took seconds on the emulator (#262): loading `libvlc.so`,
+ * `Media` + `play`, one `addSlave` and a full track re-enumeration per sidecar, and `release`'s
+ * `stop()`, which the `VlcPlayer` KDoc says blocks "for as long as the decoder takes to wind down".
  */
 class PlaybackSession(
     private val player: Player,
     private val repo: TorrentRepository,
     private val scope: CoroutineScope,
     private val clock: () -> Long,
+    private val blockingDispatcher: CoroutineDispatcher,
 ) : SubtitleSaveGuard {
     @Volatile private var current: LibraryItem? = null
 
@@ -95,16 +105,17 @@ class PlaybackSession(
      * starts watching the player: once it reports audio tracks, [TrackPolicy] picks the audio and
      * subtitle tracks from the persisted ids.
      */
-    suspend fun open(id: TorrentId): SessionResult {
-        close()
-        val item = repo.getLibraryItem(id) ?: return SessionResult.NotFound
-        val file = File(item.mainFilePath)
-        if (!file.isFile) return SessionResult.FileMissing(item.mainFilePath)
+    suspend fun open(id: TorrentId): SessionResult =
+        withContext(blockingDispatcher) {
+            close()
+            val item = repo.getLibraryItem(id) ?: return@withContext SessionResult.NotFound
+            val file = File(item.mainFilePath)
+            if (!file.isFile) return@withContext SessionResult.FileMissing(item.mainFilePath)
 
-        player.open(file, startPosition(item))
-        begin(item, file)
-        return SessionResult.Opened(item)
-    }
+            player.open(file, startPosition(item))
+            begin(item, file)
+            SessionResult.Opened(item)
+        }
 
     /**
      * Plays [id] while it is still downloading, through [controller], closing any item this session
@@ -126,6 +137,12 @@ class PlaybackSession(
      * Suspends while [controller] waits for the ranges. [close] also stops [controller].
      */
     suspend fun openStreaming(
+        id: TorrentId,
+        controller: StreamingPlaybackController,
+    ): SessionResult = withContext(blockingDispatcher) { doOpenStreaming(id, controller) }
+
+    /** The body of [openStreaming], already on [blockingDispatcher]. */
+    private suspend fun doOpenStreaming(
         id: TorrentId,
         controller: StreamingPlaybackController,
     ): SessionResult {
@@ -211,15 +228,17 @@ class PlaybackSession(
      * ended) and releases the player. A no-op when nothing is open; [open] may be called again.
      */
     suspend fun close() {
-        val item = current ?: return
-        job?.cancelAndJoin()
-        job = null
-        current = null
-        streaming?.stop()
-        streaming = null
-        val ended = player.state.value == PlayerState.Ended
-        save(item, if (ended) 0L else player.positionMs.value)
-        player.release()
+        withContext(blockingDispatcher) {
+            val item = current ?: return@withContext
+            job?.cancelAndJoin()
+            job = null
+            current = null
+            streaming?.stop()
+            streaming = null
+            val ended = player.state.value == PlayerState.Ended
+            save(item, if (ended) 0L else player.positionMs.value)
+            player.release()
+        }
     }
 
     private suspend fun watch(item: LibraryItem) =
