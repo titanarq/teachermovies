@@ -44,6 +44,34 @@ class WindowDeadlinePlannerTest {
     }
 
     @Test
+    fun aRetainedPieceStillMissingGetsAFreshDeadlineAheadOfNothingElse() {
+        val plan =
+            WindowDeadlinePlanner.plan(
+                previous = listOf(3, 4, 5, 6),
+                current = listOf(3, 4, 5, 6),
+                deadlineStepMs = step,
+                have = { it != 5 },
+            )
+
+        assertEquals(mapOf(5 to 100), plan.deadlines)
+        assertEquals(emptyList<Int>(), plan.reset)
+    }
+
+    @Test
+    fun newcomersAndStragglersShareOneAscendingStepSequenceInWindowOrder() {
+        val plan =
+            WindowDeadlinePlanner.plan(
+                previous = listOf(3, 4, 5),
+                current = listOf(4, 5, 6),
+                deadlineStepMs = step,
+                have = { it == 4 },
+            )
+
+        assertEquals(mapOf(5 to 100, 6 to 200), plan.deadlines)
+        assertEquals(listOf(3), plan.reset)
+    }
+
+    @Test
     fun aDisjointJumpResetsTheOldWindowAscendingAndSchedulesTheNewOne() {
         val plan =
             WindowDeadlinePlanner.plan(

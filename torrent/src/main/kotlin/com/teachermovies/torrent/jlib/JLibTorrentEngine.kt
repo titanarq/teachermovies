@@ -26,6 +26,7 @@ import com.frostwire.jlibtorrent.alerts.TorrentDeletedAlert
 import com.frostwire.jlibtorrent.alerts.TorrentFinishedAlert
 import com.frostwire.jlibtorrent.swig.error_code
 import com.frostwire.jlibtorrent.swig.libtorrent
+import com.frostwire.jlibtorrent.swig.settings_pack
 import com.teachermovies.core.log.AppLog
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.torrent.api.EngineError
@@ -203,7 +204,17 @@ class JLibTorrentEngine(
                 val settings =
                     SettingsPack()
                         .listenInterfaces(JlibMappers.listenInterfaces())
-                        .also { it.setEnableDht(true) }
+                        .also {
+                            it.setEnableDht(true)
+                            it.setInteger(
+                                settings_pack.int_types.request_timeout.swigValue(),
+                                StreamingTimeouts.REQUEST_TIMEOUT_S,
+                            )
+                            it.setInteger(
+                                settings_pack.int_types.piece_timeout.swigValue(),
+                                StreamingTimeouts.PIECE_TIMEOUT_S,
+                            )
+                        }
                 val manager = SessionManager(false)
                 manager.addListener(listener)
                 manager.start(SessionParams(settings))
@@ -422,8 +433,9 @@ class JLibTorrentEngine(
      * Slides torrent [id]'s read-ahead window to the pieces covering `[byteOffset, byteOffset +
      * windowBytes)` of file [fileIndex], applying only [WindowDeadlinePlanner.plan]'s delta against
      * the window set last: entering pieces get priority 7 and a deadline, leaving pieces get their
-     * deadline reset and priority 4, and every other piece is left alone (the same window applies
-     * nothing). [EngineError.NotReady] before metadata or for a file index the torrent does not have.
+     * deadline reset and priority 4, and every other piece is left alone (a piece that stays in the
+     * window but is still missing gets its deadline set again (#257); an unchanged, complete window
+     * applies nothing). [EngineError.NotReady] before metadata or for a file index the torrent does not have.
      */
     override suspend fun prioritizeWindow(
         id: TorrentId,
@@ -447,7 +459,7 @@ class JLibTorrentEngine(
             val layout = layoutOf(handle, fileIndex) ?: return@onHandle failure(EngineError.NotReady)
             val current =
                 WindowDeadlinePlanner.piecesOf(ranges.map { layout.piecesFor(it.offsetBytes, it.lengthBytes) })
-            val plan = WindowDeadlinePlanner.plan(windows[id], current, deadlineStepMs)
+            val plan = WindowDeadlinePlanner.plan(windows[id], current, deadlineStepMs, handle::havePiece)
             for (piece in plan.reset) {
                 handle.resetPieceDeadline(piece)
                 handle.piecePriority(piece, Priority.fromSwig(DEFAULT_PIECE_PRIORITY))
