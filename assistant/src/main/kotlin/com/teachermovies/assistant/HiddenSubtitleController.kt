@@ -6,6 +6,7 @@ import com.teachermovies.assistant.subtitles.ParseResult
 import com.teachermovies.assistant.subtitles.SidecarSubtitles
 import com.teachermovies.assistant.subtitles.SubtitleParsers
 import com.teachermovies.assistant.subtitles.SubtitleTrack
+import com.teachermovies.core.log.AppLog
 import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.SubtitleExtraction
 import com.teachermovies.player.api.SubtitleFormat
@@ -126,16 +127,22 @@ class HiddenSubtitleController(
      * Enters hidden mode for [mediaFile] in [language]: resolves the cues, hands the track to
      * [engine] and turns the player's own subtitles off.
      *
-     * The sidecar subtitle file wins ([SubtitleSource.SIDECAR]); only without one is the player's
-     * embedded subtitle track for [language] ([EmbeddedSubtitleTracks.pick] over
+     * The priority for [language] is sidecar > embedded text track > downloaded file, as a fallback
+     * chain (#373): the sidecar subtitle file wins ([SubtitleSource.SIDECAR]); only without one is the
+     * container's own subtitle track for [language] ([EmbeddedSubtitleTracks.pick] over
      * [Player.subtitleTracks]) extracted into the cache and parsed ([SubtitleSource.EMBEDDED]); only
-     * when the movie has neither is the file the laptop bridge downloaded for [language] parsed
-     * ([SubtitleSource.DOWNLOADED], [DownloadedSubtitles], #284).
+     * when the movie has no such track, or it cannot be extracted (image-based, extraction failed) or
+     * parsed, is the file the laptop bridge downloaded for [language] parsed
+     * ([SubtitleSource.DOWNLOADED], [DownloadedSubtitles], #284). An [Track.external] track -- a
+     * sidecar or download libVLC lists as a slave -- is never the embedded one. A failed embedded
+     * track with no download either gives [HiddenModeResult.Unreadable] naming the embedded failure.
      * [mediaFile] is expected to be the media currently open in [player]. libVLC publishes a media's
-     * tracks only once it has parsed it, possibly after `PlaybackSession.open` returned: while
-     * [Player.subtitleTracks] is still empty, this suspends (never blocks) until it publishes a
-     * non-empty list, for at most [TRACKS_TIMEOUT_MS]; a list that is already known is used at once,
-     * even when it has no track for [language]. A download being the last resort, a movie whose only
+     * tracks only once it has parsed it, possibly after `PlaybackSession.open` returned, and the
+     * slaves of `subs/` are listed before the container's tracks: while [Player.subtitleTracks] holds
+     * no container track (empty, or external ones only), this suspends (never blocks) until it
+     * publishes one, for at most [TRACKS_TIMEOUT_MS]; a list that already has a container track is
+     * used at once, even when none is for [language].
+     * The outcome is logged once through `AppLog` (`hidden.start`): source, track and the candidates. A download being the last resort, a movie whose only
      * English subtitle is a downloaded one spends that wait before hidden mode starts. A [stop]
      * while [start] is still waiting or extracting wins: that [start] returns
      * [HiddenModeResult.NoSubtitleFile] at once and activates nothing.
@@ -159,13 +166,25 @@ class HiddenSubtitleController(
         stop()
         val session = generation.value
 
-        val resolved = resolve(mediaFile, language, session) ?: return HiddenModeResult.NoSubtitleFile
+        val notes = mutableListOf<String>()
+        val resolved = resolve(mediaFile, language, session, notes)
+        if (resolved == null) {
+            logOutcome(language, "NoSubtitleFile", notes)
+            return HiddenModeResult.NoSubtitleFile
+        }
         val track =
             when (val parsed = resolved.parsing) {
-                is Parsing.Ok -> parsed.track
-                is Parsing.Failed -> return parsed.result
+                is Parsing.Ok -> {
+                    parsed.track
+                }
+
+                is Parsing.Failed -> {
+                    logOutcome(language, "Unreadable source=${resolved.source} reason=${parsed.result.reason}", notes)
+                    return parsed.result
+                }
             }
         if (generation.value != session) return HiddenModeResult.NoSubtitleFile
+        logOutcome(language, "Started source=${resolved.source} track=${resolved.trackId ?: "-"}", notes)
 
         engine.load(track)
         this.track = track
@@ -277,8 +296,10 @@ class HiddenSubtitleController(
 
     /**
      * Where the cues of [mediaFile] in [language] come from, in fallback order: the sidecar file the
-     * movie shipped with, else its embedded track, else the file the laptop bridge downloaded (#284);
-     * null when the movie has none of the three.
+     * movie shipped with, else its embedded track *if it can be read*, else the file the laptop
+     * bridge downloaded (#284); null when the movie has none of the three. An embedded track that
+     * fails is noted in [notes] and the chain goes on; only when no download follows is its failure
+     * the result.
      *
      * The download is only looked for once the embedded track is ruled out, which is what makes it
      * the last resort even while libVLC has yet to publish its tracks -- and it is not looked for at
@@ -288,31 +309,63 @@ class HiddenSubtitleController(
         mediaFile: File,
         language: String,
         session: Long,
+        notes: MutableList<String>,
     ): Resolved? {
         SidecarSubtitles.findFor(mediaFile, language)?.let {
             return Resolved(SubtitleSource.SIDECAR, parse(it))
         }
-        val candidate = EmbeddedSubtitleTracks.pick(publishedSubtitleTracks(session), language)
-        if (candidate != null) return Resolved(SubtitleSource.EMBEDDED, embedded(mediaFile, candidate), candidate.id)
+        val tracks = publishedSubtitleTracks(session)
+        notes += "candidates=" +
+            tracks.joinToString(prefix = "[", postfix = "]") {
+                "(${it.id}, ${it.name}, ${it.language}, external=${it.external})"
+            }
+        val candidate = EmbeddedSubtitleTracks.pick(tracks, language)
+        var embeddedFailure: Resolved? = null
+        if (candidate != null) {
+            val parsing = embedded(mediaFile, candidate)
+            if (parsing is Parsing.Ok) return Resolved(SubtitleSource.EMBEDDED, parsing, candidate.id)
+            val reason = (parsing as Parsing.Failed).result.reason
+            notes += "embedded track ${candidate.id} failed: $reason"
+            embeddedFailure = Resolved(SubtitleSource.EMBEDDED, parsing, candidate.id)
+        }
         if (generation.value != session) return null
-        val downloaded = DownloadedSubtitles.findFor(mediaFile, language) ?: return null
+        val downloaded = DownloadedSubtitles.findFor(mediaFile, language) ?: return embeddedFailure
         return Resolved(SubtitleSource.DOWNLOADED, parse(downloaded))
     }
 
+    /** One `hidden.start` line: [outcome] and [notes] (candidates, failed attempts); no subtitle text. */
+    private fun logOutcome(
+        language: String,
+        outcome: String,
+        notes: List<String>,
+    ) {
+        AppLog.i(LOG_MODULE, "hidden.start lang=$language $outcome ${notes.joinToString("; ")}".trimEnd())
+    }
+
     /**
-     * The player's subtitle tracks: the current list when it is not empty, otherwise the first
-     * non-empty list published within [TRACKS_TIMEOUT_MS]; an empty list when none arrives or when
-     * [stop] ends [session] first.
+     * The player's subtitle tracks: the current list when it holds a container track, otherwise the
+     * first list with one published within [TRACKS_TIMEOUT_MS]. The slaves of `subs/` are added
+     * synchronously, so a list of external tracks only says nothing about the container's. When none
+     * arrives in time the last list seen is returned (possibly empty); an empty list when [stop]
+     * ends [session] first.
      */
     private suspend fun publishedSubtitleTracks(session: Long): List<Track> {
         val known = player.subtitleTracks.value
-        if (known.isNotEmpty()) return known
+        if (known.any { !it.external }) return known
+        var last = known
         val published =
             withTimeoutOrNull(TRACKS_TIMEOUT_MS) {
                 combine(player.subtitleTracks, generation) { tracks, current -> tracks.takeIf { current == session } }
-                    .first { it == null || it.isNotEmpty() }
+                    .first {
+                        it?.let { tracks -> last = tracks }
+                        it == null || it.any { track -> !track.external }
+                    }
             }
-        return published ?: emptyList()
+        return when {
+            published != null -> published
+            generation.value != session -> emptyList()
+            else -> last
+        }
     }
 
     /** Cues of the embedded [candidate], from its cache file when a previous session wrote one. */
@@ -404,6 +457,7 @@ class HiddenSubtitleController(
         /** How long [start] waits for [Player.subtitleTracks] to publish tracks after an empty list. */
         const val TRACKS_TIMEOUT_MS: Long = 3_000L
 
+        private const val LOG_MODULE = "assistant"
         private const val SUBTITLE_CACHE_DIR = "subtitles"
 
         private val UNSAFE_ID_CHARS = Regex("[^A-Za-z0-9_-]")

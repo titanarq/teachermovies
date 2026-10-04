@@ -1,5 +1,8 @@
 package com.teachermovies.assistant
 
+import com.teachermovies.core.log.AppLog
+import com.teachermovies.core.log.LogLevel
+import com.teachermovies.core.log.LogSink
 import com.teachermovies.player.api.SubtitleExtraction
 import com.teachermovies.player.api.SubtitleFormat
 import com.teachermovies.player.api.Track
@@ -809,6 +812,193 @@ class HiddenSubtitleControllerTest {
             runCurrent()
             assertFalse(controller.active.value)
             assertTrue(player.extractionCalls.isEmpty())
+        }
+
+    // -- External (slave) tracks are never "embedded" (#373) --
+
+    private val embeddedEn = Track("emb-en", "English", "en")
+    private val slaveEn = Track("ext:movie.en.opensubtitles.srt", "OpenSubtitles (en)", "en", external = true)
+    private val slaveEs = Track("ext:movie.es.opensubtitles.srt", "OpenSubtitles (es)", "es", external = true)
+
+    /** What the TV showed: both downloads labelled English by libVLC. */
+    private val mislabelledSlaves =
+        listOf(
+            Track("ext:movie.en.opensubtitles.srt", "English", "en", external = true),
+            Track("ext:movie.es.opensubtitles.srt", "English", "en", external = true),
+        )
+
+    private fun writeDownloads() {
+        writeSubtitle("subs/movie.en.opensubtitles.srt", OTHER_SRT)
+        writeSubtitle("subs/movie.es.opensubtitles.srt", "1\n00:00:01,000 --> 00:00:04,000\nHola.\n")
+    }
+
+    @Test
+    fun `an embedded English track wins over the downloaded slave tracks labelled English`() =
+        runTest {
+            writeDownloads()
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(embeddedEn) + mislabelledSlaves)
+            player.emitExtractionText(SRT, SubtitleFormat.SRT)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            player.emitPosition(1_500L)
+            runCurrent()
+
+            val result = controller.start(mediaFile)
+            runCurrent()
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.EMBEDDED), result)
+            assertEquals(listOf("emb-en"), player.extractionCalls)
+            assertEquals("emb-en", controller.sourceTrackId)
+            assertEquals("Hello there.", engine.currentSubtitle.value?.text)
+        }
+
+    @Test
+    fun `a slave listed before the container's track is not taken for the embedded one`() =
+        runTest {
+            writeDownloads()
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(slaveEn, slaveEs, embeddedEn))
+            player.emitExtractionText(SRT, SubtitleFormat.SRT)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+
+            val result = controller.start(mediaFile)
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.EMBEDDED), result)
+            assertEquals(listOf("emb-en"), player.extractionCalls)
+        }
+
+    @Test
+    fun `an image-based embedded track falls back to the downloaded English file`() =
+        runTest {
+            writeDownloads()
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(embeddedEn) + mislabelledSlaves)
+            player.emitExtraction(SubtitleExtraction.NotTextBased)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            player.emitPosition(1_500L)
+            runCurrent()
+
+            val result = controller.start(mediaFile)
+            runCurrent()
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.DOWNLOADED), result)
+            assertNull(controller.sourceTrackId)
+            assertEquals("From the container.", engine.currentSubtitle.value?.text)
+        }
+
+    @Test
+    fun `a failing or missing embedded track falls back to the downloaded English file`() =
+        runTest {
+            for (outcome in listOf(SubtitleExtraction.Failed("corrupt"), SubtitleExtraction.TrackNotFound)) {
+                writeDownloads()
+                val player = FakePlayer()
+                player.emitTracks(audio = emptyList(), subs = listOf(embeddedEn, slaveEn, slaveEs))
+                player.emitExtraction(outcome)
+                val engine = SubtitleEngine(player.positionMs, backgroundScope)
+                val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+
+                val result = controller.start(mediaFile)
+
+                assertEquals("$outcome", HiddenModeResult.Started(SubtitleSource.DOWNLOADED), result)
+            }
+        }
+
+    @Test
+    fun `an unreadable embedded track and no download still gives Unreadable`() =
+        runTest {
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(embeddedEn))
+            player.emitExtraction(SubtitleExtraction.NotTextBased)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+
+            val result = controller.start(mediaFile)
+
+            assertTrue("was $result", result is HiddenModeResult.Unreadable)
+            assertTrue((result as HiddenModeResult.Unreadable).reason.contains("image-based"))
+            assertFalse(controller.active.value)
+        }
+
+    @Test
+    fun `with only the two downloads the English file is used and the Spanish one never is`() =
+        runTest {
+            writeDownloads()
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = mislabelledSlaves)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            player.emitPosition(1_500L)
+            runCurrent()
+            val startedAt = currentTime
+
+            val result = controller.start(mediaFile)
+            runCurrent()
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.DOWNLOADED), result)
+            assertEquals("From the container.", engine.currentSubtitle.value?.text)
+            assertTrue(player.extractionCalls.isEmpty())
+            // Only external tracks: the container's tracks were waited for before ruling embedded out.
+            assertEquals(HiddenSubtitleController.TRACKS_TIMEOUT_MS, currentTime - startedAt)
+        }
+
+    @Test
+    fun `external tracks first and the container's track published later still pick the embedded one`() =
+        runTest {
+            writeDownloads()
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = mislabelledSlaves)
+            player.emitExtractionText(SRT, SubtitleFormat.SRT)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            val publishAfterMs = HiddenSubtitleController.TRACKS_TIMEOUT_MS - 500L
+            backgroundScope.launch {
+                delay(publishAfterMs)
+                player.emitTracks(audio = emptyList(), subs = listOf(embeddedEn) + mislabelledSlaves)
+            }
+            val startedAt = currentTime
+
+            val result = controller.start(mediaFile)
+
+            assertEquals(HiddenModeResult.Started(SubtitleSource.EMBEDDED), result)
+            assertEquals(publishAfterMs, currentTime - startedAt)
+            assertEquals(listOf("emb-en"), player.extractionCalls)
+        }
+
+    @Test
+    fun `start logs its outcome and the candidates without subtitle text`() =
+        runTest {
+            writeDownloads()
+            val player = FakePlayer()
+            player.emitTracks(audio = emptyList(), subs = listOf(embeddedEn, slaveEn, slaveEs))
+            player.emitExtraction(SubtitleExtraction.NotTextBased)
+            val engine = SubtitleEngine(player.positionMs, backgroundScope)
+            val controller = HiddenSubtitleController(player, engine, backgroundScope, cacheDir)
+            val lines = mutableListOf<String>()
+            val sink = LogSink { lines += it.module + ": " + it.message }
+            val previous = AppLog.minLevel
+            AppLog.minLevel = LogLevel.DEBUG
+            AppLog.install(sink)
+            try {
+                controller.start(mediaFile)
+            } finally {
+                AppLog.uninstall(sink)
+                AppLog.minLevel = previous
+            }
+
+            val outcome = lines.filter { it.startsWith("assistant: hidden.start") }
+            assertTrue("no hidden.start line in $lines", outcome.isNotEmpty())
+            val text = outcome.joinToString("\n")
+            assertTrue(text, text.contains("source=DOWNLOADED"))
+            assertTrue(text, text.contains("embedded track emb-en failed"))
+            assertTrue(text, text.contains("(emb-en, English, en, external=false)"))
+            assertTrue(text, text.contains("external=true"))
+            listOf("Hello there.", "From the container.", "Hola.").forEach {
+                assertFalse("$text leaks $it", text.contains(it))
+            }
+            assertFalse(text, text.contains(tempFolder.root.path))
         }
 
     private companion object {

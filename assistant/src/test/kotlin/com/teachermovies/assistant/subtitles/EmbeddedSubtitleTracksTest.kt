@@ -90,4 +90,16 @@ class EmbeddedSubtitleTracksTest {
     fun `an empty list gives null`() {
         assertNull(EmbeddedSubtitleTracks.pick(emptyList()))
     }
+
+    @Test
+    fun `external tracks are never picked, whatever their language`() {
+        val tracks =
+            listOf(
+                Track("ext:a.en.srt", "OpenSubtitles (en)", "en", external = true),
+                Track("2", "Commentary", null),
+            )
+
+        assertNull(EmbeddedSubtitleTracks.pick(tracks))
+        assertEquals("1", EmbeddedSubtitleTracks.pick(tracks + Track("1", "English", "eng"))?.id)
+    }
 }
