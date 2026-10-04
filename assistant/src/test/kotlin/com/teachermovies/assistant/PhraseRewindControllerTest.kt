@@ -3,6 +3,10 @@ package com.teachermovies.assistant
 import com.teachermovies.assistant.fake.FakeSpanishTextSource
 import com.teachermovies.assistant.subtitles.SubtitleCue
 import com.teachermovies.assistant.subtitles.SubtitleTrack
+import com.teachermovies.core.log.AppLog
+import com.teachermovies.core.log.LogEntry
+import com.teachermovies.core.log.LogLevel
+import com.teachermovies.core.log.LogSink
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.fake.FakePlayer
 import kotlinx.coroutines.CoroutineScope
@@ -809,5 +813,256 @@ class PhraseRewindControllerTest {
 
             assertEquals(71_000L, f.player.positionMs.value)
             assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+        }
+
+    /** Collects what the controller logs through [AppLog]; [use] always restores the global. */
+    private class LogCapture : LogSink {
+        val lines = mutableListOf<String>()
+
+        override fun record(entry: LogEntry) {
+            lines += entry.message
+        }
+
+        inline fun use(block: () -> Unit) {
+            val previous = AppLog.minLevel
+            AppLog.minLevel = LogLevel.DEBUG
+            AppLog.install(this)
+            try {
+                block()
+            } finally {
+                AppLog.uninstall(this)
+                AppLog.minLevel = previous
+            }
+        }
+
+        fun assertHas(prefix: String) {
+            assertTrue("$prefix not in $lines", lines.any { it.startsWith(prefix) })
+        }
+
+        fun assertNoSubtitleText() {
+            val texts = listOf("Hello.", "Bye.", "And?", "Go.", "Hola.", "Adios.", "movie.mkv")
+            lines.forEach { line -> texts.forEach { assertTrue("$line leaks $it", !line.contains(it)) } }
+        }
+    }
+
+    /** One finished-window run from [positionMs] up to the first confirmed position, origin 53 s. */
+    private suspend fun TestScope.startReplay(f: Fixture) {
+        f.player.emitPosition(51_000L)
+        runCurrent()
+        f.controller.press(SubtitleDisplay.ENGLISH)
+        settle()
+        confirmSeek(f, 50_000L)
+    }
+
+    @Test
+    fun `a press in the last window before the origin survives the run reaching it`() =
+        runTest {
+            val f = fixture()
+            startReplay(f)
+            assertEquals(listOf(49_700L), f.counter.seeks)
+
+            f.player.emitPosition(52_000L)
+            runCurrent()
+            f.controller.press(SubtitleDisplay.SPANISH)
+            runCurrent()
+            // The run reaches its origin while the press's window is still open.
+            f.player.emitPosition(53_000L)
+            runCurrent()
+            assertEquals(RewindSubtitleState.Idle, f.controller.subtitleState.value)
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+
+            settle()
+
+            assertEquals(listOf(49_700L, 49_700L), f.counter.seeks)
+            assertEquals(SubtitleDisplay.SPANISH, f.controller.display.value)
+            assertEquals(PlayerState.Playing, f.player.state.value)
+            assertEquals(53_000L, f.origin())
+
+            confirmSeek(f, 50_000L)
+            f.player.emitPosition(51_000L)
+            runCurrent()
+            assertEquals("Y que?", f.controller.displayText.value)
+            f.player.emitPosition(53_000L)
+            runCurrent()
+            assertEquals(RewindSubtitleState.Idle, f.controller.subtitleState.value)
+            assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+            assertEquals(0, f.activeJobs)
+        }
+
+    @Test
+    fun `a burst pressed inside the closing run keeps its count`() =
+        runTest {
+            val f = fixture()
+            startReplay(f)
+            f.player.emitPosition(52_000L)
+            runCurrent()
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            nowMs += 400L
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            runCurrent()
+            f.player.emitPosition(53_000L)
+            runCurrent()
+
+            settle()
+
+            assertEquals(listOf(49_700L, 29_700L), f.counter.seeks)
+        }
+
+    @Test
+    fun `a press right after a run ended at its origin starts a new run and seeks`() =
+        runTest {
+            val f = fixture()
+            startReplay(f)
+            f.player.emitPosition(53_000L)
+            runCurrent()
+            assertEquals(RewindSubtitleState.Idle, f.controller.subtitleState.value)
+
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            settle()
+
+            assertEquals(listOf(49_700L, 49_700L), f.counter.seeks)
+            assertEquals(53_000L, f.origin())
+        }
+
+    @Test
+    fun `a press after a hand seek cancelled the run starts a new one`() =
+        runTest {
+            val f = fixture()
+            startReplay(f)
+            f.controller.onUserSeek()
+            runCurrent()
+            f.player.emitPosition(31_000L)
+            runCurrent()
+
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            settle()
+
+            assertEquals(listOf(49_700L, 29_700L), f.counter.seeks)
+            assertEquals(33_000L, f.origin())
+        }
+
+    @Test
+    fun `a press inside a window the hand seek cancels is dropped and logged`() =
+        runTest {
+            val log = LogCapture()
+            log.use {
+                val f = fixture()
+                startReplay(f)
+                f.player.emitPosition(52_000L)
+                runCurrent()
+                f.controller.press(SubtitleDisplay.ENGLISH)
+                runCurrent()
+
+                f.controller.onUserSeek()
+                settle()
+
+                assertEquals(listOf(49_700L), f.counter.seeks)
+                assertEquals(RewindSubtitleState.Idle, f.controller.subtitleState.value)
+                assertEquals(0, f.activeJobs)
+                log.assertHas("phrase rewind: press dropped reason=user-seek")
+                log.assertHas("phrase rewind: end reason=user-seek")
+                log.assertNoSubtitleText()
+            }
+        }
+
+    @Test
+    fun `a press while the player is ended seeks back and plays`() =
+        runTest {
+            val f = fixture()
+            f.player.emitDuration(72_500L)
+            f.player.emitPosition(72_400L)
+            f.player.end()
+            runCurrent()
+
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            settle()
+
+            assertEquals(listOf(69_700L), f.counter.seeks)
+            assertEquals(PlayerState.Playing, f.player.state.value)
+            assertEquals(1, f.activeJobs)
+
+            // The video ending again once the run is underway still ends it.
+            confirmSeek(f, 70_000L)
+            f.player.end()
+            runCurrent()
+            assertEquals(RewindSubtitleState.Idle, f.controller.subtitleState.value)
+            assertEquals(0, f.activeJobs)
+
+            // And the next press after that works too.
+            f.controller.press(SubtitleDisplay.ENGLISH)
+            settle()
+            assertEquals(listOf(69_700L, 69_700L), f.counter.seeks)
+            assertEquals(PlayerState.Playing, f.player.state.value)
+        }
+
+    @Test
+    fun `a press while the player is in error is ignored and logged`() =
+        runTest {
+            val log = LogCapture()
+            log.use {
+                val f = fixture()
+                f.player.emitPosition(31_000L)
+                f.player.fail("codec")
+                runCurrent()
+
+                f.controller.press(SubtitleDisplay.ENGLISH)
+                settle()
+
+                assertTrue(f.counter.seeks.isEmpty())
+                assertEquals(0, f.activeJobs)
+                log.assertHas("phrase rewind: press ignored reason=player-error")
+            }
+        }
+
+    @Test
+    fun `ten consecutive cycles seek ten times and end idle each time`() =
+        runTest {
+            val f = fixture()
+            repeat(10) { cycle ->
+                f.player.emitPosition(51_000L)
+                runCurrent()
+                f.controller.press(SubtitleDisplay.ENGLISH)
+                settle()
+                assertEquals(cycle + 1, f.counter.seeks.size)
+                confirmSeek(f, 50_000L)
+                f.player.emitPosition(53_000L)
+                runCurrent()
+                assertEquals(RewindSubtitleState.Idle, f.controller.subtitleState.value)
+                assertEquals(SubtitleDisplay.OFF, f.controller.display.value)
+                assertEquals(0, f.activeJobs)
+            }
+            assertEquals(List(10) { 49_700L }, f.counter.seeks)
+            assertEquals(0, f.counter.pauses)
+        }
+
+    @Test
+    fun `a press that resolves to no cue is logged and ends the run`() =
+        runTest {
+            val log = LogCapture()
+            log.use {
+                val f = fixture(loadTrack = false)
+                f.player.emitPosition(31_000L)
+                runCurrent()
+
+                f.controller.press(SubtitleDisplay.ENGLISH)
+                settle()
+
+                log.assertHas("phrase rewind: press ignored reason=no-cue")
+                log.assertHas("phrase rewind: end reason=no-cue")
+                assertEquals(RewindSubtitleState.Idle, f.controller.subtitleState.value)
+                assertEquals(0, f.activeJobs)
+                log.assertNoSubtitleText()
+            }
+        }
+
+    @Test
+    fun `a press of OFF is logged as ignored`() =
+        runTest {
+            val log = LogCapture()
+            log.use {
+                val f = fixture()
+                f.controller.press(SubtitleDisplay.OFF)
+                log.assertHas("phrase rewind: press ignored reason=off")
+            }
         }
 }

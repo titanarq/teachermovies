@@ -92,8 +92,19 @@ sealed interface RewindSubtitleState {
  * run and nothing is tracked any more. A group pressed again while rewound, before that point,
  * rewinds from where playback is but keeps the original origin and the original display to restore.
  *
- * The player ending or erroring, and [cancel], drop the run the same way; no coroutine this
- * controller starts outlives them. Playback is driven only through the [Player] interface.
+ * A press is never dropped silently (#370). Every end of a run -- origin reached, [cancel],
+ * [onUserSeek], the player ending or erroring, the viewer picking a track, no cue under the first
+ * press -- goes through one path that logs `phrase rewind: end reason=<reason>`, puts the snapshot's
+ * subtitle and the saved display back, returns [subtitleState] to [RewindSubtitleState.Idle] and
+ * stops the tracker and the track-selection job; no coroutine this controller starts outlives it.
+ * A press whose window is still open when the run ends by itself (origin reached, `Ended`, a viewer
+ * track pick) is kept: when its window closes a fresh run starts from that press, its snapshot taken
+ * after the restore. A viewer's [cancel] or [onUserSeek] drops it, and a press the controller does
+ * not act on (`OFF`, the player in error, no cue) is logged as `phrase rewind: press ignored` or
+ * `press dropped` with a reason and a state, never subtitle text. A press while the player is
+ * `Ended` starts a run normally; only a later `Ended`/`Error` ends it. Until a group's seek is issued
+ * the previous seek's confirmation is void, so the old origin cannot end the run while a track is
+ * still being selected. Playback is driven only through the [Player] interface.
  *
  * With [subtitles] (#358) the line is drawn by the player itself: at the seek the language's subtitle
  * becomes a temporary player track ([subtitleState]) and [displayText] is `null` while it shows, so
@@ -151,7 +162,14 @@ class PhraseRewindController(
      * can make and is ignored.
      */
     fun press(language: SubtitleDisplay) {
-        if (language == SubtitleDisplay.OFF) return
+        if (language == SubtitleDisplay.OFF) {
+            logIgnored("off")
+            return
+        }
+        if (player.state.value is PlayerState.Error) {
+            logIgnored("player-error")
+            return
+        }
         val now = clock()
         val positionMs = player.positionMs.value
         val open = group
@@ -169,12 +187,12 @@ class PhraseRewindController(
 
     /** Drops the run in progress, if any: the saved display and subtitle come back and nothing is seeked. */
     fun cancel() {
-        dropRun()
+        endRun("cancel", keepGroup = false)
     }
 
     /** The viewer sought by hand: a run in progress ends at once, its subtitle selection restored. */
     fun onUserSeek() {
-        dropRun()
+        endRun("user-seek", keepGroup = false)
     }
 
     /** Starts the temporary-subtitle session of [mediaFile]; null when the movie is left. */
@@ -199,32 +217,50 @@ class PhraseRewindController(
     private fun startRun(
         returnPointMs: Long,
         language: SubtitleDisplay,
-    ) {
+    ): Rewind {
         val snapshot = RewindSnapshot(returnPointMs, player.selectedSubtitleId.value)
         val started = Rewind(snapshot = snapshot, savedDisplay = mutableDisplay.value)
+        // A press made while the video is over starts a run: only a later Ended/Error ends it.
+        started.terminalAtStart = isTerminal(player.state.value)
         rewind = started
         setSubtitleState(RewindSubtitleState.Rewinding(snapshot, language))
         tracker =
             scope.launch {
-                combine(
-                    player.positionMs,
-                    engine.currentSubtitle,
-                    player.state,
-                    subtitles?.temporaryId ?: NO_TEMPORARY,
-                ) { position, english, state, temporary ->
-                    publish(position, english)
-                    when {
-                        state is PlayerState.Ended || state is PlayerState.Error -> true
-
-                        // The viewer picked a track: it wins and the run has nothing left to restore.
-                        started.tempTrackId != null && !started.switching && temporary != started.tempTrackId -> true
-
-                        else -> atOrigin(started, position)
-                    }
-                }.first { finished -> finished }
-                dropRun()
+                val reason = awaitEnd(started)
+                // A press whose window is still open outlives the run: settle() starts a new one. After
+                // an error no seek is possible, so there the press is dropped (and logged).
+                endRun(reason, keepGroup = reason != "player-error")
             }
+        return started
     }
+
+    /** Publishes the line at every change and returns why [started] is over, once it is. */
+    private suspend fun awaitEnd(started: Rewind): String =
+        combine(
+            player.positionMs,
+            engine.currentSubtitle,
+            player.state,
+            subtitles?.temporaryId ?: NO_TEMPORARY,
+        ) { position, english, state, temporary ->
+            publish(position, english)
+            if (!isTerminal(state)) started.terminalAtStart = false
+            val viewerPicked =
+                started.tempTrackId != null && !started.switching && temporary != started.tempTrackId
+            when {
+                state is PlayerState.Error && !started.terminalAtStart -> "player-error"
+
+                state is PlayerState.Ended && !started.terminalAtStart -> "player-ended"
+
+                // The viewer picked a track: it wins and the run has nothing left to restore.
+                viewerPicked -> "viewer-track"
+
+                atOrigin(started, position) -> "origin"
+
+                else -> null
+            }
+        }.first { it != null } ?: "tracker"
+
+    private fun isTerminal(state: PlayerState): Boolean = state is PlayerState.Ended || state is PlayerState.Error
 
     /**
      * Whether playback is back at the run's origin. Positions before the seek is confirmed are the
@@ -272,18 +308,30 @@ class PhraseRewindController(
         settleJob = null
         val presses = group ?: return
         group = null
+        if (player.state.value is PlayerState.Error) {
+            logIgnored("player-error")
+            endRun("player-error", keepGroup = false)
+            return
+        }
         val cue = engine.cueForCapture(presses.firstPressPositionMs)
         if (cue == null) {
             // No line to rewind to: no track loaded, or a gap too long after the last one. Showing a
             // language with no line under it is worse than showing nothing, so the run ends here.
-            dropRun()
+            logIgnored("no-cue")
+            endRun("no-cue", keepGroup = false)
             return
         }
         val target = engine.cueLinesBefore(cue, presses.count - 1)?.cue ?: cue
-        val run = rewind ?: return
+        // The run the press joined may have ended while its window was open: start a fresh one from
+        // the group's first press, its snapshot taken now that the viewer's subtitle is back.
+        val run = rewind ?: startRun(originFor(presses.firstPressPositionMs), presses.language)
         val language = presses.language
         mutableDisplay.value = language
         val seekMs = maxOf(0L, target.startMs - preRollMs)
+        // The old seek's confirmation says nothing about this one: until the new seek is issued the
+        // origin must not end the run, however long the track selection below takes.
+        run.rewound = false
+        run.confirmed = false
         applyJob?.cancel()
         applyJob =
             scope.launch {
@@ -330,17 +378,31 @@ class PhraseRewindController(
         }
     }
 
-    private fun dropRun() {
+    /**
+     * The one way a run ends: [reason] is logged, the player's subtitle selection and the display
+     * the run replaced come back, and the tracker and the track-selection job stop. A group still
+     * open is dropped too, unless [keepGroup]: the run ending by itself must not eat a press made
+     * inside its window, but a viewer's cancel or hand seek wins over it.
+     */
+    private fun endRun(
+        reason: String,
+        keepGroup: Boolean,
+    ) {
+        val pending = group
+        if (!keepGroup && pending != null) {
+            group = null
+            settleJob?.cancel()
+            settleJob = null
+            AppLog.d(LOG_MODULE, "phrase rewind: press dropped reason=$reason state=${stateName()}")
+        }
         val finished = rewind ?: return
         rewind = null
-        group = null
-        settleJob?.cancel()
-        settleJob = null
         applyJob?.cancel()
         applyJob = null
         val tracked = tracker
         tracker = null
         tracked?.cancel()
+        AppLog.d(LOG_MODULE, "phrase rewind: end reason=$reason")
         if (finished.tempTrackId != null) {
             // Restoring is a live selection: the player keeps playing and is never paused for it.
             setSubtitleState(RewindSubtitleState.Restoring(finished.snapshot))
@@ -350,6 +412,12 @@ class PhraseRewindController(
         setSubtitleState(RewindSubtitleState.Idle)
         publishNow()
     }
+
+    private fun logIgnored(reason: String) {
+        AppLog.d(LOG_MODULE, "phrase rewind: press ignored reason=$reason state=${stateName()}")
+    }
+
+    private fun stateName(): String = mutableSubtitleState.value::class.simpleName ?: "?"
 
     private fun publishNow() {
         publish(player.positionMs.value, engine.currentSubtitle.value)
@@ -394,6 +462,9 @@ class PhraseRewindController(
         var targetMs = 0L
         var seekAtMs = 0L
         var confirmed = false
+
+        /** True while the player was already Ended/Error when the run began, until it plays again. */
+        var terminalAtStart = false
 
         /** The temporary player track on screen and its language, null while there is none. */
         @Volatile var tempTrackId: String? = null
