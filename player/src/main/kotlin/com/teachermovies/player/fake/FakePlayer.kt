@@ -6,6 +6,7 @@ import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.SubtitleExtraction
 import com.teachermovies.player.api.SubtitleFormat
 import com.teachermovies.player.api.Track
+import com.teachermovies.player.vlc.ExternalSubtitleTracks
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -105,11 +106,19 @@ class FakePlayer : Player {
         mutableSelectedSubtitleId.value = id
     }
 
+    private fun externalTrack(file: File): Track =
+        ExternalSubtitleTracks.trackOf(
+            id = "ext:${file.name}",
+            file = file,
+            libVlcName = file.name,
+            libVlcLanguage = null,
+        )
+
     override fun addExternalSubtitle(
         file: File,
         select: Boolean,
     ) {
-        val track = Track(id = "ext:${file.name}", name = file.name, language = null)
+        val track = externalTrack(file)
         mutableSubtitleTracks.value = mutableSubtitleTracks.value + track
         if (select) {
             selectSubtitle(track.id)
@@ -123,7 +132,7 @@ class FakePlayer : Player {
     override suspend fun addExternalSubtitleTrack(file: File): ExternalSubtitleResult {
         recordedExternalSubtitleCalls += file
         externalSubtitleFailure?.let { return it }
-        val track = Track(id = "ext:${file.name}", name = file.name, language = null)
+        val track = externalTrack(file)
         mutableSubtitleTracks.value = mutableSubtitleTracks.value + track
         return ExternalSubtitleResult.Added(track)
     }
