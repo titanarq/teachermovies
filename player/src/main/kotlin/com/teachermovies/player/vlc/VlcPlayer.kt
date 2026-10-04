@@ -24,6 +24,7 @@ import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.interfaces.IMedia
 import org.videolan.libvlc.util.VLCVideoLayout
 import java.io.File
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
@@ -68,6 +69,10 @@ class VlcPlayer(
     private val mutableState = MutableStateFlow<PlayerState>(PlayerState.Idle)
     private val mutablePositionMs = MutableStateFlow(0L)
     private val mutableDurationMs = MutableStateFlow(0L)
+
+    /** Every slave added to the open media, in addition order: libVLC lists their tracks in that order. */
+    private val slaveFiles = CopyOnWriteArrayList<File>()
+
     private val mutableAudioTracks = MutableStateFlow<List<Track>>(emptyList())
     private val mutableSubtitleTracks = MutableStateFlow<List<Track>>(emptyList())
     private val mutableSelectedAudioId = MutableStateFlow<String?>(null)
@@ -205,6 +210,7 @@ class VlcPlayer(
     ) {
         val player = mediaPlayer ?: return
         if (player.addSlave(IMedia.Slave.Type.Subtitle, Uri.fromFile(file), select)) {
+            slaveFiles += file
             publishTracks()
         }
     }
@@ -219,6 +225,7 @@ class VlcPlayer(
         if (!player.addSlave(IMedia.Slave.Type.Subtitle, Uri.fromFile(file), false)) {
             return ExternalSubtitleResult.NotAdded("the player refused ${file.name}")
         }
+        slaveFiles += file
         publishTracks()
         val added =
             withTimeoutOrNull(SLAVE_TRACK_TIMEOUT_MS) {
@@ -326,7 +333,7 @@ class VlcPlayer(
     private fun publishTracks() {
         val player = mediaPlayer ?: return
         mutableAudioTracks.value = player.audioTracks.toTracks()
-        mutableSubtitleTracks.value = player.spuTracks.toTracks()
+        mutableSubtitleTracks.value = ExternalSubtitleTracks.mark(player.spuTracks.toTracks(), slaveFiles.toList())
     }
 
     private fun publishSelection(event: MediaPlayer.Event) {
@@ -345,6 +352,7 @@ class VlcPlayer(
      * later.
      */
     private fun resetFlows(startPositionMs: Long) {
+        slaveFiles.clear()
         mutablePositionMs.value = startPositionMs
         mutableDurationMs.value = 0L
         mutableAudioTracks.value = emptyList()

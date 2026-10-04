@@ -200,6 +200,19 @@ class FakePlayerTest {
     }
 
     @Test
+    fun downloadedSubtitlesArePublishedAsTwoDistinctExternalTracks() {
+        player.emitTracks(audio = emptyList(), subs = listOf(Track("s1", "English", "en")))
+
+        player.addExternalSubtitle(File("/m/subs/X.en.opensubtitles.srt"), select = false)
+        player.addExternalSubtitle(File("/m/subs/X.es.opensubtitles.srt"), select = false)
+
+        val tracks = player.subtitleTracks.value
+        assertEquals(listOf(false, true, true), tracks.map { it.external })
+        assertEquals(listOf("en", "en", "es"), tracks.map { it.language })
+        assertEquals(listOf("English", "OpenSubtitles (en)", "OpenSubtitles (es)"), tracks.map { it.name })
+    }
+
+    @Test
     fun addExternalSubtitleAppendsATrackAndSelectsIt() {
         player.emitTracks(audio = emptyList(), subs = listOf(Track("s1", "English", "eng")))
 
@@ -208,7 +221,7 @@ class FakePlayerTest {
         assertEquals(
             listOf(
                 Track("s1", "English", "eng"),
-                Track("ext:Movie.eng.srt", "Movie.eng.srt", null),
+                Track("ext:Movie.eng.srt", "Movie.eng.srt", "eng", external = true),
             ),
             player.subtitleTracks.value,
         )
@@ -223,7 +236,7 @@ class FakePlayerTest {
 
             val result = player.addExternalSubtitleTrack(File("/cache/rewind/Movie.es.srt"))
 
-            val expected = Track("ext:Movie.es.srt", "Movie.es.srt", null)
+            val expected = Track("ext:Movie.es.srt", "Movie.es.srt", "es", external = true)
             assertEquals(ExternalSubtitleResult.Added(expected), result)
             assertEquals("s1", player.selectedSubtitleId.value)
             assertEquals(expected, player.subtitleTracks.value.last())
@@ -239,7 +252,7 @@ class FakePlayerTest {
         assertEquals(
             listOf(
                 Track("s1", "English", "eng"),
-                Track("ext:Movie.spa.srt", "Movie.spa.srt", null),
+                Track("ext:Movie.spa.srt", "Movie.spa.srt", "spa", external = true),
             ),
             player.subtitleTracks.value,
         )
