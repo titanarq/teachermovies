@@ -20,3 +20,11 @@
 `scripts/test.sh` green locally and in CI. It runs the matching `ktlintCheck` task(s) in the same
 Gradle invocation as the tests it was given (no args -> root `ktlintCheck`, `:mod:test` ->
 `:mod:ktlintCheck`), so ktlint is no longer a second, separate command a worker has to remember.
+
+The local emulator harnesses are deliberately not part of it: `scripts/emulator_smoke.sh` (the MVP
+critical path) and `scripts/emulator_assistant.sh` (the assistant and the remote keys, #376) need the
+`tm_tv36` AVD and `adb`, and `config/agents.yaml` forbids a worker to run either. They share their
+boot/build/install/pair steps through `scripts/lib/emulator_common.sh`; a change to any of the three
+is verified with `bash -n`, with `shellcheck` when it is installed, and -- for the assistant harness
+-- with `--dry-run`, which prints every `adb`/`curl`/`ffmpeg` command it would run and runs none.
+How to run them for real, and what they cannot prove: [the emulator runbook](../runbooks/emulator.md).
