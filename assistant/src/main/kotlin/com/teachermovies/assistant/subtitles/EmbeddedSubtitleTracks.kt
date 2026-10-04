@@ -10,6 +10,10 @@ import java.util.Locale
  * Candidates are ranked, case-insensitively: (1) [Track.language] equal to the requested code,
  * (2) [Track.language] starting with it (so `eng` matches `en`), (3) [Track.name] containing the
  * code in brackets (`[en]`) or the language's English name (`english`). Ties keep list order.
+ *
+ * Only tracks the container carries are candidates: a [Track.external] one is a subtitle file added
+ * as a slave (a sidecar or an OpenSubtitles download), has nothing to extract from the container and
+ * must never be taken for the embedded track (#373).
  */
 object EmbeddedSubtitleTracks {
     fun pick(
@@ -22,6 +26,7 @@ object EmbeddedSubtitleTracks {
         var best: Track? = null
         var bestRank = Int.MAX_VALUE
         for (track in tracks) {
+            if (track.external) continue
             val rank = rankOf(track, code, englishName) ?: continue
             // Strictly better only: an equal rank keeps the earlier track (list-order tie-break).
             if (rank < bestRank) {
