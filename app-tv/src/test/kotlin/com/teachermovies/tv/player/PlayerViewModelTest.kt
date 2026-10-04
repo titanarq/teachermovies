@@ -37,6 +37,7 @@ import com.teachermovies.core.model.Torrent
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.fake.InMemoryExplanationCacheRepository
 import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
+import com.teachermovies.player.api.ExternalSubtitleResult
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.Track
 import com.teachermovies.player.fake.FakePlayer
@@ -1638,6 +1639,27 @@ class PlayerViewModelTest {
             } finally {
                 AppLog.uninstall(sink)
             }
+        }
+
+    @Test
+    fun whenThePlayerRefusesTheTemporaryEnglishTrackTheMessageNeverSaysThereAreNoSubtitles() =
+        runTest(dispatcher) {
+            rewindOnPlayerTrack = true
+            seed(movieWithTwoEnglishSubtitles())
+            val vm = openedViewModel()
+            player.emitDuration(600_000L)
+            player.play()
+            player.emitPosition(31_000L)
+            runCurrent()
+            assertEquals(AssistantState.Available, vm.uiState.value.assistantState)
+            player.emitExternalSubtitleResult(ExternalSubtitleResult.NotAdded("refused"))
+
+            vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+            runCurrent()
+
+            assertEquals(PlayerViewModel.TRACK_NOT_SHOWN, vm.uiState.value.message)
+            assertEquals("No se pudo mostrar el subtítulo en inglés", vm.uiState.value.message)
         }
 
     @Test

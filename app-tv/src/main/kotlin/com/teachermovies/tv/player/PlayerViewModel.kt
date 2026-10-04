@@ -220,7 +220,9 @@ class PlayerViewModel(
         rewind?.let { controller ->
             viewModelScope.launch {
                 controller.unavailable.collect { language ->
-                    showMessage(if (language == SubtitleDisplay.SPANISH) NO_SPANISH else englishUnavailableMessage())
+                    showMessage(
+                        if (language == SubtitleDisplay.SPANISH) NO_SPANISH else englishUnavailableMessage(),
+                    )
                 }
             }
         }
@@ -477,7 +479,7 @@ class PlayerViewModel(
                 val delta = RemoteKeyMapper.SHORT_SEEK_MS * if (language == SubtitleDisplay.SPANISH) 1 else -1
                 AppLog.i(LOG_MODULE, "$key: hidden mode ${state.logName()}, seek ${if (delta > 0) "+" else "-"}10s")
                 onAction(PlayerAction.SeekBy(delta))
-                if (state != AssistantState.Available) showMessage(message)
+                showMessage(message)
             }
             return
         }
@@ -717,12 +719,17 @@ class PlayerViewModel(
             AssistantState.Unreadable -> "unreadable"
         }
 
-    /** Why English is not available now; [withSeek] adds that LEFT/RIGHT seek 10 s instead. */
+    /**
+     * Why English is not available now; [withSeek] adds that LEFT/RIGHT seek 10 s instead.
+     * `Available` here is the rewind's own `unavailable` (or a rewind-less seek): the subtitles were
+     * found, the player would not take the temporary track -- never "no subtitles" (#374).
+     */
     private fun englishUnavailableMessage(withSeek: Boolean = false): String =
         when (local.value.assistantState) {
             AssistantState.Starting -> STARTING_SUBTITLES
             AssistantState.Unreadable -> if (withSeek) UNREADABLE_SEEK else UNREADABLE_SUBTITLES
-            else -> if (withSeek) NO_SUBTITLES_SEEK else NO_SUBTITLES
+            AssistantState.Available -> TRACK_NOT_SHOWN
+            AssistantState.NoSubtitles -> if (withSeek) NO_SUBTITLES_SEEK else NO_SUBTITLES
         }
 
     private fun showMessage(text: String) {
@@ -827,6 +834,7 @@ class PlayerViewModel(
         const val NO_SUBTITLES_SEEK = "Sin subtítulos en inglés: ← → saltan 10 s"
         const val UNREADABLE_SUBTITLES = "No se pudieron leer los subtítulos en inglés"
         const val UNREADABLE_SEEK = "No se pudieron leer los subtítulos en inglés: ← → saltan 10 s"
+        const val TRACK_NOT_SHOWN = "No se pudo mostrar el subtítulo en inglés"
         const val STARTING_SUBTITLES = "Preparando subtítulos en inglés…"
         const val LOG_MODULE = "app-tv"
         const val NO_SPANISH = "Sin subtítulos en español"
