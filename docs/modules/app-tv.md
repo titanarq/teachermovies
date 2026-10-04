@@ -333,9 +333,9 @@ sections above (#293 "DERECHA = Explicar", #288 LEFT = Spanish) are superseded b
   truncating with an ellipsis only below it.
 
 ### Actual (stage 1, #347): phrase rewind
-- `AssistantKeyMapper.map(keyCode, overlayOpen, assistantAvailable = true)`: DPAD_LEFT/RIGHT are
-  `AssistantAction.RewindEnglish` / `RewindSpanish` with the menu open or closed; with
-  `assistantAvailable = false` (no English subtitles) they are null and `RemoteKeyMapper` seeks +-10 s.
+- `AssistantKeyMapper.map(keyCode, overlayOpen)`: DPAD_LEFT/RIGHT are
+  `AssistantAction.RewindEnglish` / `RewindSpanish` with the menu open or closed; what happens
+  without usable English subtitles is decided by `PlayerViewModel` (next bullet, #374).
   Open menu: OK replays, BACK/DOWN/CAPTIONS dismiss, volume passes through, UP is
   `ExplainLine` (stage 2). The old LEFT = Spanish / RIGHT = Explicar menu keys are gone; the
   `TranslateLine` action stays defined but no key maps to it.
@@ -351,6 +351,18 @@ sections above (#293 "DERECHA = Explicar", #288 LEFT = Spanish) are superseded b
   actions are not blocked. `PlayerUiState.rewindText` = `PhraseRewindController.displayText`
   (null while `display` is `OFF`); `PlayerScreen` draws it bottom-centre over the video, independent
   of the libVLC subtitle and of the tracks panel. The root box keeps key focus (no focus moves).
+- Hidden-mode states (#374): `PlayerUiState.assistantState` is `Starting` (until `hidden.start`
+  returns), `Available` (`Started`), `NoSubtitles` (`NoSubtitleFile`) or `Unreadable`
+  (`Unreadable(reason)`, logged); `assistantAvailable` is derived (`== Available`). LEFT/RIGHT never
+  move the position silently: `Available` -> phrase rewind as above; `Starting` -> no seek, message
+  `Preparando subtítulos en inglés…` (`STARTING_SUBTITLES`); `NoSubtitles` -> the 10 s seek (-/+) and
+  `Sin subtítulos en inglés: ← → saltan 10 s` (`NO_SUBTITLES_SEEK`) on every press; `Unreadable` ->
+  the same seek and `No se pudieron leer los subtítulos en inglés: ← → saltan 10 s`
+  (`UNREADABLE_SEEK`). DOWN and the rewind's English `unavailable` say `Preparando…`,
+  `Esta película no tiene subtítulos en inglés` (`NO_SUBTITLES`, `NoSubtitles` only) or
+  `No se pudieron leer los subtítulos en inglés` (`UNREADABLE_SUBTITLES`) by state. Each press that
+  does not reach the rewind logs one `app-tv` line, e.g. `RIGHT: hidden mode none, seek +10s` or
+  `LEFT: hidden mode starting, ignored`. `dispatchKey` always asks `AssistantKeyMapper` first.
 - `MovieSpanishText` (a `SpanishTextSource`) is what `AppContainer.phraseRewindController` is built
   over once; `open` loads its `SpanishCueTimeline` (#344) after hidden mode starts and `exit`
   clears it. Without a timeline RIGHT draws nothing and shows `Sin subtítulos en español` for 3 s

@@ -68,7 +68,7 @@ fun PlayerRoute(
     PlayerScreen(
         state = state,
         surfaceHost = surfaceHost,
-        onKey = { keyCode -> dispatchKey(keyCode, viewModel, state.assistantAvailable) },
+        onKey = { keyCode -> dispatchKey(keyCode, viewModel) },
         onAssistantAction = viewModel::onAssistantAction,
         onBack = viewModel::back,
         onSelectAudio = viewModel::selectAudio,
@@ -85,9 +85,8 @@ fun PlayerRoute(
 private fun dispatchKey(
     keyCode: Int,
     viewModel: PlayerViewModel,
-    assistantAvailable: Boolean,
 ): Boolean {
-    val assistant = AssistantKeyMapper.map(keyCode, overlayOpen = false, assistantAvailable = assistantAvailable)
+    val assistant = AssistantKeyMapper.map(keyCode, overlayOpen = false)
     if (assistant != null) {
         viewModel.onAssistantAction(assistant)
         return true

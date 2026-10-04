@@ -106,9 +106,16 @@ class AssistantKeyMapperTest {
     }
 
     @Test
-    fun withoutAnAssistantLeftAndRightStayWithTheTransportMapping() {
-        assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = false, assistantAvailable = false))
-        assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT, overlayOpen = false, assistantAvailable = false))
+    fun withTheOverlayClosedLeftAndRightAreAlwaysTheAssistants() {
+        // The view model decides between rewind, ignore and a told 10 s seek (#374).
+        assertEquals(
+            AssistantAction.RewindEnglish,
+            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT, overlayOpen = false),
+        )
+        assertEquals(
+            AssistantAction.RewindSpanish,
+            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = false),
+        )
     }
 
     @Test
