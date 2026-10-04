@@ -1,5 +1,6 @@
 package com.teachermovies.tv.ui.library
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,10 +11,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -21,10 +24,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -135,23 +141,59 @@ private fun LibraryCardItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Each badge says what it stands for to TalkBack instead of reading out "EN", and none of them
+    // is focusable: the card stays the grid's only D-pad target (#375).
+    val badges =
+        listOf(
+            LibraryViewModel.BADGE_EN to "Subtítulos en inglés descargados",
+            LibraryViewModel.BADGE_ES to "Subtítulos en español descargados",
+        ).filter { (badge, _) -> badge in card.subtitleBadges }
     Card(onClick = onClick, modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = card.title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(text = stringResource(R.string.library_play_mark), style = MaterialTheme.typography.titleMedium)
-                Text(text = stringResource(R.string.library_complete))
-                Text(text = card.sizeText, style = MaterialTheme.typography.bodySmall)
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.Bottom) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = card.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.library_play_mark),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(text = stringResource(R.string.library_complete))
+                    Text(text = card.sizeText, style = MaterialTheme.typography.bodySmall)
+                }
+                card.resumeText?.let { resume ->
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(text = resume, style = MaterialTheme.typography.bodySmall)
+                }
             }
-            card.resumeText?.let { resume ->
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(text = resume, style = MaterialTheme.typography.bodySmall)
+            if (badges.isNotEmpty()) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    badges.forEach { (badge, description) ->
+                        Box(
+                            modifier =
+                                Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    .clearAndSetSemantics { contentDescription = description },
+                        ) {
+                            Text(
+                                text = badge,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
