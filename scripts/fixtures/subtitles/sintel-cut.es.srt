@@ -1,0 +1,51 @@
+1
+00:00:04,000 --> 00:00:07,200
+El viento cruza el campo vacío antes del amanecer.
+
+2
+00:00:09,000 --> 00:00:12,000
+Ella sigue el sendero hasta el río.
+
+3
+00:00:14,500 --> 00:00:17,500
+Nada se mueve todavía en el pueblo.
+
+4
+00:00:20,000 --> 00:00:23,400
+La torre guarda su viejo silencio.
+
+5
+00:00:26,000 --> 00:00:29,000
+Un ave llama dos veces y luego calla.
+
+6
+00:00:32,000 --> 00:00:35,500
+Ella cuenta los pasos y pierde la cuenta.
+
+7
+00:00:38,000 --> 00:00:41,000
+Sube humo donde estuvo el fuego.
+
+8
+00:00:44,000 --> 00:00:47,500
+La carta en su mano ya está mojada.
+
+9
+00:00:50,000 --> 00:00:53,000
+Alguien estuvo aquí antes que nosotros.
+
+10
+00:00:56,000 --> 00:01:00,000
+La puerta se abre sin ningún sonido.
+
+11
+00:01:04,000 --> 00:01:07,500
+Espera aquí hasta que cambie la luz.
+
+12
+00:01:12,000 --> 00:01:16,000
+Entonces volvemos por donde vinimos.
+
+13
+00:01:20,000 --> 00:01:24,000
+El campo vuelve a estar vacío.
