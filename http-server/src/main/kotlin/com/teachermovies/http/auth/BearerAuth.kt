@@ -26,11 +26,16 @@ const val TOKEN_QUERY_PARAMETER = "token"
  * also accepted; everywhere else a query-param token alone is rejected. A missing, invalid or
  * out-of-scope token is 401 `{"error":"unauthorized"}` with `WWW-Authenticate: Bearer`, and the
  * handler never runs. The token is never echoed in the response.
+ *
+ * When [pairingRequired] is `false` (the temporary `PIN_PAIRING_REQUIRED` testing flag) nothing is
+ * checked: every request reaches the handler, with or without a token. LAN-only stays enforced by
+ * the address guard.
  */
 fun Route.requireBearer(
     pairing: PairingManager,
     scopes: Set<TokenScope>,
     allowQueryToken: Boolean = false,
+    pairingRequired: Boolean = true,
     build: Route.() -> Unit,
 ): Route {
     require(scopes.isNotEmpty()) { "requireBearer needs at least one accepted token scope" }
@@ -38,6 +43,7 @@ fun Route.requireBearer(
     route.install(
         createRouteScopedPlugin("RequireBearer") {
             onCall { call ->
+                if (!pairingRequired) return@onCall
                 val token = call.bearerToken(allowQueryToken)
                 val scope = token?.let { pairing.scopeOf(it) }
                 if (scope == null || scope !in scopes) {

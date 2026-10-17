@@ -66,7 +66,8 @@
   function api(path, options) {
     options = options || {};
     var headers = options.headers || {};
-    headers['Authorization'] = 'Bearer ' + token();
+    // With PIN pairing disabled (status.pairingRequired === false) the TV ignores tokens: send none.
+    if (pairingRequired !== false) headers['Authorization'] = 'Bearer ' + token();
     options.headers = headers;
     return fetch(path, options).then(function (res) {
       if (res.status === 401) {
@@ -84,9 +85,18 @@
     $('conn-text').textContent = on ? 'conectada' : 'desconectada';
   }
 
+  // `false` once /api/status says the TV does not require PIN pairing (testing flag); `null` = unknown.
+  var pairingRequired = null;
+
   function checkStatus() {
-    fetch('/api/status', { cache: 'no-store' })
-      .then(function (res) { setConnected(res.ok); })
+    return fetch('/api/status', { cache: 'no-store' })
+      .then(function (res) {
+        setConnected(res.ok);
+        return res.ok ? res.json() : null;
+      })
+      .then(function (body) {
+        if (body && typeof body.pairingRequired === 'boolean') pairingRequired = body.pairingRequired;
+      })
       .catch(function () { setConnected(false); });
   }
 
@@ -117,6 +127,8 @@
 
   function onUnauthorized() {
     clearToken();
+    // Pairing disabled: a 401 cannot happen; never loop on the PIN form.
+    if (pairingRequired === false) return;
     showPairing('La TV ya no reconoce este móvil. Vuelve a emparejar.');
   }
 
@@ -512,6 +524,7 @@
 
   function openSse() {
     if (typeof EventSource === 'undefined') { startPolling(); return; }
+    // The token is ignored by the TV when pairing is disabled.
     var es = new EventSource('/api/events?token=' + encodeURIComponent(token()));
     source = es;
     es.addEventListener('torrents', function (e) {
@@ -830,8 +843,10 @@
   $('log-follow').addEventListener('click', toggleLogFollow);
   $('log-download').addEventListener('click', downloadLogs);
 
-  checkStatus();
   setInterval(checkStatus, STATUS_EVERY_MS);
 
-  if (token()) showApp(); else showPairing();
+  // Know whether the TV wants a PIN before choosing the first screen.
+  checkStatus().then(function () {
+    if (pairingRequired === false || token()) showApp(); else showPairing();
+  });
 })();

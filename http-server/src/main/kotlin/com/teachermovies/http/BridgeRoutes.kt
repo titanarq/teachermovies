@@ -45,7 +45,7 @@ private const val PING_INTERVAL_MS = 15_000L
  * [bridgeSubtitleRoutes].
  */
 internal fun Route.bridgeRoutes(deps: ServerDeps) {
-    requireBearer(deps.pairing, setOf(TokenScope.BRIDGE)) {
+    requireBearer(deps.pairing, setOf(TokenScope.BRIDGE), pairingRequired = deps.pairingRequired) {
         get("/api/bridge/jobs") {
             call.response.header(HttpHeaders.CacheControl, "no-cache")
             call.respondTextWriter(ContentType.Text.EventStream) {

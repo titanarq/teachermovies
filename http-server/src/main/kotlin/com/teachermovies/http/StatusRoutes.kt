@@ -13,6 +13,7 @@ data class StatusResponse(
     val freeBytes: Long?,
     val totalBytes: Long?,
     val torrents: Int,
+    val pairingRequired: Boolean,
 )
 
 /** `GET /api/status`: public (no token, ADR-0002), a connection indicator that discloses no content. */
@@ -28,6 +29,7 @@ internal fun Route.statusRoutes(deps: ServerDeps) {
                 freeBytes = space?.freeBytes,
                 totalBytes = space?.totalBytes,
                 torrents = deps.engine.torrents.value.size,
+                pairingRequired = deps.pairingRequired,
             ),
         )
     }

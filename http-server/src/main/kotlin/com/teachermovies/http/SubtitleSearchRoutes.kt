@@ -30,7 +30,7 @@ import kotlinx.coroutines.flow.first
  * `unknown_torrent`. The manual upload of `POST /api/subtitles` is a separate path, unchanged.
  */
 internal fun Route.subtitleSearchRoutes(deps: ServerDeps) {
-    requireBearer(deps.pairing, setOf(TokenScope.PHONE)) {
+    requireBearer(deps.pairing, setOf(TokenScope.PHONE), pairingRequired = deps.pairingRequired) {
         get("/api/library/{id}/subtitles") {
             val id = call.libraryMovieOrRespond(deps) ?: return@get
             call.respond(deps.searchState(id))

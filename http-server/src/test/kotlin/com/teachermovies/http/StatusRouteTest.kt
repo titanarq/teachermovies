@@ -47,7 +47,7 @@ class StatusRouteTest {
             assertEquals(HttpStatusCode.OK, response.status)
             assertTrue(response.contentType()!!.match(ContentType.Application.Json))
             assertEquals(
-                """{"version":"1.2.3","engine":"running","freeBytes":123,"totalBytes":456,"torrents":2}""",
+                """{"version":"1.2.3","engine":"running","freeBytes":123,"totalBytes":456,"torrents":2,"pairingRequired":true}""",
                 response.bodyAsText(),
             )
         }
@@ -62,7 +62,7 @@ class StatusRouteTest {
 
             assertEquals(HttpStatusCode.OK, response.status)
             assertEquals(
-                """{"version":"1.2.3","engine":"stopped","freeBytes":null,"totalBytes":null,"torrents":0}""",
+                """{"version":"1.2.3","engine":"stopped","freeBytes":null,"totalBytes":null,"torrents":0,"pairingRequired":true}""",
                 response.bodyAsText(),
             )
         }

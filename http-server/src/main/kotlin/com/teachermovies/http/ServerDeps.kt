@@ -39,6 +39,10 @@ import com.teachermovies.torrent.api.TorrentEngine
  * @property allowTestRemoteHeader test-only (#59): when `true`, the `X-Test-Remote` header
  * overrides the socket's remote address for the LAN-address guard. Must stay `false` in
  * production; `AppContainer` never sets it.
+ * @property pairingRequired `PIN_PAIRING_REQUIRED` (testing-phase flag). When `false`, `requireBearer`
+ * lets every request through with full access for every token scope, and `GET /api/status`
+ * reports it so the web UI skips pairing; `POST /api/pair` still issues tokens. Defaults to `true`
+ * (the ADR-0002 behaviour); only `AppContainer` passes the BuildConfig value.
  */
 data class ServerDeps(
     val engine: TorrentEngine,
@@ -53,4 +57,5 @@ data class ServerDeps(
     val bridge: BridgeJobHub = BridgeJobHub(),
     val subtitleFetches: SubtitleFetchRepository = InMemorySubtitleFetchRepository(),
     val allowTestRemoteHeader: Boolean = false,
+    val pairingRequired: Boolean = true,
 )

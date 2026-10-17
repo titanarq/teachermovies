@@ -326,3 +326,22 @@ every summary status, and the phone-only auth.
 stream's happy paths drive a real loopback `embeddedServer` like `EventsRouteTest` (boot frame,
 backlog from `since`, live lines, level filter), and assert that `?token=` is 401 on
 `/api/logs/stream`.
+
+## PIN pairing flag (`PIN_PAIRING_REQUIRED`, temporary, testing phase)
+
+Re-pairing the phone and the laptop bridge wasted testing time, so token checks can be switched off.
+
+- `ServerDeps.pairingRequired` (default `true`, so http-server tests keep exercising auth) is fed
+  by `AppContainer` from `BuildConfig.PIN_PAIRING_REQUIRED`, defined in `app-tv/build.gradle.kts`.
+  **It is `false` by default for now.** Re-enable with `-PpinPairingRequired=true` on the Gradle
+  command line (or `pinPairingRequired=true` in `gradle.properties`), or flip the default there.
+- When `false`: `requireBearer` lets every request through with full access for every token scope
+  (phone and bridge), with or without an `Authorization` header, with a bad token, and for SSE
+  `?token=`. `POST /api/pair` still works and issues tokens (so `teachermovies-bridge pair` and old
+  clients do not break). `GET /api/status` carries `pairingRequired` (public, nothing sensitive);
+  the web UI reads it, skips the pairing screen and calls the API without a token.
+- Unchanged: the LAN-address guard (the server is still LAN-only) and the bridge's own 401 handling,
+  which stays valid for when auth is required again.
+- **Security consequence: while the flag is `false`, any device on the LAN can drive the TV and
+  read the library and logs.** This temporarily departs from ADR-0002 and AGENTS.md "Security".
+- The TV Configuración screen still shows the PIN (not changed).
