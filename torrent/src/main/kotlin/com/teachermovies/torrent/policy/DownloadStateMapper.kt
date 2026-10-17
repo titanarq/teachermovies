@@ -14,15 +14,27 @@ object DownloadStateMapper {
     fun map(raw: RawStatus): DownloadState =
         when {
             raw.hasError -> DownloadState.Error
+
+            // The app never seeds: a finished torrent is paused by the engine and stays Completed.
+            raw.paused && raw.isFinished && metadataKnown(raw) -> DownloadState.Completed
+
             raw.paused && !raw.autoManagedQueued -> DownloadState.Paused
+
             raw.paused && raw.autoManagedQueued -> DownloadState.Queued
+
             !raw.hasMetadata || raw.phase == RawPhase.DownloadingMetadata -> DownloadState.FetchingMetadata
+
             raw.phase == RawPhase.CheckingFiles || raw.phase == RawPhase.CheckingResumeData -> DownloadState.Verifying
+
             raw.phase == RawPhase.Finished || raw.phase == RawPhase.Seeding || raw.isFinished -> DownloadState.Completed
+
             raw.phase == RawPhase.Downloading -> DownloadState.Downloading
+
             else -> DownloadState.Queued
         }
 }
+
+private fun metadataKnown(raw: RawStatus): Boolean = raw.hasMetadata && raw.phase != RawPhase.DownloadingMetadata
 
 /**
  * Estimated seconds remaining at the current [rateBps], or `null` when the rate is not positive

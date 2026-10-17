@@ -37,6 +37,21 @@ class DownloadStateMapperTest {
     }
 
     @Test
+    fun mapsAPausedFinishedStatusToCompleted() {
+        assertEquals(DownloadState.Completed, DownloadStateMapper.map(baseline(paused = true, isFinished = true)))
+        val queued = baseline(paused = true, autoManagedQueued = true, isFinished = true)
+        assertEquals(DownloadState.Completed, DownloadStateMapper.map(queued))
+    }
+
+    @Test
+    fun anErroredPausedFinishedStatusStaysError() {
+        assertEquals(
+            DownloadState.Error,
+            DownloadStateMapper.map(baseline(hasError = true, paused = true, isFinished = true)),
+        )
+    }
+
+    @Test
     fun mapsAPausedAutoManagedQueuedStatusToQueued() {
         val raw = baseline(paused = true, autoManagedQueued = true)
         assertEquals(DownloadState.Queued, DownloadStateMapper.map(raw))
