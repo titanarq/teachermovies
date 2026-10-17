@@ -23,10 +23,10 @@ class AssistantKeyMapperTest {
         listOf(KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_MUTE)
 
     @Test
-    fun withTheOverlayClosedDownAndCaptionsCaptureTheLine() {
+    fun withTheOverlayClosedUpAndCaptionsOpenTheMenu() {
         assertEquals(
             AssistantAction.CaptureLine,
-            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_DOWN, overlayOpen = false),
+            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP, overlayOpen = false),
         )
         assertEquals(
             AssistantAction.CaptureLine,
@@ -39,7 +39,7 @@ class AssistantKeyMapperTest {
         val fallThrough =
             otherKeys +
                 listOf(
-                    KeyEvent.KEYCODE_DPAD_UP,
+                    KeyEvent.KEYCODE_DPAD_RIGHT,
                     KeyEvent.KEYCODE_DPAD_CENTER,
                     KeyEvent.KEYCODE_ENTER,
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
@@ -63,8 +63,8 @@ class AssistantKeyMapperTest {
     }
 
     @Test
-    fun withTheOverlayOpenBackDownAndCaptionsDismissIt() {
-        listOf(KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CAPTIONS).forEach { keyCode ->
+    fun withTheOverlayOpenBackAndCaptionsDismissIt() {
+        listOf(KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_CAPTIONS).forEach { keyCode ->
             assertEquals(
                 "keyCode $keyCode",
                 AssistantAction.DismissOverlay,
@@ -74,10 +74,26 @@ class AssistantKeyMapperTest {
     }
 
     @Test
-    fun withTheOverlayOpenUpExplainsAndWithItClosedFallsThroughToOpenTheTracksPanel() {
+    fun withTheOverlayOpenUpExplainsAndWithItClosedOpensTheMenu() {
         assertEquals(AssistantAction.ExplainLine, AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP, overlayOpen = true))
-        assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP, overlayOpen = false))
-        assertEquals(PlayerAction.ShowTracks, RemoteKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP))
+        assertEquals(AssistantAction.CaptureLine, AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP, overlayOpen = false))
+    }
+
+    @Test
+    fun menuOpensTheTracksPanelAndIsNeverTheAssistants() {
+        assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_MENU, overlayOpen = false))
+        assertEquals(PlayerAction.ShowTracks, RemoteKeyMapper.map(KeyEvent.KEYCODE_MENU))
+    }
+
+    @Test
+    fun rightClosedIsNotTakenByTheAssistantAndIsTheNativeSeek() {
+        assertNull(AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = false))
+        assertEquals(PlayerAction.SeekBy(10_000L), RemoteKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT))
+    }
+
+    @Test
+    fun rightWithTheOverlayOpenIsConsumedSoNothingSeeksBehindIt() {
+        assertEquals(AssistantAction.Consumed, AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = true))
     }
 
     @Test
@@ -92,7 +108,7 @@ class AssistantKeyMapperTest {
     }
 
     @Test
-    fun leftAndRightRewindEnglishAndSpanishWithTheOverlayOpenOrClosed() {
+    fun leftAndDownRewindEnglishAndSpanishWithTheOverlayOpenOrClosed() {
         listOf(true, false).forEach { open ->
             assertEquals(
                 AssistantAction.RewindEnglish,
@@ -100,30 +116,9 @@ class AssistantKeyMapperTest {
             )
             assertEquals(
                 AssistantAction.RewindSpanish,
-                AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = open),
+                AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_DOWN, overlayOpen = open),
             )
         }
-    }
-
-    @Test
-    fun withTheOverlayClosedLeftAndRightAreAlwaysTheAssistants() {
-        // The view model decides between rewind, ignore and a told 10 s seek (#374).
-        assertEquals(
-            AssistantAction.RewindEnglish,
-            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT, overlayOpen = false),
-        )
-        assertEquals(
-            AssistantAction.RewindSpanish,
-            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = false),
-        )
-    }
-
-    @Test
-    fun rightNoLongerExplains() {
-        assertEquals(
-            AssistantAction.RewindSpanish,
-            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT, overlayOpen = true),
-        )
     }
 
     @Test

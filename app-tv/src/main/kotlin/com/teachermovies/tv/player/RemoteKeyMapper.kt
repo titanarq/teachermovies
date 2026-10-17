@@ -35,9 +35,9 @@ object RemoteKeyMapper {
 
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> PlayerAction.SeekBy(LONG_SEEK_MS)
 
-            KeyEvent.KEYCODE_DPAD_UP,
-            KeyEvent.KEYCODE_MENU,
-            -> PlayerAction.ShowTracks
+            // MENU only: DPAD_UP opens the assistant menu (AssistantKeyMapper), and DPAD_RIGHT stays
+            // the player's native seek.
+            KeyEvent.KEYCODE_MENU -> PlayerAction.ShowTracks
 
             KeyEvent.KEYCODE_BACK -> PlayerAction.Exit
 

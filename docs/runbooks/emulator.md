@@ -120,9 +120,9 @@ ground, re-checked here because everything below depends on it. Then, per scenar
   only stays up 3 s and is dumped right after the key), and the log carries the seek line with the
   state that caused it (`none` on a fresh database, `unreadable` on a reused one).
 
-RIGHT, DOWN and BACK are injected and screenshotted as well, and the harness asserts nothing about
+DOWN (Spanish rewind), UP (opens the menu) and BACK are injected and screenshotted as well, and the harness asserts nothing about
 them beyond "no crash": the Spanish rewind needs the ES timeline the bridge would have to deliver,
-DOWN opens the capture overlay whose explain and translate jobs need the real laptop bridge
+UP opens the capture overlay whose explain and translate jobs need the real laptop bridge
 (ADR-0005), and the Biblioteca badges are #375.
 
 ### What it cannot prove

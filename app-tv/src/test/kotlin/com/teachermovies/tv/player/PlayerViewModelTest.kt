@@ -691,7 +691,7 @@ class PlayerViewModelTest {
         runTest(dispatcher) {
             val vm = playingWithSubtitles()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
 
             assertEquals(AssistantOverlayState("Hello there.", replaying = false), vm.uiState.value.assistant)
@@ -725,7 +725,7 @@ class PlayerViewModelTest {
     fun okPressedAgainInsideTheWindowReplaysThePreviousLineAndTheOverlaySaysHowFarBack() =
         runTest(dispatcher) {
             val vm = playingWithTwoSubtitles()
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
 
             vm.press(KeyEvent.KEYCODE_DPAD_CENTER)
@@ -749,7 +749,7 @@ class PlayerViewModelTest {
     fun anOkOutsideTheWindowReplaysTheCapturedLineAgain() =
         runTest(dispatcher) {
             val vm = playingWithTwoSubtitles()
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
             vm.press(KeyEvent.KEYCODE_DPAD_CENTER)
             runCurrent()
@@ -773,7 +773,7 @@ class PlayerViewModelTest {
     fun dismissClearsTheOverlayAndResumesWhereTheLineWasCaptured() =
         runTest(dispatcher) {
             val vm = playingWithSubtitles()
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
 
             vm.press(KeyEvent.KEYCODE_BACK)
@@ -784,11 +784,11 @@ class PlayerViewModelTest {
             assertEquals(PlayerState.Playing, player.state.value)
             assertEquals(2_000L, player.positionMs.value)
 
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_CAPTIONS)
             runCurrent()
-            assertNull("DPAD_DOWN toggles the overlay closed too", vm.uiState.value.assistant)
+            assertNull("CAPTIONS closes the overlay too", vm.uiState.value.assistant)
             assertEquals(PlayerState.Playing, player.state.value)
         }
 
@@ -799,7 +799,7 @@ class PlayerViewModelTest {
             player.emitPosition(10_000L)
             runCurrent()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
 
             assertNull(vm.uiState.value.assistant)
@@ -836,7 +836,7 @@ class PlayerViewModelTest {
     fun transportKeysAreIgnoredWhileTheOverlayIsOpen() =
         runTest(dispatcher) {
             val vm = playingWithSubtitles()
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
 
             listOf(
@@ -858,7 +858,7 @@ class PlayerViewModelTest {
     fun exitWithALineCapturedStopsTheAssistantAndCloses() =
         runTest(dispatcher) {
             val vm = playingWithSubtitles()
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
 
             vm.exit()
@@ -873,7 +873,7 @@ class PlayerViewModelTest {
     /** Opens the subtitled movie and captures its line, "Hello there.". */
     private suspend fun TestScope.captured(): PlayerViewModel {
         val vm = playingWithSubtitles()
-        vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        vm.press(KeyEvent.KEYCODE_DPAD_UP)
         runCurrent()
         return vm
     }
@@ -1016,7 +1016,7 @@ class PlayerViewModelTest {
         runTest(dispatcher) {
             explainGateway.documents["Hello there. Bye now."] = EXPLANATION_DOCUMENT
             val vm = playingWithTwoSubtitles()
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
 
             vm.press(KeyEvent.KEYCODE_DPAD_UP)
@@ -1047,7 +1047,7 @@ class PlayerViewModelTest {
         runTest(dispatcher) {
             explainGateway.documents["Hello there. Bye now."] = EXPLANATION_DOCUMENT
             val vm = playingWithTwoSubtitles()
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
 
             repeat(4) {
@@ -1142,7 +1142,7 @@ class PlayerViewModelTest {
             runCurrent()
 
             assertEquals(ExplanationUiState.Idle, explanations.state.value)
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
             assertEquals(
                 "a new capture starts without the old explanation",
@@ -1259,7 +1259,7 @@ class PlayerViewModelTest {
             runCurrent()
             assertTrue("the cancelled lookup never reached the bridge", translations.requests.isEmpty())
 
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
             assertEquals(AssistantOverlayState("Hello there.", replaying = false), vm.uiState.value.assistant)
         }
@@ -1364,7 +1364,7 @@ class PlayerViewModelTest {
             assertEquals(ExplanationUiState.Idle, explanations.state.value)
             assertEquals(PlayerState.Playing, player.state.value)
 
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
             assertEquals(
                 "a new capture starts clean",
@@ -1392,7 +1392,7 @@ class PlayerViewModelTest {
             )
         }
 
-    // -- LEFT / RIGHT phrase rewind (#347) ------------------------------------------------------
+    // -- LEFT / DOWN phrase rewind (#347) ------------------------------------------------------
 
     @Test
     fun leftPressesInsideTheWindowGoBackThatManyPhrasesAndDrawTheEnglishLine() =
@@ -1459,7 +1459,7 @@ class PlayerViewModelTest {
             rewindOnPlayerTrack = true
             val vm = playingWithTwoSubtitles()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
             advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
             runCurrent()
 
@@ -1474,7 +1474,7 @@ class PlayerViewModelTest {
             spanishCues = "Hola."
             val vm = playingWithTwoSubtitles()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
             runCurrent()
 
             assertNull("nothing is drawn before the window closes", vm.uiState.value.rewindText)
@@ -1490,7 +1490,7 @@ class PlayerViewModelTest {
         runTest(dispatcher) {
             val vm = playingWithTwoSubtitles()
 
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
             runCurrent()
 
             assertEquals(PlayerViewModel.NO_SPANISH, vm.uiState.value.message)
@@ -1507,7 +1507,7 @@ class PlayerViewModelTest {
     fun theRewindClosesAnOpenMenuAndTheMovieKeepsPlayingWithoutIt() =
         runTest(dispatcher) {
             val vm = playingWithTwoSubtitles()
-            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
             assertEquals(PlayerState.Paused, player.state.value)
 
@@ -1556,14 +1556,14 @@ class PlayerViewModelTest {
             assertEquals("Preparando subtítulos en inglés…", vm.uiState.value.message)
 
             advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
             runCurrent()
             assertEquals(60_000L, player.positionMs.value)
             assertEquals(PlayerViewModel.STARTING_SUBTITLES, vm.uiState.value.message)
         }
 
     @Test
-    fun withNoEnglishSubtitleFileLeftAndRightSeekAndSayWhyEveryTime() =
+    fun withNoEnglishSubtitleFileLeftAndDownSeekBackAndSayWhyEveryTime() =
         runTest(dispatcher) {
             seed(movieFile())
             val vm = openedWithoutSubtitles()
@@ -1576,18 +1576,18 @@ class PlayerViewModelTest {
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
             runCurrent()
             assertEquals(50_000L, player.positionMs.value)
-            assertEquals("Sin subtítulos en inglés: ← → saltan 10 s", vm.uiState.value.message)
+            assertEquals("Sin subtítulos en inglés: ← ↓ retroceden 10 s", vm.uiState.value.message)
 
             advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
             assertNull(vm.uiState.value.message)
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
             runCurrent()
-            assertEquals(60_000L, player.positionMs.value)
+            assertEquals(40_000L, player.positionMs.value)
             assertEquals(PlayerViewModel.NO_SUBTITLES_SEEK, vm.uiState.value.message)
         }
 
     @Test
-    fun withAnUnreadableEnglishFileLeftAndRightSeekAndSayItCouldNotBeRead() =
+    fun withAnUnreadableEnglishFileLeftAndDownSeekBackAndSayItCouldNotBeRead() =
         runTest(dispatcher) {
             val movie = movieFile()
             movie.resolveSibling("Big Movie.en.srt").writeText("not a subtitle file at all")
@@ -1602,15 +1602,15 @@ class PlayerViewModelTest {
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
             runCurrent()
             assertEquals(50_000L, player.positionMs.value)
-            assertEquals("No se pudieron leer los subtítulos en inglés: ← → saltan 10 s", vm.uiState.value.message)
-
-            advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
-            vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
-            runCurrent()
-            assertEquals(60_000L, player.positionMs.value)
+            assertEquals("No se pudieron leer los subtítulos en inglés: ← ↓ retroceden 10 s", vm.uiState.value.message)
 
             advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
             vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+            assertEquals(40_000L, player.positionMs.value)
+
+            advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
+            vm.press(KeyEvent.KEYCODE_DPAD_UP)
             runCurrent()
             assertEquals("No se pudieron leer los subtítulos en inglés", vm.uiState.value.message)
         }
@@ -1629,12 +1629,12 @@ class PlayerViewModelTest {
                 player.emitPosition(60_000L)
                 runCurrent()
 
-                vm.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+                vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
                 runCurrent()
 
                 assertTrue(
                     lines.toString(),
-                    lines.any { it.module == "app-tv" && it.message == "RIGHT: hidden mode none, seek +10s" },
+                    lines.any { it.module == "app-tv" && it.message == "DOWN: hidden mode none, seek -10s" },
                 )
             } finally {
                 AppLog.uninstall(sink)
