@@ -26,10 +26,10 @@ sealed interface AssistantAction {
      */
     data object TranslateLine : AssistantAction
 
-    /** LEFT: go back N phrases showing the English line (#347); N = presses in a 1.5 s group. */
+    /** DPAD_LEFT: go back N phrases showing the English line (#347); N = presses in a 1.5 s group. */
     data object RewindEnglish : AssistantAction
 
-    /** RIGHT: go back N phrases showing the Spanish line (#347). */
+    /** DPAD_DOWN: go back N phrases showing the Spanish line (#347, moved from RIGHT). */
     data object RewindSpanish : AssistantAction
 
     /** Close the captured-line overlay and resume the movie. */
@@ -42,13 +42,18 @@ sealed interface AssistantAction {
 /**
  * Pure mapping from a remote key code to an [AssistantAction] (#86).
  *
- * With the overlay closed only the capture keys (DPAD_DOWN, CAPTIONS) are taken; every other key is
- * null so the transport mapping of [RemoteKeyMapper] keeps handling it. With the overlay open every
- * key is taken: OK/ENTER/PLAY_PAUSE replay, DPAD_LEFT/DPAD_RIGHT rewind N phrases showing English /
- * Spanish (#347; also with the overlay closed, where the view model seeks 10 s when there are no English subtitles, #374),
- * DPAD_UP explains (#347; closed, UP still opens the tracks panel), BACK/DPAD_DOWN/CAPTIONS dismiss, and the rest is [AssistantAction.Consumed], so no transport action can run behind the overlay. The exception is
- * the volume keys (VOLUME_UP/DOWN/MUTE, #178): they are null in both modes so the system still
- * changes the TV volume while the overlay is open.
+ * Menu closed: DPAD_LEFT rewinds N phrases showing English, DPAD_DOWN the same showing Spanish
+ * (#347; the view model seeks 10 s when there are no English subtitles, #374), DPAD_UP and CAPTIONS
+ * open the captured-line menu; every other key is null so [RemoteKeyMapper] keeps handling it. In
+ * particular DPAD_RIGHT is null: it stays the player's native forward seek (and its native
+ * hold-to-seek), because it is the intuitive key for "forward"; the Spanish rewind therefore lives
+ * on DOWN and the menu moved to UP. The tracks panel that UP used to open is on MENU.
+ *
+ * Menu open: OK/ENTER/PLAY_PAUSE replay, DPAD_LEFT / DPAD_DOWN rewind English / Spanish (DOWN no
+ * longer dismisses), DPAD_UP explains, BACK/CAPTIONS dismiss, and the rest -- DPAD_RIGHT included, so
+ * no seek runs behind the overlay -- is [AssistantAction.Consumed]. The exception is the volume
+ * keys (VOLUME_UP/DOWN/MUTE, #178): they are null in both modes so the system still changes the TV
+ * volume while the menu is open.
  */
 object AssistantKeyMapper {
     fun map(
@@ -64,12 +69,11 @@ object AssistantKeyMapper {
 
                 KeyEvent.KEYCODE_DPAD_LEFT -> AssistantAction.RewindEnglish
 
-                KeyEvent.KEYCODE_DPAD_RIGHT -> AssistantAction.RewindSpanish
+                KeyEvent.KEYCODE_DPAD_DOWN -> AssistantAction.RewindSpanish
 
                 KeyEvent.KEYCODE_DPAD_UP -> AssistantAction.ExplainLine
 
                 KeyEvent.KEYCODE_BACK,
-                KeyEvent.KEYCODE_DPAD_DOWN,
                 KeyEvent.KEYCODE_CAPTIONS,
                 -> AssistantAction.DismissOverlay
 
@@ -82,7 +86,7 @@ object AssistantKeyMapper {
             }
         } else {
             when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_UP,
                 KeyEvent.KEYCODE_CAPTIONS,
                 -> AssistantAction.CaptureLine
 
@@ -90,7 +94,7 @@ object AssistantKeyMapper {
                 // itself seeks 10 s and says why, or ignores the key while they are starting.
                 KeyEvent.KEYCODE_DPAD_LEFT -> AssistantAction.RewindEnglish
 
-                KeyEvent.KEYCODE_DPAD_RIGHT -> AssistantAction.RewindSpanish
+                KeyEvent.KEYCODE_DPAD_DOWN -> AssistantAction.RewindSpanish
 
                 else -> null
             }

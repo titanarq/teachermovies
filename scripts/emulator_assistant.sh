@@ -280,11 +280,11 @@ if ! emu_dry; then
     emu_note "phrase rewind, first line: $(grep -m1 -o 'phrase rewind:.*' "$OUT/logcat-after-left-app.txt" 2>/dev/null || echo none)"
 fi
 
-# --- 11. RIGHT, DOWN, BACK: the rest of the remote, observed and not asserted (#375) -----------
-key DPAD_RIGHT 3 # the Spanish rewind; without a Spanish timeline it says so on screen
+# --- 11. DOWN, UP, BACK: the rest of the remote, observed and not asserted (#375) -----------
+key DPAD_DOWN 3 # the Spanish rewind (RIGHT is the native seek); without a Spanish timeline it says so on screen
 shot 05-after-right
 emu_ui_text "$OUT/ui-after-right.txt"
-key DPAD_DOWN 3 # capture the line: the assistant overlay opens
+key DPAD_UP 3 # capture the line: the assistant overlay opens
 shot 06-after-down
 emu_ui_text "$OUT/ui-after-down.txt"
 key BACK 2 # dismiss the overlay

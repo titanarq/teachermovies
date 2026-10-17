@@ -20,7 +20,6 @@ class RemoteKeyMapperTest {
                 KeyEvent.KEYCODE_DPAD_RIGHT to PlayerAction.SeekBy(10_000L),
                 KeyEvent.KEYCODE_MEDIA_REWIND to PlayerAction.SeekBy(-30_000L),
                 KeyEvent.KEYCODE_MEDIA_FAST_FORWARD to PlayerAction.SeekBy(30_000L),
-                KeyEvent.KEYCODE_DPAD_UP to PlayerAction.ShowTracks,
                 KeyEvent.KEYCODE_MENU to PlayerAction.ShowTracks,
                 KeyEvent.KEYCODE_BACK to PlayerAction.Exit,
             )
@@ -34,6 +33,7 @@ class RemoteKeyMapperTest {
     fun otherKeysMapToNull() {
         listOf(
             KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_UP,
             KeyEvent.KEYCODE_VOLUME_UP,
             KeyEvent.KEYCODE_VOLUME_DOWN,
             KeyEvent.KEYCODE_HOME,

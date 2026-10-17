@@ -126,8 +126,8 @@ fun hintLine(linesBack: Int): String = if (linesBack <= 0) ASSISTANT_HINT else "
  * ([explanationLines], #293) and a discreet indicator while [AssistantOverlayState.speaking].
  *
  * It takes focus as soon as it appears and maps every key-down through
- * [AssistantKeyMapper.map] with the overlay open, so OK/ENTER/PLAY_PAUSE replay, LEFT/RIGHT rewind
- * (#347), UP explains, BACK/DOWN/CAPTIONS dismiss, and every other key is swallowed ([AssistantAction.Consumed]) -- key-ups included -- so
+ * [AssistantKeyMapper.map] with the overlay open, so OK/ENTER/PLAY_PAUSE replay, LEFT/DOWN rewind
+ * (#347), UP explains, BACK/CAPTIONS dismiss, and every other key is swallowed ([AssistantAction.Consumed]) -- key-ups included -- so
  * nothing behind it reacts. When it leaves composition the player screen takes focus back.
  */
 @Composable

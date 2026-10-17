@@ -311,6 +311,8 @@
   active one. Nothing else in the overlay changes, and `Repitiendo…` still shows while it plays.
 
 ## Asistente: modelo de teclas 2026-09-29 (ADR-0005 amendment; supersedes #86/#92/#288/#293/#339 keys)
+**Superseded in part by "Asistente: RIGHT vuelve al avance nativo" at the end of this file:
+the menu is on UP, the Spanish rewind on DOWN and RIGHT is the native seek again.**
 Delivered in two stages (#347), both **actual**: LEFT/RIGHT rewind, subtitle line and menu hint (stage 1,
 "Actual (stage 1)" below) and UP explaining with the auto-fit panel (stage 2, "Actual (stage 2)"). The older
 sections above (#293 "DERECHA = Explicar", #288 LEFT = Spanish) are superseded by this one.
@@ -358,17 +360,17 @@ sections above (#293 "DERECHA = Explicar", #288 LEFT = Spanish) are superseded b
   `Preparando subtítulos en inglés…` (`STARTING_SUBTITLES`); `NoSubtitles` -> the 10 s seek (-/+) and
   `Sin subtítulos en inglés: ← → saltan 10 s` (`NO_SUBTITLES_SEEK`) on every press; `Unreadable` ->
   the same seek and `No se pudieron leer los subtítulos en inglés: ← → saltan 10 s`
-  (`UNREADABLE_SEEK`). DOWN says, by state, `Preparando…`,
+  (`UNREADABLE_SEEK`). UP (the menu key) says, by state, `Preparando…`,
   `Esta película no tiene subtítulos en inglés` (`NO_SUBTITLES`, `NoSubtitles` only) or
   `No se pudieron leer los subtítulos en inglés` (`UNREADABLE_SUBTITLES`). The rewind's English
   `unavailable` only fires while `Available` (the subtitles were found, the player would not take the
   temporary track) and says `No se pudo mostrar el subtítulo en inglés` (`TRACK_NOT_SHOWN`); the
   rewind still runs, so the message does not promise a seek. Each press that
-  does not reach the rewind logs one `app-tv` line, e.g. `RIGHT: hidden mode none, seek +10s` or
+  does not reach the rewind logs one `app-tv` line, e.g. `DOWN: hidden mode none, seek +10s` or
   `LEFT: hidden mode starting, ignored`. `dispatchKey` always asks `AssistantKeyMapper` first.
 - `MovieSpanishText` (a `SpanishTextSource`) is what `AppContainer.phraseRewindController` is built
   over once; `open` loads its `SpanishCueTimeline` (#344) after hidden mode starts and `exit`
-  clears it. Without a timeline RIGHT draws nothing and shows `Sin subtítulos en español` for 3 s
+  clears it. Without a timeline DOWN (the Spanish rewind) draws nothing and shows `Sin subtítulos en español` for 3 s
   (`NO_SPANISH`); LEFT is unaffected.
 - Rewind subtitle on the player (#358): `AppContainer.phraseRewindController` is built with a `RewindSubtitleSession`, so LEFT/RIGHT select the English/Spanish subtitle as a temporary libVLC track and hot-restore the previous selection (a viewer track, or none) when playback reaches the end of the phrase in progress at the first press; `rewindText` is therefore null while that track shows (it only draws when there is no session). `MovieSpanishText` also implements `SpanishCueSource` (the loaded timeline's cues on the playback timeline). `PlayerViewModel` attaches the playback session as save guard, calls `rewind.setMovie(file)` after hidden mode starts, `rewind.onUserSeek()` on `PlayerAction.SeekBy` (restores at once), `rewind.cancel()`/`setMovie(null)` in `stopAssistant` -- before `session.close()` -- and shows `NO_SPANISH`/`TRACK_NOT_SHOWN` when the controller's `unavailable` fires. Manual TV check: LEFT x2 then RIGHT x1 while playing, with subtitles off and with a viewer-chosen track; the temporary subtitle shows during the replay and nothing shows and the movie does not pause while pressing, and the previous state returns at the end of the phrase heard when pressing.
 - The menu (DOWN) is unchanged (pauses, shows the captured English line); its hint is
@@ -540,3 +542,20 @@ sections above (#293 "DERECHA = Explicar", #288 LEFT = Spanish) are superseded b
 
 ## Tests
 ViewModel unit tests with fakes (`FakeTorrentEngine`, in-memory repositories). Compose UI tests are instrumented and optional.
+
+## Asistente: RIGHT vuelve al avance nativo (owner request 2026-10-17; supersedes the keys of the 2026-09-29 model)
+Why: tested on the real TV, RIGHT is the intuitive "forward" key and the player's native forward seek
+(`RemoteKeyMapper` `SeekBy(+SHORT_SEEK_MS)` and its hold-to-seek) must not be taken by the assistant.
+The Spanish rewind therefore moved to DOWN, the menu DOWN used to open moved to UP, and the tracks panel
+UP used to open stays reachable on MENU. Alternatives discarded: keeping RIGHT as the Spanish rewind
+(owner rejected it), or giving the menu a colour/number key (not on every remote).
+- Menu closed: DPAD_LEFT -> `RewindEnglish`; DPAD_DOWN -> `RewindSpanish` (same 1.5 s N-presses group
+  and same #374 failure handling as RIGHT had, the log line says `DOWN:`); DPAD_UP and CAPTIONS ->
+  `CaptureLine` (open the menu); DPAD_RIGHT -> null, so `RemoteKeyMapper` seeks +10 s; MENU ->
+  `ShowTracks`. `RemoteKeyMapper` no longer maps DPAD_UP (the assistant takes it first, the entry was dead).
+- Menu open: LEFT -> `RewindEnglish`, DOWN -> `RewindSpanish` (it no longer dismisses), UP ->
+  `ExplainLine`, OK/ENTER/PLAY_PAUSE -> replay, BACK/CAPTIONS -> dismiss, RIGHT -> `Consumed` (no seek
+  behind the overlay), volume keys null.
+- Known wrinkle: without usable English subtitles the #374 fallback of DOWN (Spanish) is still the told
+  +10 s seek, as RIGHT's was; the message `← → saltan 10 s` stays true because RIGHT now seeks natively.
+- The menu hint (`ARRIBA Explicar · ATRÁS Cerrar`) is unchanged; the on-screen texts name no other key.

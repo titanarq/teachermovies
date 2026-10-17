@@ -466,7 +466,7 @@ class PlayerViewModel(
      * nothing and says [NO_SPANISH] for [MESSAGE_TIMEOUT_MS]. Transport actions are not blocked.
      */
     private fun rewindPhrases(language: SubtitleDisplay) {
-        val key = if (language == SubtitleDisplay.SPANISH) "RIGHT" else "LEFT"
+        val key = if (language == SubtitleDisplay.SPANISH) "DOWN" else "LEFT"
         val state = local.value.assistantState
         val controller = rewind
         if (state != AssistantState.Available || controller == null) {
