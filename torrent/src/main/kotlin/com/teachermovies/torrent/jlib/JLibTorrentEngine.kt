@@ -43,6 +43,7 @@ import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.api.TorrentFileInfo
 import com.teachermovies.torrent.api.TorrentSnapshot
 import com.teachermovies.torrent.policy.RawPhase
+import com.teachermovies.torrent.policy.SeedingPolicy
 import com.teachermovies.torrent.resume.FileResumeDataStore
 import com.teachermovies.torrent.resume.ResumeDataStore
 import kotlinx.coroutines.CoroutineDispatcher
@@ -363,9 +364,14 @@ class JLibTorrentEngine(
      */
     override suspend fun resume(id: TorrentId): EngineResult<Unit> =
         onHandle(id) { handle ->
-            handle.unsetFlags(TorrentFlags.AUTO_MANAGED)
-            handle.resume()
-            requestResumeData(handle)
+            // A finished torrent is never un-paused: the app does not seed (SeedingPolicy).
+            if (SeedingPolicy.shouldStopSeeding(isFinished = handle.status().isFinished(), paused = false)) {
+                stopSeeding(handle)
+            } else {
+                handle.unsetFlags(TorrentFlags.AUTO_MANAGED)
+                handle.resume()
+                requestResumeData(handle)
+            }
             refreshAndPublish(id)
             EngineResult.Ok(Unit)
         }
@@ -630,7 +636,10 @@ class JLibTorrentEngine(
 
             is SessionEvent.Finished -> {
                 // Persist completion now, not at the next periodic save (#246).
-                ResumeSaveTriggers.torrentToSave(event, snapshots.keys)?.let(::handleOf)?.let(::requestResumeDataSafely)
+                ResumeSaveTriggers.torrentToSave(event, snapshots.keys)?.let(::handleOf)?.let { handle ->
+                    stopSeedingSafely(handle)
+                    requestResumeDataSafely(handle)
+                }
             }
         }
     }
@@ -730,6 +739,44 @@ class JLibTorrentEngine(
         for (id in snapshots.keys.toList()) handleOf(id)?.let(::requestResumeData)
     }
 
+    /**
+     * Pauses a finished torrent so it drops its peers and tells the tracker `stopped`: the app never
+     * seeds ([SeedingPolicy]). Covers torrents restored as finished and a user `resume()`.
+     */
+    private fun enforceNoSeeding(id: TorrentId) {
+        val handle = handleOf(id) ?: return
+        try {
+            val torrentStatus = handle.status()
+            val paused = torrentStatus.flags().and_(TorrentFlags.PAUSED).nonZero()
+            if (SeedingPolicy.shouldStopSeeding(torrentStatus.isFinished(), paused)) stopSeeding(handle)
+        } catch (e: RuntimeException) {
+            resumeFailures += e.message ?: e.javaClass.name
+        }
+    }
+
+    private fun stopSeeding(handle: TorrentHandle) {
+        handle.unsetFlags(TorrentFlags.AUTO_MANAGED)
+        handle.pause()
+        requestResumeData(handle)
+    }
+
+    /** [stopSeeding] for an event handler: a native failure is recorded, not thrown. */
+    private fun stopSeedingSafely(handle: TorrentHandle) {
+        try {
+            if (!handle
+                    .status()
+                    .flags()
+                    .and_(TorrentFlags.PAUSED)
+                    .nonZero()
+            ) {
+                handle.unsetFlags(TorrentFlags.AUTO_MANAGED)
+                handle.pause()
+            }
+        } catch (e: RuntimeException) {
+            resumeFailures += e.message ?: e.javaClass.name
+        }
+    }
+
     /** Asks libtorrent for [handle]'s resume data (with the info dict); the answer is an alert. */
     private fun requestResumeData(handle: TorrentHandle) {
         handle.saveResumeData(TorrentHandle.SAVE_INFO_DICT)
@@ -779,7 +826,10 @@ class JLibTorrentEngine(
     private suspend fun tick() {
         while (currentCoroutineContext().isActive) {
             delay(TICK_MILLIS)
-            for (id in snapshots.keys.toList()) refresh(id)
+            for (id in snapshots.keys.toList()) {
+                enforceNoSeeding(id)
+                refresh(id)
+            }
             publish()
         }
     }
