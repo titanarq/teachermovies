@@ -1563,7 +1563,7 @@ class PlayerViewModelTest {
         }
 
     @Test
-    fun withNoEnglishSubtitleFileLeftAndRightSeekAndSayWhyEveryTime() =
+    fun withNoEnglishSubtitleFileLeftAndDownSeekBackAndSayWhyEveryTime() =
         runTest(dispatcher) {
             seed(movieFile())
             val vm = openedWithoutSubtitles()
@@ -1576,18 +1576,18 @@ class PlayerViewModelTest {
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
             runCurrent()
             assertEquals(50_000L, player.positionMs.value)
-            assertEquals("Sin subtítulos en inglés: ← → saltan 10 s", vm.uiState.value.message)
+            assertEquals("Sin subtítulos en inglés: ← ↓ retroceden 10 s", vm.uiState.value.message)
 
             advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
             assertNull(vm.uiState.value.message)
             vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
             runCurrent()
-            assertEquals(60_000L, player.positionMs.value)
+            assertEquals(40_000L, player.positionMs.value)
             assertEquals(PlayerViewModel.NO_SUBTITLES_SEEK, vm.uiState.value.message)
         }
 
     @Test
-    fun withAnUnreadableEnglishFileLeftAndRightSeekAndSayItCouldNotBeRead() =
+    fun withAnUnreadableEnglishFileLeftAndDownSeekBackAndSayItCouldNotBeRead() =
         runTest(dispatcher) {
             val movie = movieFile()
             movie.resolveSibling("Big Movie.en.srt").writeText("not a subtitle file at all")
@@ -1602,12 +1602,12 @@ class PlayerViewModelTest {
             vm.press(KeyEvent.KEYCODE_DPAD_LEFT)
             runCurrent()
             assertEquals(50_000L, player.positionMs.value)
-            assertEquals("No se pudieron leer los subtítulos en inglés: ← → saltan 10 s", vm.uiState.value.message)
+            assertEquals("No se pudieron leer los subtítulos en inglés: ← ↓ retroceden 10 s", vm.uiState.value.message)
 
             advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
             vm.press(KeyEvent.KEYCODE_DPAD_DOWN)
             runCurrent()
-            assertEquals(60_000L, player.positionMs.value)
+            assertEquals(40_000L, player.positionMs.value)
 
             advanceTimeBy(PlayerViewModel.MESSAGE_TIMEOUT_MS + 1)
             vm.press(KeyEvent.KEYCODE_DPAD_UP)
@@ -1634,7 +1634,7 @@ class PlayerViewModelTest {
 
                 assertTrue(
                     lines.toString(),
-                    lines.any { it.module == "app-tv" && it.message == "DOWN: hidden mode none, seek +10s" },
+                    lines.any { it.module == "app-tv" && it.message == "DOWN: hidden mode none, seek -10s" },
                 )
             } finally {
                 AppLog.uninstall(sink)

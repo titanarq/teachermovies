@@ -358,15 +358,15 @@ sections above (#293 "DERECHA = Explicar", #288 LEFT = Spanish) are superseded b
   (`Unreadable(reason)`, logged); `assistantAvailable` is derived (`== Available`). LEFT/RIGHT never
   move the position silently: `Available` -> phrase rewind as above; `Starting` -> no seek, message
   `Preparando subtítulos en inglés…` (`STARTING_SUBTITLES`); `NoSubtitles` -> the 10 s seek (-/+) and
-  `Sin subtítulos en inglés: ← → saltan 10 s` (`NO_SUBTITLES_SEEK`) on every press; `Unreadable` ->
-  the same seek and `No se pudieron leer los subtítulos en inglés: ← → saltan 10 s`
+  `Sin subtítulos en inglés: ← ↓ retroceden 10 s` (`NO_SUBTITLES_SEEK`) on every press; `Unreadable` ->
+  the same seek and `No se pudieron leer los subtítulos en inglés: ← ↓ retroceden 10 s`
   (`UNREADABLE_SEEK`). UP (the menu key) says, by state, `Preparando…`,
   `Esta película no tiene subtítulos en inglés` (`NO_SUBTITLES`, `NoSubtitles` only) or
   `No se pudieron leer los subtítulos en inglés` (`UNREADABLE_SUBTITLES`). The rewind's English
   `unavailable` only fires while `Available` (the subtitles were found, the player would not take the
   temporary track) and says `No se pudo mostrar el subtítulo en inglés` (`TRACK_NOT_SHOWN`); the
   rewind still runs, so the message does not promise a seek. Each press that
-  does not reach the rewind logs one `app-tv` line, e.g. `DOWN: hidden mode none, seek +10s` or
+  does not reach the rewind logs one `app-tv` line, e.g. `DOWN: hidden mode none, seek -10s` or
   `LEFT: hidden mode starting, ignored`. `dispatchKey` always asks `AssistantKeyMapper` first.
 - `MovieSpanishText` (a `SpanishTextSource`) is what `AppContainer.phraseRewindController` is built
   over once; `open` loads its `SpanishCueTimeline` (#344) after hidden mode starts and `exit`
@@ -556,6 +556,7 @@ UP used to open stays reachable on MENU. Alternatives discarded: keeping RIGHT a
 - Menu open: LEFT -> `RewindEnglish`, DOWN -> `RewindSpanish` (it no longer dismisses), UP ->
   `ExplainLine`, OK/ENTER/PLAY_PAUSE -> replay, BACK/CAPTIONS -> dismiss, RIGHT -> `Consumed` (no seek
   behind the overlay), volume keys null.
-- Known wrinkle: without usable English subtitles the #374 fallback of DOWN (Spanish) is still the told
-  +10 s seek, as RIGHT's was; the message `← → saltan 10 s` stays true because RIGHT now seeks natively.
+- Without usable English subtitles (#374) both rewind keys, LEFT and DOWN, do the told 10 s seek
+  BACKWARD (a rewind key never moves forward; RIGHT's forward seek is the native one), with the
+  visible reason `... ← ↓ retroceden 10 s`; the log line is `DOWN: hidden mode none, seek -10s`.
 - The menu hint (`ARRIBA Explicar · ATRÁS Cerrar`) is unchanged; the on-screen texts name no other key.

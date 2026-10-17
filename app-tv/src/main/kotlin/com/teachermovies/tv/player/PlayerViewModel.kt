@@ -476,7 +476,8 @@ class PlayerViewModel(
                 AppLog.i(LOG_MODULE, "$key: hidden mode starting, ignored")
                 showMessage(message)
             } else {
-                val delta = RemoteKeyMapper.SHORT_SEEK_MS * if (language == SubtitleDisplay.SPANISH) 1 else -1
+                // Both rewind keys (LEFT, DOWN) seek backward: DOWN is a rewind key since RIGHT went native.
+                val delta = -RemoteKeyMapper.SHORT_SEEK_MS
                 AppLog.i(LOG_MODULE, "$key: hidden mode ${state.logName()}, seek ${if (delta > 0) "+" else "-"}10s")
                 onAction(PlayerAction.SeekBy(delta))
                 showMessage(message)
@@ -831,9 +832,9 @@ class PlayerViewModel(
         const val EXPLAIN_GROUP_WINDOW_MS = 1_500L
 
         const val NO_SUBTITLES = "Esta película no tiene subtítulos en inglés"
-        const val NO_SUBTITLES_SEEK = "Sin subtítulos en inglés: ← → saltan 10 s"
+        const val NO_SUBTITLES_SEEK = "Sin subtítulos en inglés: ← ↓ retroceden 10 s"
         const val UNREADABLE_SUBTITLES = "No se pudieron leer los subtítulos en inglés"
-        const val UNREADABLE_SEEK = "No se pudieron leer los subtítulos en inglés: ← → saltan 10 s"
+        const val UNREADABLE_SEEK = "No se pudieron leer los subtítulos en inglés: ← ↓ retroceden 10 s"
         const val TRACK_NOT_SHOWN = "No se pudo mostrar el subtítulo en inglés"
         const val STARTING_SUBTITLES = "Preparando subtítulos en inglés…"
         const val LOG_MODULE = "app-tv"
