@@ -57,6 +57,7 @@ import com.teachermovies.torrent.api.TorrentEngine
 import com.teachermovies.torrent.jlib.JLibTorrentEngine
 import com.teachermovies.torrent.service.TorrentEngineHolder
 import com.teachermovies.torrent.sync.EngineRepositorySync
+import com.teachermovies.tv.BuildConfig
 import com.teachermovies.tv.autostart.BootAutostartCoordinator
 import com.teachermovies.tv.autostart.ServiceAutostart
 import com.teachermovies.tv.discovery.ServerAnnouncementCoordinator
@@ -348,6 +349,7 @@ class AppContainer(
             library = torrentRepository,
             bridge = bridgeJobHub,
             subtitleFetches = subtitleFetchRepository,
+            pairingRequired = BuildConfig.PIN_PAIRING_REQUIRED,
         )
 
     /**

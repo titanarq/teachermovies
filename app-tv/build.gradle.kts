@@ -18,6 +18,12 @@ android {
         versionCode = 1
         versionName = "1.0.0"
 
+        // PIN pairing switch (testing phase): `false` makes the embedded server skip token checks
+        // (any LAN device has full access). Re-enable with `-PpinPairingRequired=true`
+        // (docs/modules/http-server.md).
+        val pinPairingRequired = (project.findProperty("pinPairingRequired") as String?) ?: "false"
+        buildConfigField("boolean", "PIN_PAIRING_REQUIRED", pinPairingRequired.toBoolean().toString())
+
         // Native ABIs packaged for jlibtorrent/libVLC (docs/modules/infra.md); x86 is left out.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -31,6 +37,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     // Robolectric (Compose UI focus tests, #289) needs the merged Android resources and manifest.

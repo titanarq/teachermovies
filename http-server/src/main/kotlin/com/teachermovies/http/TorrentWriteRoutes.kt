@@ -47,7 +47,7 @@ data class AddTorrentResponse(
  * through [toHttp]; request-shape errors are 400 `bad_request`.
  */
 internal fun Route.torrentWriteRoutes(deps: ServerDeps) {
-    requireBearer(deps.pairing, setOf(TokenScope.PHONE)) {
+    requireBearer(deps.pairing, setOf(TokenScope.PHONE), pairingRequired = deps.pairingRequired) {
         post("/api/torrents/magnet") {
             val request = call.receiveOrNull<AddMagnetRequest>()
             if (request == null) {

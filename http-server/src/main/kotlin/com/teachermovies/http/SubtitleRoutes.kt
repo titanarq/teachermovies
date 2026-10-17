@@ -41,7 +41,7 @@ data class SubtitleUploadResponse(
  * [ServerDeps.subtitles] so the player can later load it (#77).
  */
 internal fun Route.subtitleRoutes(deps: ServerDeps) {
-    requireBearer(deps.pairing, setOf(TokenScope.PHONE)) {
+    requireBearer(deps.pairing, setOf(TokenScope.PHONE), pairingRequired = deps.pairingRequired) {
         post("/api/subtitles") {
             when (val upload = call.receiveSubtitleUpload()) {
                 SubtitleUpload.Missing -> {

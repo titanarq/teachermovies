@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.first
  * (ADR-0002).
  */
 internal fun Route.libraryRoutes(deps: ServerDeps) {
-    requireBearer(deps.pairing, setOf(TokenScope.PHONE)) {
+    requireBearer(deps.pairing, setOf(TokenScope.PHONE), pairingRequired = deps.pairingRequired) {
         get("/api/library") {
             call.respond(
                 deps.library

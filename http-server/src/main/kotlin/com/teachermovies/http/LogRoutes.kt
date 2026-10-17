@@ -53,7 +53,7 @@ private data class LogsQuery(
 internal fun Route.logRoutes(deps: ServerDeps) {
     // Both token scopes reach the logs (ADR-0005 §4): the phone web UI (#273) and the laptop
     // bridge's mirror (#272).
-    requireBearer(deps.pairing, setOf(TokenScope.PHONE, TokenScope.BRIDGE)) {
+    requireBearer(deps.pairing, setOf(TokenScope.PHONE, TokenScope.BRIDGE), pairingRequired = deps.pairingRequired) {
         get("/api/logs") {
             val query = call.logsQuery(withLimit = true) ?: return@get
             val entries = deps.logs.entries(since = query.since, minLevel = query.minLevel, limit = query.limit)

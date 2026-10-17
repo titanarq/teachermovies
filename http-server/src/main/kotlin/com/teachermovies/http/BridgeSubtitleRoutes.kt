@@ -56,7 +56,7 @@ private val UPLOAD_FIELDS: String =
  * and computing its moviehash (#279), stays with whoever writes those rows.
  */
 internal fun Route.bridgeSubtitleRoutes(deps: ServerDeps) {
-    requireBearer(deps.pairing, setOf(TokenScope.BRIDGE)) {
+    requireBearer(deps.pairing, setOf(TokenScope.BRIDGE), pairingRequired = deps.pairingRequired) {
         get("/api/bridge/subtitle-needs") {
             call.respond(deps.subtitleNeeds())
         }

@@ -17,7 +17,7 @@ import io.ktor.server.routing.get
  * three require a bearer token (ADR-0002); mutating routes (`POST`/`PUT`/`DELETE`) are #60.
  */
 internal fun Route.torrentReadRoutes(deps: ServerDeps) {
-    requireBearer(deps.pairing, setOf(TokenScope.PHONE)) {
+    requireBearer(deps.pairing, setOf(TokenScope.PHONE), pairingRequired = deps.pairingRequired) {
         get("/api/torrents") {
             call.respond(
                 deps.engine.torrents.value

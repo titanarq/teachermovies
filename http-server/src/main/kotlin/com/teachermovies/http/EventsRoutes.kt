@@ -47,7 +47,12 @@ private val eventsJson = Json { explicitNulls = true }
  * failure).
  */
 internal fun Route.eventsRoutes(deps: ServerDeps) {
-    requireBearer(deps.pairing, setOf(TokenScope.PHONE), allowQueryToken = true) {
+    requireBearer(
+        deps.pairing,
+        setOf(TokenScope.PHONE),
+        allowQueryToken = true,
+        pairingRequired = deps.pairingRequired,
+    ) {
         get("/api/events") {
             call.response.header(HttpHeaders.CacheControl, "no-cache")
             call.respondTextWriter(ContentType.Text.EventStream) {
