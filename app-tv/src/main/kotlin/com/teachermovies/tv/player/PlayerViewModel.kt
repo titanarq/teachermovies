@@ -455,8 +455,16 @@ class PlayerViewModel(
             }
         }
 
+    private var lastLoggedKey = -1
+    private var lastLoggedAction: AssistantAction? = null
+
     private fun dispatchKey(keyCode: Int): Boolean {
         val assistant = AssistantKeyMapper.map(keyCode, overlayOpen = false, mode = _playerMode.value)
+        if (keyCode != lastLoggedKey || assistant != lastLoggedAction) {
+            lastLoggedKey = keyCode
+            lastLoggedAction = assistant
+            AppLog.i(LOG_MODULE, "key $keyCode mode=${_playerMode.value} -> ${assistant ?: "transport"}")
+        }
         if (assistant != null) {
             onAssistantAction(assistant)
             return true
@@ -476,6 +484,7 @@ class PlayerViewModel(
         val next = _playerMode.value.toggled()
         _playerMode.value = next
         showOverlay()
+        AppLog.i(LOG_MODULE, "mode toggled -> $next")
         showMessage(if (next == PlayerMode.TEACHER) MODE_TEACHER else MODE_NORMAL)
         if (settings != null) {
             viewModelScope.launch { settings.setPlayerMode(next) }
@@ -559,6 +568,7 @@ class PlayerViewModel(
         val key = if (language == SubtitleDisplay.SPANISH) "DOWN" else "LEFT"
         val state = local.value.assistantState
         val controller = rewind
+        AppLog.i(LOG_MODULE, "$key rewind requested: hidden=${state.logName()} active=${hidden.active.value}")
         if (state != AssistantState.Available || controller == null) {
             // Never a silent seek: the viewer is told why the phrase rewind is not there (#374).
             val message = englishUnavailableMessage(withSeek = true)

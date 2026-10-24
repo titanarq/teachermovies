@@ -572,8 +572,10 @@ UP used to open stays reachable on MENU. Alternatives discarded: keeping RIGHT a
 unknown name reads as `TEACHER`; `SettingsRepository.setPlayerMode`).
 - `TEACHER`: unchanged (LEFT/DOWN rewind English/Spanish, UP opens the menu, RIGHT seeks +10 s).
 - `NORMAL`: a plain player. `AssistantKeyMapper.map(keyCode, overlayOpen, mode)` returns null for every
-  key with the menu closed, so `RemoteKeyMapper` applies: LEFT/RIGHT seek -/+10 s (native), UP/DOWN do
-  nothing, CAPTIONS does nothing. MENU = tracks panel and BACK = exit in both modes. The overlay-open
+  key with the menu closed, so `RemoteKeyMapper` applies: LEFT/RIGHT seek -/+10 s (native), UP opens the
+  tracks panel (`ShowTracks`, the owner's remote has no MENU key; `RemoteKeyMapper` maps UP, which only
+  reaches it in NORMAL because TEACHER's assistant takes UP first), DOWN does nothing, CAPTIONS does
+  nothing. MENU = tracks panel and BACK = exit in both modes. The overlay-open
   mapping ignores the mode. The hidden-subtitle engine keeps running (cheap, and the mode can flip back).
 - Toggle: **holding DPAD_DOWN for 600 ms** (`ModeToggleDetector.HOLD_MS`) toggles the mode, in either mode,
   exactly once per hold (repeats do nothing; the release after a hold does nothing). Detected from the
@@ -585,8 +587,8 @@ unknown name reads as `TEACHER`; `SettingsRepository.setPlayerMode`).
   key-down a tap cannot yet be told from the start of a hold. The burst counting of #347 stays correct: each
   tap adds one press to the 1.5 s group when it is released, so N quick taps still mean N phrases (the group
   window now starts at the first release, up to one tap-length later than before). UP is a plain key again,
-  acting on key-down: `TEACHER` opens the captured-line menu at once, `NORMAL` returns null (not handled by
-  us, so the system/player keeps UP, the owner's subtitle-change key). The toggle is only available with the
+  acting on key-down: `TEACHER` opens the captured-line menu at once, `NORMAL` is the plain-player UP: it opens the tracks panel,
+  the owner's subtitle-change key. The toggle is only available with the
   menu closed (DOWN with the menu open still rewinds Spanish; the overlay handles its own keys).
 - Feedback: `PlayerViewModel.MODE_TEACHER = "Modo Teacher Movies"` / `MODE_NORMAL = "Modo normal"`, shown
   through `showMessage` (the transport overlay message of #374, `MESSAGE_TIMEOUT_MS`). The mode is held in

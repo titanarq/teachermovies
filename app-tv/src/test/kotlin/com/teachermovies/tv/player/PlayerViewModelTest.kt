@@ -756,10 +756,11 @@ class PlayerViewModelTest {
             runCurrent()
             assertEquals(PlayerMode.NORMAL, vm.playerMode.value)
 
-            assertFalse("UP is not ours in normal mode", vm.onKeyDown(KeyEvent.KEYCODE_DPAD_UP, 0, keyTimeMs))
-            assertFalse(vm.onKeyUp(KeyEvent.KEYCODE_DPAD_UP))
+            assertTrue("UP is the plain player's in normal mode", vm.onKeyDown(KeyEvent.KEYCODE_DPAD_UP, 0, keyTimeMs))
             runCurrent()
             assertNull(vm.uiState.value.assistant)
+            assertTrue("UP opens the tracks panel", vm.uiState.value.tracksPanel != null)
+            vm.closeTracks()
             assertEquals(PlayerState.Playing, player.state.value)
             vm.holdUp(1_500L)
             assertEquals("holding UP does not toggle", PlayerMode.NORMAL, vm.playerMode.value)
@@ -797,7 +798,10 @@ class PlayerViewModelTest {
             vm.tap(KeyEvent.KEYCODE_DPAD_LEFT)
             runCurrent()
             assertEquals(21_000L, player.positionMs.value)
-            assertFalse(vm.tap(KeyEvent.KEYCODE_DPAD_UP))
+            vm.tap(KeyEvent.KEYCODE_DPAD_UP)
+            runCurrent()
+            assertTrue("UP opens the tracks panel", vm.uiState.value.tracksPanel != null)
+            vm.closeTracks()
             vm.tap(KeyEvent.KEYCODE_DPAD_DOWN)
             runCurrent()
             assertNull(vm.uiState.value.assistant)
@@ -843,8 +847,65 @@ class PlayerViewModelTest {
             vm.holdDown(1_500L)
             runCurrent()
             assertEquals(PlayerMode.NORMAL, vm.playerMode.value)
-            assertFalse(vm.tap(KeyEvent.KEYCODE_DPAD_UP))
+            vm.tap(KeyEvent.KEYCODE_DPAD_UP)
+            runCurrent()
             assertNull(vm.uiState.value.assistant)
+            assertTrue(vm.uiState.value.tracksPanel != null)
+        }
+
+    private suspend fun TestScope.teacherKeysAfterPickingSubtitleInNormal(pick: String?) {
+        seed(movieWithTwoEnglishSubtitles())
+        modeSettings = InMemorySettingsRepository()
+        val vm = openedWithTracks()
+        player.emitDuration(600_000L)
+        player.play()
+        player.emitPosition(31_000L)
+        runCurrent()
+        vm.holdDown(1_500L)
+        runCurrent()
+        assertEquals(PlayerMode.NORMAL, vm.playerMode.value)
+        vm.tap(KeyEvent.KEYCODE_DPAD_UP)
+        runCurrent()
+        assertTrue(vm.uiState.value.tracksPanel != null)
+        vm.selectSubtitle(pick)
+        runCurrent()
+        assertEquals("the viewer's choice stays", pick, player.selectedSubtitleId.value)
+        vm.holdDown(1_500L)
+        runCurrent()
+        assertEquals(PlayerMode.TEACHER, vm.playerMode.value)
+        assertEquals("the viewer's choice is untouched by the toggle", pick, player.selectedSubtitleId.value)
+        assertTrue("hidden English mode still available", vm.uiState.value.assistantAvailable)
+
+        vm.tap(KeyEvent.KEYCODE_DPAD_LEFT, gapMs = 400L)
+        vm.tap(KeyEvent.KEYCODE_DPAD_LEFT, gapMs = 400L)
+        runCurrent()
+        advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+        runCurrent()
+        assertEquals("English phrase rewind runs", 700L, player.positionMs.value)
+        val message = vm.uiState.value.message
+        assertTrue("no unavailable message: $message", message == null || message == PlayerViewModel.MODE_TEACHER)
+        player.emitPosition(31_000L)
+        runCurrent()
+        advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + PhraseRewindController.SEEK_CONFIRM_MS + 100L)
+        runCurrent()
+        vm.tap(KeyEvent.KEYCODE_DPAD_DOWN, gapMs = 400L)
+        vm.tap(KeyEvent.KEYCODE_DPAD_DOWN, gapMs = 400L)
+        runCurrent()
+        advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+        runCurrent()
+        assertEquals("Spanish phrase rewind runs", 700L, player.positionMs.value)
+    }
+
+    @Test
+    fun teacherKeysWorkAfterPickingAnotherSubtitleInNormalMode() =
+        runTest(dispatcher) {
+            teacherKeysAfterPickingSubtitleInNormal("s2")
+        }
+
+    @Test
+    fun teacherKeysWorkAfterTurningSubtitlesOffInNormalMode() =
+        runTest(dispatcher) {
+            teacherKeysAfterPickingSubtitleInNormal(null)
         }
 
     @Test

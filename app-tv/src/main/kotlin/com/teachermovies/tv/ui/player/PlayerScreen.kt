@@ -19,6 +19,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -206,7 +207,14 @@ fun PlayerScreen(
             )
         }
     }
-    LaunchedEffect(panelOpen, assistantOpen) { if (!panelOpen && !assistantOpen) focus.requestFocus() }
+    // Wait one frame so the closing panel's focused list row is already gone: asking while it is still
+    // composed can leave the root box without focus and every remote key dead (#388, unproven on a TV).
+    LaunchedEffect(panelOpen, assistantOpen) {
+        if (!panelOpen && !assistantOpen) {
+            withFrameNanos { }
+            focus.requestFocus()
+        }
+    }
 }
 
 @Composable
