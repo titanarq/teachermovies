@@ -210,6 +210,21 @@ class DataStoreSettingsRepositoryTest {
         }
 
     @Test
+    fun playerModeIsTeacherByDefaultAndRoundTrips() =
+        runTest {
+            val repository = newRepository()
+            assertEquals(PlayerMode.TEACHER, repository.settings.first().playerMode)
+
+            repository.setPlayerMode(PlayerMode.NORMAL)
+
+            assertEquals(PlayerMode.NORMAL, repository.settings.first().playerMode)
+
+            repository.setPlayerMode(PlayerMode.TEACHER)
+
+            assertEquals(PlayerMode.TEACHER, repository.settings.first().playerMode)
+        }
+
+    @Test
     fun autostartOnBootIsOffByDefault() =
         runTest {
             assertFalse(newRepository().settings.first().autostartOnBoot)

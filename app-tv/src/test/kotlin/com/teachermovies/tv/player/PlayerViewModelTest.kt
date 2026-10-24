@@ -37,6 +37,9 @@ import com.teachermovies.core.model.Torrent
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.fake.InMemoryExplanationCacheRepository
 import com.teachermovies.core.repo.fake.InMemoryTorrentRepository
+import com.teachermovies.core.settings.AppSettings
+import com.teachermovies.core.settings.PlayerMode
+import com.teachermovies.core.settings.fake.InMemorySettingsRepository
 import com.teachermovies.player.api.ExternalSubtitleResult
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.api.Track
@@ -185,8 +188,12 @@ class PlayerViewModelTest {
             explanations = explanations,
             rewind = rewind,
             spanishText = spanishText,
+            settings = modeSettings,
         )
     }
+
+    /** The settings the player mode (#385) is read from and saved to; null = none. */
+    private var modeSettings: InMemorySettingsRepository? = null
 
     private suspend fun seed(movie: File) {
         repo.upsert(
@@ -674,6 +681,113 @@ class PlayerViewModelTest {
         val assistantAction = AssistantKeyMapper.map(keyCode, overlayOpen = uiState.value.assistant != null)
         if (assistantAction != null) onAssistantAction(assistantAction) else onAction(RemoteKeyMapper.map(keyCode))
     }
+
+    // -- Normal / Teacher Movies mode, toggled by holding UP (#385) -----------------------------
+
+    private var keyTimeMs = 10_000L
+
+    /** Holds UP for [heldMs] with a repeat every 100 ms, then releases it. */
+    private fun PlayerViewModel.holdUp(heldMs: Long) {
+        val start = keyTimeMs
+        onKeyDown(KeyEvent.KEYCODE_DPAD_UP, 0, start)
+        var repeat = 1
+        while (repeat * 100L <= heldMs) {
+            onKeyDown(KeyEvent.KEYCODE_DPAD_UP, repeat, start + repeat * 100L)
+            repeat++
+        }
+        onKeyUp(KeyEvent.KEYCODE_DPAD_UP)
+        keyTimeMs = start + heldMs + 1_000L
+    }
+
+    private fun PlayerViewModel.tapUp() {
+        onKeyDown(KeyEvent.KEYCODE_DPAD_UP, 0, keyTimeMs)
+        onKeyUp(KeyEvent.KEYCODE_DPAD_UP)
+        keyTimeMs += 1_000L
+    }
+
+    @Test
+    fun holdingUpTogglesTheModeOncePerHoldAndSavesIt() =
+        runTest(dispatcher) {
+            val settings = InMemorySettingsRepository()
+            modeSettings = settings
+            val vm = playingWithSubtitles()
+            assertEquals(PlayerMode.TEACHER, vm.playerMode.value)
+
+            vm.holdUp(1_500L)
+            runCurrent()
+
+            assertEquals("one toggle for a long hold, not one per repeat", PlayerMode.NORMAL, vm.playerMode.value)
+            assertEquals(PlayerMode.NORMAL, settings.current.playerMode)
+            assertEquals(PlayerViewModel.MODE_NORMAL, vm.uiState.value.message)
+            assertNull("the hold did not open the menu", vm.uiState.value.assistant)
+
+            vm.holdUp(1_500L)
+            runCurrent()
+
+            assertEquals(PlayerMode.TEACHER, vm.playerMode.value)
+            assertEquals(PlayerMode.TEACHER, settings.current.playerMode)
+            assertEquals(PlayerViewModel.MODE_TEACHER, vm.uiState.value.message)
+        }
+
+    @Test
+    fun aShortUpPressOpensTheMenuOnReleaseInTeacherModeAndDoesNothingInNormalMode() =
+        runTest(dispatcher) {
+            modeSettings = InMemorySettingsRepository()
+            val vm = playingWithSubtitles()
+
+            vm.tapUp()
+            runCurrent()
+            assertEquals("short press never toggles", PlayerMode.TEACHER, vm.playerMode.value)
+            assertTrue("the menu opened", vm.uiState.value.assistant != null)
+
+            vm.onAssistantAction(AssistantAction.DismissOverlay)
+            vm.holdUp(1_000L)
+            runCurrent()
+            assertEquals(PlayerMode.NORMAL, vm.playerMode.value)
+
+            vm.tapUp()
+            runCurrent()
+            assertNull(vm.uiState.value.assistant)
+            assertEquals(PlayerState.Playing, player.state.value)
+        }
+
+    @Test
+    fun inNormalModeLeftAndRightSeekTenSecondsAndDownDoesNothingSpecial() =
+        runTest(dispatcher) {
+            modeSettings = InMemorySettingsRepository(AppSettings(playerMode = PlayerMode.NORMAL))
+            val vm = playingWithSubtitles()
+            runCurrent()
+            assertEquals(PlayerMode.NORMAL, vm.playerMode.value)
+            val before = player.positionMs.value
+
+            assertTrue(vm.onKeyDown(KeyEvent.KEYCODE_DPAD_RIGHT, 0, 1L))
+            runCurrent()
+            assertEquals(before + 10_000L, player.positionMs.value)
+
+            assertTrue(vm.onKeyDown(KeyEvent.KEYCODE_DPAD_LEFT, 0, 2L))
+            runCurrent()
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+            runCurrent()
+            assertEquals("a plain 10 s seek back, no phrase rewind", before, player.positionMs.value)
+            assertNull(vm.uiState.value.rewindText)
+
+            vm.onKeyDown(KeyEvent.KEYCODE_DPAD_DOWN, 0, 3L)
+            runCurrent()
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+            runCurrent()
+            assertEquals(before, player.positionMs.value)
+            assertNull(vm.uiState.value.assistant)
+        }
+
+    @Test
+    fun theSavedModeIsReadWhenThePlayerOpens() =
+        runTest(dispatcher) {
+            modeSettings = InMemorySettingsRepository(AppSettings(playerMode = PlayerMode.NORMAL))
+            val vm = playingWithSubtitles()
+            runCurrent()
+
+            assertEquals(PlayerMode.NORMAL, vm.playerMode.value)
+        }
 
     @Test
     fun openingStartsHiddenModeAndTheAssistantIsAvailableWithAnEnglishSidecar() =

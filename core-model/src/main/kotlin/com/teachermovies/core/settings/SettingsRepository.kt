@@ -61,4 +61,7 @@ interface SettingsRepository {
      * null or blank. Implementations never log the key.
      */
     suspend fun setTranslationApiKey(key: String?)
+
+    /** Stores the remote's mode on the player screen (Normal / Teacher Movies). */
+    suspend fun setPlayerMode(mode: PlayerMode)
 }

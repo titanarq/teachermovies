@@ -480,6 +480,10 @@ class SettingsViewModelTest {
         override suspend fun setTranslationApiKey(key: String?) {
             state.update { it.copy(translationApiKey = key?.takeUnless { k -> k.isBlank() }) }
         }
+
+        override suspend fun setPlayerMode(mode: com.teachermovies.core.settings.PlayerMode) {
+            state.update { it.copy(playerMode = mode) }
+        }
     }
 
     private class FakeVolumeProvider(

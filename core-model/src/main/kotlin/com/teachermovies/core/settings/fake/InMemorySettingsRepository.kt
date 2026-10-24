@@ -1,6 +1,7 @@
 package com.teachermovies.core.settings.fake
 
 import com.teachermovies.core.settings.AppSettings
+import com.teachermovies.core.settings.PlayerMode
 import com.teachermovies.core.settings.SettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,5 +68,9 @@ class InMemorySettingsRepository(
 
     override suspend fun setTranslationApiKey(key: String?) {
         state.update { it.copy(translationApiKey = key?.takeUnless { k -> k.isBlank() }) }
+    }
+
+    override suspend fun setPlayerMode(mode: PlayerMode) {
+        state.update { it.copy(playerMode = mode) }
     }
 }

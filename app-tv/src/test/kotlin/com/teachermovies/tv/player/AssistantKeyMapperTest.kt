@@ -1,6 +1,7 @@
 package com.teachermovies.tv.player
 
 import android.view.KeyEvent
+import com.teachermovies.core.settings.PlayerMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -132,6 +133,56 @@ class AssistantKeyMapperTest {
     fun withTheOverlayClosedVolumeKeysPassThrough() {
         volumeKeys.forEach { keyCode ->
             assertNull("keyCode $keyCode", AssistantKeyMapper.map(keyCode, overlayOpen = false))
+        }
+    }
+
+    @Test
+    fun inNormalModeTheMenuClosedMapsNothingSoTheTransportMappingApplies() {
+        val keys =
+            otherKeys +
+                listOf(
+                    KeyEvent.KEYCODE_DPAD_LEFT,
+                    KeyEvent.KEYCODE_DPAD_RIGHT,
+                    KeyEvent.KEYCODE_DPAD_UP,
+                    KeyEvent.KEYCODE_DPAD_DOWN,
+                    KeyEvent.KEYCODE_CAPTIONS,
+                )
+        keys.forEach { keyCode ->
+            assertNull(
+                "keyCode $keyCode",
+                AssistantKeyMapper.map(keyCode, overlayOpen = false, mode = PlayerMode.NORMAL),
+            )
+        }
+        assertEquals(PlayerAction.SeekBy(-10_000L), RemoteKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT))
+        assertEquals(PlayerAction.SeekBy(10_000L), RemoteKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT))
+        assertNull(RemoteKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP))
+        assertNull(RemoteKeyMapper.map(KeyEvent.KEYCODE_DPAD_DOWN))
+        assertEquals(PlayerAction.ShowTracks, RemoteKeyMapper.map(KeyEvent.KEYCODE_MENU))
+    }
+
+    @Test
+    fun inTeacherModeTheMenuClosedMappingIsTheDefault() {
+        assertEquals(
+            AssistantAction.RewindEnglish,
+            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT, overlayOpen = false, mode = PlayerMode.TEACHER),
+        )
+        assertEquals(
+            AssistantAction.RewindSpanish,
+            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_DOWN, overlayOpen = false, mode = PlayerMode.TEACHER),
+        )
+        assertEquals(
+            AssistantAction.CaptureLine,
+            AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP, overlayOpen = false, mode = PlayerMode.TEACHER),
+        )
+    }
+
+    @Test
+    fun anOpenMenuIsAnsweredInEitherMode() {
+        PlayerMode.entries.forEach { mode ->
+            assertEquals(
+                AssistantAction.ExplainLine,
+                AssistantKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP, overlayOpen = true, mode = mode),
+            )
         }
     }
 }
