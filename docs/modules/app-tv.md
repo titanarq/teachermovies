@@ -167,6 +167,11 @@
   `VideoSurfaceHost` (detached on dispose); the root box takes focus and consumes mapped keys
   (key-down and key-up), unmapped keys pass through; bottom overlay with title, progress bar and
   position/duration; `onExit` -> `MainViewModel.closePlayer()` back to Biblioteca.
+- Screen on during playback: `KeepScreenOnWhilePlaying(state.isPlaying)` (`player/KeepScreenOn.kt`),
+  called from `PlayerScreen`, holds `FLAG_KEEP_SCREEN_ON` on the activity window only while
+  `PlayerUiState.isPlaying` (`PlayerState.Playing`) is true, so the TV screensaver / screen-off does
+  not start mid-film. Paused, buffering, error, or the route leaving composition clear it again.
+  The flag logic is `KeepScreenOnController` (JVM-tested with a fake setter).
 - `AppContainer.player: Player` and `AppContainer.videoSurfaceHost: VideoSurfaceHost` are the same
   `VlcPlayer` (the only `com.teachermovies.player.vlc` import in the app).
 
