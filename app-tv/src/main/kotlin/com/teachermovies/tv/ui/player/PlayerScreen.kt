@@ -41,10 +41,8 @@ import androidx.tv.material3.Text
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.player.api.VideoSurfaceHost
 import com.teachermovies.tv.player.AssistantAction
-import com.teachermovies.tv.player.AssistantKeyMapper
 import com.teachermovies.tv.player.PlayerUiState
 import com.teachermovies.tv.player.PlayerViewModel
-import com.teachermovies.tv.player.RemoteKeyMapper
 
 /**
  * The `player/{id}` route (#78). The [PlayerViewModel] lives in a [ViewModelStore] of this route
@@ -68,7 +66,8 @@ fun PlayerRoute(
     PlayerScreen(
         state = state,
         surfaceHost = surfaceHost,
-        onKey = { keyCode -> dispatchKey(keyCode, viewModel) },
+        onKey = viewModel::onKeyDown,
+        onKeyUp = viewModel::onKeyUp,
         onAssistantAction = viewModel::onAssistantAction,
         onBack = viewModel::back,
         onSelectAudio = viewModel::selectAudio,
@@ -78,31 +77,10 @@ fun PlayerRoute(
 }
 
 /**
- * Key dispatch on the player screen with the captured-line overlay closed (#86): the assistant
- * mapping goes first and the transport mapping of #78 only gets keys it leaves (null). Returns
- * whether the key was a player key.
- */
-private fun dispatchKey(
-    keyCode: Int,
-    viewModel: PlayerViewModel,
-): Boolean {
-    val assistant = AssistantKeyMapper.map(keyCode, overlayOpen = false)
-    if (assistant != null) {
-        viewModel.onAssistantAction(assistant)
-        return true
-    }
-    return RemoteKeyMapper.map(keyCode).also(viewModel::onAction) != null
-}
-
-/** Whether [keyCode] is a player key with the captured-line overlay closed (either mapping). */
-private fun isPlayerKey(keyCode: Int): Boolean =
-    AssistantKeyMapper.map(keyCode, overlayOpen = false) != null || RemoteKeyMapper.map(keyCode) != null
-
-/**
  * Full-screen video with the transport overlay. The root box holds focus for the whole route, so
- * every remote key lands here: [onKey] gets each key-down code and returns whether it was a player
- * key (consumed, key-up included); other keys (volume, HOME) pass through. BACK is one of the
- * mapped keys; [BackHandler] is only the fallback should BACK arrive as a back gesture instead.
+ * every remote key lands here: [onKey] gets each key-down (code, repeat count, event time) and returns
+ * whether it was a player key; [onKeyUp] answers the key-up (a short press of UP acts there, #385);
+ * other keys (volume, HOME) pass through. BACK is one of the mapped keys; [BackHandler] is only the fallback should BACK arrive as a back gesture instead.
  *
  * While [PlayerUiState.tracksPanel] is open (#79) the root box maps no key, so the D-pad and OK
  * reach the panel's lists and BACK reaches [BackHandler] ([onBack] then closes the panel); focus
@@ -117,7 +95,8 @@ private fun isPlayerKey(keyCode: Int): Boolean =
 fun PlayerScreen(
     state: PlayerUiState,
     surfaceHost: VideoSurfaceHost,
-    onKey: (keyCode: Int) -> Boolean,
+    onKey: (keyCode: Int, repeatCount: Int, eventTimeMs: Long) -> Boolean,
+    onKeyUp: (keyCode: Int) -> Boolean,
     onAssistantAction: (AssistantAction) -> Unit,
     onBack: () -> Unit,
     onSelectAudio: (String) -> Unit,
@@ -136,14 +115,26 @@ fun PlayerScreen(
                 .focusRequester(focus)
                 .onKeyEvent { event ->
                     when {
-                        panelOpen || assistantOpen -> false
+                        panelOpen || assistantOpen -> {
+                            false
+                        }
 
-                        event.type == KeyEventType.KeyDown -> onKey(event.key.nativeKeyCode)
+                        event.type == KeyEventType.KeyDown -> {
+                            onKey(
+                                event.key.nativeKeyCode,
+                                event.nativeKeyEvent.repeatCount,
+                                event.nativeKeyEvent.eventTime,
+                            )
+                        }
 
                         // Swallow the key-up of a player key so nothing else reacts to it.
-                        event.type == KeyEventType.KeyUp -> isPlayerKey(event.key.nativeKeyCode)
+                        event.type == KeyEventType.KeyUp -> {
+                            onKeyUp(event.key.nativeKeyCode)
+                        }
 
-                        else -> false
+                        else -> {
+                            false
+                        }
                     }
                 }.focusable(),
     ) {

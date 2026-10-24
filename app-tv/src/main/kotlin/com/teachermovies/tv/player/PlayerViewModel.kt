@@ -21,6 +21,8 @@ import com.teachermovies.core.log.AppLog
 import com.teachermovies.core.model.DownloadState
 import com.teachermovies.core.model.TorrentId
 import com.teachermovies.core.repo.TorrentRepository
+import com.teachermovies.core.settings.PlayerMode
+import com.teachermovies.core.settings.SettingsRepository
 import com.teachermovies.player.api.Player
 import com.teachermovies.player.api.PlayerState
 import com.teachermovies.player.session.PlaybackSession
@@ -38,8 +40,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -172,6 +176,7 @@ class PlayerViewModel(
     private val explanations: ExplanationController? = null,
     private val rewind: PhraseRewindController? = null,
     private val spanishText: MovieSpanishText? = null,
+    private val settings: SettingsRepository? = null,
 ) : ViewModel() {
     /** Where LEFT's Spanish line for the captured cue stands (#288); null until LEFT is pressed. */
     private sealed interface SpanishAnswer {
@@ -320,6 +325,21 @@ class PlayerViewModel(
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, PlayerUiState())
 
+    /** The remote's mode (#385): [PlayerMode.TEACHER] until the saved one is read or UP is held. */
+    private val _playerMode = MutableStateFlow(PlayerMode.TEACHER)
+    val playerMode: StateFlow<PlayerMode> = _playerMode.asStateFlow()
+    private var modeTouched = false
+    private val modeDetector = ModeToggleDetector()
+
+    init {
+        if (settings != null) {
+            viewModelScope.launch {
+                val saved = settings.settings.first().playerMode
+                if (!modeTouched) _playerMode.value = saved
+            }
+        }
+    }
+
     private var openJob: Job? = null
     private var hideJob: Job? = null
     private var messageJob: Job? = null
@@ -391,6 +411,76 @@ class PlayerViewModel(
     /** Whether [id] is a finished download; unknown to [repo] counts as finished (plain `open`). */
     private suspend fun isCompleted(id: TorrentId): Boolean =
         (repo?.get(id)?.state ?: DownloadState.Completed) == DownloadState.Completed
+
+    /**
+     * A key went down on the player screen with the captured-line overlay closed; returns whether
+     * it is a player key. UP goes through [modeDetector] (#385): held, it toggles the mode; the
+     * short press runs on key-up. Every other key: the assistant mapping for the current mode
+     * first, then the transport mapping, as before (#86).
+     */
+    fun onKeyDown(
+        keyCode: Int,
+        repeatCount: Int,
+        eventTimeMs: Long,
+    ): Boolean =
+        when (modeDetector.onKeyDown(keyCode, repeatCount, eventTimeMs)) {
+            ModeToggleDetector.Outcome.TOGGLE -> {
+                toggleMode()
+                true
+            }
+
+            ModeToggleDetector.Outcome.CONSUMED -> {
+                true
+            }
+
+            else -> {
+                dispatchKey(keyCode)
+            }
+        }
+
+    /** A key went up: the short press of UP acts now; returns whether the key was a player key. */
+    fun onKeyUp(keyCode: Int): Boolean =
+        when (modeDetector.onKeyUp(keyCode)) {
+            ModeToggleDetector.Outcome.SHORT_PRESS -> {
+                dispatchKey(keyCode)
+                true
+            }
+
+            ModeToggleDetector.Outcome.CONSUMED -> {
+                true
+            }
+
+            else -> {
+                isPlayerKey(keyCode)
+            }
+        }
+
+    private fun dispatchKey(keyCode: Int): Boolean {
+        val assistant = AssistantKeyMapper.map(keyCode, overlayOpen = false, mode = _playerMode.value)
+        if (assistant != null) {
+            onAssistantAction(assistant)
+            return true
+        }
+        val action = RemoteKeyMapper.map(keyCode)
+        onAction(action)
+        return action != null
+    }
+
+    private fun isPlayerKey(keyCode: Int): Boolean =
+        AssistantKeyMapper.map(keyCode, overlayOpen = false, mode = _playerMode.value) != null ||
+            RemoteKeyMapper.map(keyCode) != null
+
+    private fun toggleMode() {
+        if (exiting) return
+        modeTouched = true
+        val next = _playerMode.value.toggled()
+        _playerMode.value = next
+        showOverlay()
+        showMessage(if (next == PlayerMode.TEACHER) MODE_TEACHER else MODE_NORMAL)
+        if (settings != null) {
+            viewModelScope.launch { settings.setPlayerMode(next) }
+        }
+    }
 
     /**
      * A remote key was pressed: any key (even one that maps to null) shows the overlay; the action,
@@ -788,6 +878,7 @@ class PlayerViewModel(
         private val explanations: ExplanationController? = null,
         private val rewind: PhraseRewindController? = null,
         private val spanishText: MovieSpanishText? = null,
+        private val settings: SettingsRepository? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -808,6 +899,7 @@ class PlayerViewModel(
                 explanations = explanations,
                 rewind = rewind,
                 spanishText = spanishText,
+                settings = settings,
             ) as T
         }
     }
@@ -839,6 +931,8 @@ class PlayerViewModel(
         const val STARTING_SUBTITLES = "Preparando subtítulos en inglés…"
         const val LOG_MODULE = "app-tv"
         const val NO_SPANISH = "Sin subtítulos en español"
+        const val MODE_TEACHER = "Modo Teacher Movies"
+        const val MODE_NORMAL = "Modo normal"
         const val NO_LINE = "No hay ninguna frase que capturar"
 
         /** Where LEFT's Spanish line came from (#288, ADR-0005 §5/§6). */

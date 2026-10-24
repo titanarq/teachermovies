@@ -190,6 +190,7 @@ class MainActivity : ComponentActivity() {
             explanations = container.explanationController,
             rewind = container.phraseRewindController,
             spanishText = container.movieSpanishText,
+            settings = container.settingsRepository,
         )
     }
 

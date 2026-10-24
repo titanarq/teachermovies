@@ -26,6 +26,7 @@ private val BRIDGE_DEVICE_NAME = stringPreferencesKey("bridgeDeviceName")
 private val FIRST_RUN_COMPLETED = booleanPreferencesKey("firstRunCompleted")
 private val AUTOSTART_ON_BOOT = booleanPreferencesKey("autostartOnBoot")
 private val TRANSLATION_API_KEY = stringPreferencesKey("translationApiKey")
+private val PLAYER_MODE = stringPreferencesKey("playerMode")
 
 /** [SettingsRepository] over DataStore Preferences. */
 class DataStoreSettingsRepository(
@@ -42,6 +43,9 @@ class DataStoreSettingsRepository(
                 firstRunCompleted = preferences[FIRST_RUN_COMPLETED] ?: false,
                 autostartOnBoot = preferences[AUTOSTART_ON_BOOT] ?: false,
                 translationApiKey = preferences[TRANSLATION_API_KEY],
+                playerMode =
+                    preferences[PLAYER_MODE]?.let { name -> PlayerMode.entries.firstOrNull { it.name == name } }
+                        ?: PlayerMode.TEACHER,
             )
         }
 
@@ -111,6 +115,10 @@ class DataStoreSettingsRepository(
                 preferences[TRANSLATION_API_KEY] = key
             }
         }
+    }
+
+    override suspend fun setPlayerMode(mode: PlayerMode) {
+        dataStore.edit { preferences -> preferences[PLAYER_MODE] = mode.name }
     }
 }
 

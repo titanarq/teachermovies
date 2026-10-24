@@ -1,6 +1,7 @@
 package com.teachermovies.tv.player
 
 import android.view.KeyEvent
+import com.teachermovies.core.settings.PlayerMode
 
 /**
  * What a remote key asks the English-learning assistant to do on the player screen (#86). The
@@ -54,11 +55,16 @@ sealed interface AssistantAction {
  * no seek runs behind the overlay -- is [AssistantAction.Consumed]. The exception is the volume
  * keys (VOLUME_UP/DOWN/MUTE, #178): they are null in both modes so the system still changes the TV
  * volume while the menu is open.
+ *
+ * [PlayerMode.NORMAL] (menu closed): every key is null, so [RemoteKeyMapper]'s plain-player mapping
+ * applies (LEFT/RIGHT seek 10 s, UP/DOWN nothing). The overlay-open mapping does not depend on the
+ * mode: an open menu is always answered.
  */
 object AssistantKeyMapper {
     fun map(
         keyCode: Int,
         overlayOpen: Boolean,
+        mode: PlayerMode = PlayerMode.TEACHER,
     ): AssistantAction? =
         if (overlayOpen) {
             when (keyCode) {
@@ -84,6 +90,8 @@ object AssistantKeyMapper {
 
                 else -> AssistantAction.Consumed
             }
+        } else if (mode == PlayerMode.NORMAL) {
+            null
         } else {
             when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_UP,

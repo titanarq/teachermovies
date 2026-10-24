@@ -560,3 +560,38 @@ UP used to open stays reachable on MENU. Alternatives discarded: keeping RIGHT a
   BACKWARD (a rewind key never moves forward; RIGHT's forward seek is the native one), with the
   visible reason `... ← ↓ retroceden 10 s`; the log line is `DOWN: hidden mode none, seek -10s`.
 - The menu hint (`ARRIBA Explicar · ATRÁS Cerrar`) is unchanged; the on-screen texts name no other key.
+
+## Reproductor: modo normal / Teacher Movies, alternado manteniendo ARRIBA (owner request 2026-10-24)
+**Actual.** `PlayerMode { NORMAL, TEACHER }` lives in `:core-model` (`AppSettings.playerMode`, default
+`TEACHER` = the keys of the section above; DataStore key `playerMode`, stored by enum name, an
+unknown name reads as `TEACHER`; `SettingsRepository.setPlayerMode`).
+- `TEACHER`: unchanged (LEFT/DOWN rewind English/Spanish, UP opens the menu, RIGHT seeks +10 s).
+- `NORMAL`: a plain player. `AssistantKeyMapper.map(keyCode, overlayOpen, mode)` returns null for every
+  key with the menu closed, so `RemoteKeyMapper` applies: LEFT/RIGHT seek -/+10 s (native), UP/DOWN do
+  nothing, CAPTIONS does nothing. MENU = tracks panel and BACK = exit in both modes. The overlay-open
+  mapping ignores the mode. The hidden-subtitle engine keeps running (cheap, and the mode can flip back).
+- Toggle: **holding DPAD_UP for 600 ms** (`ModeToggleDetector.HOLD_MS`) toggles the mode, in either mode,
+  exactly once per hold (repeats do nothing; the release after a hold does nothing). Detected from the
+  key-down event time (`KeyEvent.eventTime`), not from `repeatCount`, so remotes with a slow repeat rate
+  behave the same. `PlayerViewModel.onKeyDown(keyCode, repeatCount, eventTimeMs)` / `onKeyUp(keyCode)`
+  replaced the screen's former `dispatchKey`; `PlayerScreen` only forwards the events.
+- Consequence of long-press on UP: UP is consumed in both modes and its short-press action (the menu in
+  `TEACHER`) runs on **key-up**, not key-down, because at key-down a tap cannot yet be told from the start
+  of a hold. UP pressed while the menu is open still explains (the overlay handles its own keys), so the
+  toggle is only available with the menu closed.
+- Feedback: `PlayerViewModel.MODE_TEACHER = "Modo Teacher Movies"` / `MODE_NORMAL = "Modo normal"`, shown
+  through `showMessage` (the transport overlay message of #374, `MESSAGE_TIMEOUT_MS`). The mode is held in
+  `PlayerViewModel.playerMode` (a `StateFlow`), read once from the settings when the player opens (the
+  default until then) and saved on every toggle; `PlayerViewModel.Factory` takes the `SettingsRepository`.
+- Decision and alternatives (why not another key): no other D-pad key is free (LEFT/DOWN rewind in
+  `TEACHER`, RIGHT seeks, OK pauses, BACK exits, MENU opens the tracks panel). *Dedicated colour key*
+  (red/green/yellow/blue): rejected, many Android TV remotes (Mi Box, Chromecast, Fire TV) have none.
+  *Item in the UP menu*: rejected, the menu is only reachable in `TEACHER` and needs a captured line, so it
+  could not take the player back from `NORMAL`. *Settings screen only*: rejected, not usable mid-movie.
+  *CAPTIONS*: absent on most remotes. Long-press UP needs no extra hardware and costs only the key-up
+  deferral above; a double press was rejected because UP presses in a 1.5 s group already mean something
+  in the menu.
+- Tests: `AssistantKeyMapperTest` (both modes), `ModeToggleDetectorTest` (once per hold),
+  `PlayerViewModelTest` (toggle + message + save, short press per mode, plain seeks in `NORMAL`, saved
+  mode read on open), `DataStoreSettingsRepositoryTest`. Not verified on a real TV: the long-press timing
+  with a real remote.

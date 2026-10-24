@@ -16,7 +16,8 @@ internal const val DEFAULT_HTTP_PORT = 8787
  * makes the app show it again after a fresh install. [autostartOnBoot] is whether the app opens by
  * itself when the TV powers on, off until the user turns it on. [translationApiKey] is the user's own
  * Anthropic API key for the EN->ES translation provider, pasted in Configuración and never compiled
- * into the APK; null while none is set. [toString] redacts it, so logging an [AppSettings] never
+ * into the APK; null while none is set. [playerMode] is the remote's mode on the player screen,
+ * [PlayerMode.TEACHER] until the user holds UP to switch. [toString] redacts it, so logging an [AppSettings] never
  * prints the key.
  */
 data class AppSettings(
@@ -28,6 +29,7 @@ data class AppSettings(
     val firstRunCompleted: Boolean = false,
     val autostartOnBoot: Boolean = false,
     val translationApiKey: String? = null,
+    val playerMode: PlayerMode = PlayerMode.TEACHER,
 ) {
     override fun toString(): String =
         "AppSettings(httpPort=$httpPort, downloadVolumeId=$downloadVolumeId, " +
@@ -35,5 +37,6 @@ data class AppSettings(
             "bridgeDeviceName=$bridgeDeviceName, " +
             "firstRunCompleted=$firstRunCompleted, " +
             "autostartOnBoot=$autostartOnBoot, " +
-            "translationApiKey=${if (translationApiKey == null) "null" else "<redacted>"})"
+            "translationApiKey=${if (translationApiKey == null) "null" else "<redacted>"}, " +
+            "playerMode=$playerMode)"
 }
