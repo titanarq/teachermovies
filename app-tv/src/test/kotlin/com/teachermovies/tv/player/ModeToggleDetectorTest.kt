@@ -6,7 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ModeToggleDetectorTest {
-    private val up = KeyEvent.KEYCODE_DPAD_UP
+    private val down = KeyEvent.KEYCODE_DPAD_DOWN
     private val detector = ModeToggleDetector(holdMs = 600L)
 
     @Test
@@ -17,15 +17,15 @@ class ModeToggleDetectorTest {
 
     @Test
     fun aQuickPressIsAShortPressOnKeyUp() {
-        assertEquals(Outcome.CONSUMED, detector.onKeyDown(up, 0, 1_000L))
-        assertEquals(Outcome.SHORT_PRESS, detector.onKeyUp(up))
+        assertEquals(Outcome.CONSUMED, detector.onKeyDown(down, 0, 1_000L))
+        assertEquals(Outcome.SHORT_PRESS, detector.onKeyUp(down))
     }
 
     @Test
     fun aHoldTogglesExactlyOnceNoMatterHowManyRepeatsFollow() {
         val outcomes =
             listOf(0 to 0L, 1 to 300L, 2 to 599L, 3 to 650L, 4 to 700L, 5 to 2_000L)
-                .map { (repeat, at) -> detector.onKeyDown(up, repeat, at) }
+                .map { (repeat, at) -> detector.onKeyDown(down, repeat, at) }
 
         assertEquals(
             listOf(
@@ -38,26 +38,26 @@ class ModeToggleDetectorTest {
             ),
             outcomes,
         )
-        assertEquals("the release after a hold is not a short press", Outcome.CONSUMED, detector.onKeyUp(up))
+        assertEquals("the release after a hold is not a short press", Outcome.CONSUMED, detector.onKeyUp(down))
     }
 
     @Test
     fun aSecondHoldTogglesAgain() {
-        detector.onKeyDown(up, 0, 0L)
-        assertEquals(Outcome.TOGGLE, detector.onKeyDown(up, 1, 700L))
-        detector.onKeyUp(up)
+        detector.onKeyDown(down, 0, 0L)
+        assertEquals(Outcome.TOGGLE, detector.onKeyDown(down, 1, 700L))
+        detector.onKeyUp(down)
 
-        detector.onKeyDown(up, 0, 5_000L)
-        assertEquals(Outcome.TOGGLE, detector.onKeyDown(up, 1, 5_700L))
+        detector.onKeyDown(down, 0, 5_000L)
+        assertEquals(Outcome.TOGGLE, detector.onKeyDown(down, 1, 5_700L))
     }
 
     @Test
     fun aShortPressAfterAHoldIsAShortPressAgain() {
-        detector.onKeyDown(up, 0, 0L)
-        detector.onKeyDown(up, 1, 700L)
-        detector.onKeyUp(up)
+        detector.onKeyDown(down, 0, 0L)
+        detector.onKeyDown(down, 1, 700L)
+        detector.onKeyUp(down)
 
-        detector.onKeyDown(up, 0, 5_000L)
-        assertEquals(Outcome.SHORT_PRESS, detector.onKeyUp(up))
+        detector.onKeyDown(down, 0, 5_000L)
+        assertEquals(Outcome.SHORT_PRESS, detector.onKeyUp(down))
     }
 }

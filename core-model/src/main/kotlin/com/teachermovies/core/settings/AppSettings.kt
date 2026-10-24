@@ -17,7 +17,7 @@ internal const val DEFAULT_HTTP_PORT = 8787
  * itself when the TV powers on, off until the user turns it on. [translationApiKey] is the user's own
  * Anthropic API key for the EN->ES translation provider, pasted in Configuración and never compiled
  * into the APK; null while none is set. [playerMode] is the remote's mode on the player screen,
- * [PlayerMode.TEACHER] until the user holds UP to switch. [toString] redacts it, so logging an [AppSettings] never
+ * [PlayerMode.TEACHER] until the user holds DOWN to switch. [toString] redacts it, so logging an [AppSettings] never
  * prints the key.
  */
 data class AppSettings(

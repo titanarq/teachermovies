@@ -80,7 +80,7 @@ fun PlayerRoute(
 /**
  * Full-screen video with the transport overlay. The root box holds focus for the whole route, so
  * every remote key lands here: [onKey] gets each key-down (code, repeat count, event time) and returns
- * whether it was a player key; [onKeyUp] answers the key-up (a short press of UP acts there, #385);
+ * whether it was a player key; [onKeyUp] answers the key-up (a short press of DOWN acts there, #385);
  * other keys (volume, HOME) pass through. BACK is one of the mapped keys; [BackHandler] is only the fallback should BACK arrive as a back gesture instead.
  *
  * While [PlayerUiState.tracksPanel] is open (#79) the root box maps no key, so the D-pad and OK

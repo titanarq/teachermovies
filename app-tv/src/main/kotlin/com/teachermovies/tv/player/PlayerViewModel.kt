@@ -325,7 +325,7 @@ class PlayerViewModel(
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, PlayerUiState())
 
-    /** The remote's mode (#385): [PlayerMode.TEACHER] until the saved one is read or UP is held. */
+    /** The remote's mode (#385): [PlayerMode.TEACHER] until the saved one is read or DOWN is held. */
     private val _playerMode = MutableStateFlow(PlayerMode.TEACHER)
     val playerMode: StateFlow<PlayerMode> = _playerMode.asStateFlow()
     private var modeTouched = false
@@ -414,8 +414,8 @@ class PlayerViewModel(
 
     /**
      * A key went down on the player screen with the captured-line overlay closed; returns whether
-     * it is a player key. UP goes through [modeDetector] (#385): held, it toggles the mode; the
-     * short press runs on key-up. Every other key: the assistant mapping for the current mode
+     * it is a player key. DOWN goes through [modeDetector] (#385): held, it toggles the mode; the
+     * short press runs on key-up. UP is a plain assistant key again. Every other key: the assistant mapping for the current mode
      * first, then the transport mapping, as before (#86).
      */
     fun onKeyDown(
@@ -438,7 +438,7 @@ class PlayerViewModel(
             }
         }
 
-    /** A key went up: the short press of UP acts now; returns whether the key was a player key. */
+    /** A key went up: the short press of DOWN acts now; returns whether the key was a player key. */
     fun onKeyUp(keyCode: Int): Boolean =
         when (modeDetector.onKeyUp(keyCode)) {
             ModeToggleDetector.Outcome.SHORT_PRESS -> {
