@@ -155,7 +155,7 @@ class AssistantKeyMapperTest {
         }
         assertEquals(PlayerAction.SeekBy(-10_000L), RemoteKeyMapper.map(KeyEvent.KEYCODE_DPAD_LEFT))
         assertEquals(PlayerAction.SeekBy(10_000L), RemoteKeyMapper.map(KeyEvent.KEYCODE_DPAD_RIGHT))
-        assertNull(RemoteKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP))
+        assertEquals(PlayerAction.ShowTracks, RemoteKeyMapper.map(KeyEvent.KEYCODE_DPAD_UP))
         assertNull(RemoteKeyMapper.map(KeyEvent.KEYCODE_DPAD_DOWN))
         assertEquals(PlayerAction.ShowTracks, RemoteKeyMapper.map(KeyEvent.KEYCODE_MENU))
     }

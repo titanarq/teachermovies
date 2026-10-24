@@ -682,38 +682,48 @@ class PlayerViewModelTest {
         if (assistantAction != null) onAssistantAction(assistantAction) else onAction(RemoteKeyMapper.map(keyCode))
     }
 
-    // -- Normal / Teacher Movies mode, toggled by holding UP (#385) -----------------------------
+    // -- Normal / Teacher Movies mode, toggled by holding DOWN (#385) ---------------------------
 
     private var keyTimeMs = 10_000L
 
-    /** Holds UP for [heldMs] with a repeat every 100 ms, then releases it. */
-    private fun PlayerViewModel.holdUp(heldMs: Long) {
+    /** Holds [key] for [heldMs] with a repeat every 100 ms, then releases it. */
+    private fun PlayerViewModel.hold(
+        key: Int,
+        heldMs: Long,
+    ) {
         val start = keyTimeMs
-        onKeyDown(KeyEvent.KEYCODE_DPAD_UP, 0, start)
+        onKeyDown(key, 0, start)
         var repeat = 1
         while (repeat * 100L <= heldMs) {
-            onKeyDown(KeyEvent.KEYCODE_DPAD_UP, repeat, start + repeat * 100L)
+            onKeyDown(key, repeat, start + repeat * 100L)
             repeat++
         }
-        onKeyUp(KeyEvent.KEYCODE_DPAD_UP)
+        onKeyUp(key)
         keyTimeMs = start + heldMs + 1_000L
     }
 
-    private fun PlayerViewModel.tapUp() {
-        onKeyDown(KeyEvent.KEYCODE_DPAD_UP, 0, keyTimeMs)
-        onKeyUp(KeyEvent.KEYCODE_DPAD_UP)
-        keyTimeMs += 1_000L
+    private fun PlayerViewModel.holdDown(heldMs: Long) = hold(KeyEvent.KEYCODE_DPAD_DOWN, heldMs)
+
+    /** A tap of [key]: down and up at once, then [gapMs] later. */
+    private fun PlayerViewModel.tap(
+        key: Int,
+        gapMs: Long = 1_000L,
+    ): Boolean {
+        val handled = onKeyDown(key, 0, keyTimeMs)
+        onKeyUp(key)
+        keyTimeMs += gapMs
+        return handled
     }
 
     @Test
-    fun holdingUpTogglesTheModeOncePerHoldAndSavesIt() =
+    fun holdingDownTogglesTheModeOncePerHoldAndSavesIt() =
         runTest(dispatcher) {
             val settings = InMemorySettingsRepository()
             modeSettings = settings
             val vm = playingWithSubtitles()
             assertEquals(PlayerMode.TEACHER, vm.playerMode.value)
 
-            vm.holdUp(1_500L)
+            vm.holdDown(1_500L)
             runCurrent()
 
             assertEquals("one toggle for a long hold, not one per repeat", PlayerMode.NORMAL, vm.playerMode.value)
@@ -721,7 +731,7 @@ class PlayerViewModelTest {
             assertEquals(PlayerViewModel.MODE_NORMAL, vm.uiState.value.message)
             assertNull("the hold did not open the menu", vm.uiState.value.assistant)
 
-            vm.holdUp(1_500L)
+            vm.holdDown(1_500L)
             runCurrent()
 
             assertEquals(PlayerMode.TEACHER, vm.playerMode.value)
@@ -730,25 +740,172 @@ class PlayerViewModelTest {
         }
 
     @Test
-    fun aShortUpPressOpensTheMenuOnReleaseInTeacherModeAndDoesNothingInNormalMode() =
+    fun upOpensTheMenuAtOnceOnPressInTeacherModeAndIsNotHandledInNormalMode() =
         runTest(dispatcher) {
             modeSettings = InMemorySettingsRepository()
             val vm = playingWithSubtitles()
 
-            vm.tapUp()
+            assertTrue(vm.onKeyDown(KeyEvent.KEYCODE_DPAD_UP, 0, keyTimeMs))
             runCurrent()
-            assertEquals("short press never toggles", PlayerMode.TEACHER, vm.playerMode.value)
-            assertTrue("the menu opened", vm.uiState.value.assistant != null)
+            assertTrue("the menu opened on key-down, before the release", vm.uiState.value.assistant != null)
+            vm.onKeyUp(KeyEvent.KEYCODE_DPAD_UP)
+            assertEquals("UP never toggles", PlayerMode.TEACHER, vm.playerMode.value)
 
             vm.onAssistantAction(AssistantAction.DismissOverlay)
-            vm.holdUp(1_000L)
+            vm.holdDown(1_000L)
             runCurrent()
             assertEquals(PlayerMode.NORMAL, vm.playerMode.value)
 
-            vm.tapUp()
+            assertTrue("UP is the plain player's in normal mode", vm.onKeyDown(KeyEvent.KEYCODE_DPAD_UP, 0, keyTimeMs))
             runCurrent()
             assertNull(vm.uiState.value.assistant)
+            assertTrue("UP opens the tracks panel", vm.uiState.value.tracksPanel != null)
+            vm.closeTracks()
             assertEquals(PlayerState.Playing, player.state.value)
+            vm.holdUp(1_500L)
+            assertEquals("holding UP does not toggle", PlayerMode.NORMAL, vm.playerMode.value)
+        }
+
+    private fun PlayerViewModel.holdUp(heldMs: Long) = hold(KeyEvent.KEYCODE_DPAD_UP, heldMs)
+
+    @Test
+    fun aShortDownPressRewindsSpanishOnReleaseAndTapsFormOneBurst() =
+        runTest(dispatcher) {
+            modeSettings = InMemorySettingsRepository()
+            val vm = playingWithTwoSubtitles()
+
+            vm.tap(KeyEvent.KEYCODE_DPAD_DOWN, gapMs = 400L)
+            vm.tap(KeyEvent.KEYCODE_DPAD_DOWN, gapMs = 400L)
+            runCurrent()
+            assertEquals("nothing is seeked while the group is open", 31_000L, player.positionMs.value)
+            assertEquals("a tap never toggles", PlayerMode.TEACHER, vm.playerMode.value)
+
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+            runCurrent()
+            assertEquals("two DOWN taps: one phrase back, as one burst", 700L, player.positionMs.value)
+        }
+
+    @Test
+    fun teacherKeysStillWorkAfterTeacherNormalTeacherAndNormalTeacherNormal() =
+        runTest(dispatcher) {
+            modeSettings = InMemorySettingsRepository()
+            val vm = playingWithTwoSubtitles()
+            vm.holdDown(1_500L)
+            runCurrent()
+            assertEquals(PlayerMode.NORMAL, vm.playerMode.value)
+
+            // NORMAL: LEFT is a plain 10 s seek, UP and a short DOWN are nothing.
+            vm.tap(KeyEvent.KEYCODE_DPAD_LEFT)
+            runCurrent()
+            assertEquals(21_000L, player.positionMs.value)
+            vm.tap(KeyEvent.KEYCODE_DPAD_UP)
+            runCurrent()
+            assertTrue("UP opens the tracks panel", vm.uiState.value.tracksPanel != null)
+            vm.closeTracks()
+            vm.tap(KeyEvent.KEYCODE_DPAD_DOWN)
+            runCurrent()
+            assertNull(vm.uiState.value.assistant)
+
+            vm.holdDown(1_500L)
+            runCurrent()
+            assertEquals(PlayerMode.TEACHER, vm.playerMode.value)
+            player.emitPosition(31_000L)
+            runCurrent()
+
+            // TEACHER again: LEFT x2 = English phrase rewind.
+            vm.tap(KeyEvent.KEYCODE_DPAD_LEFT, gapMs = 400L)
+            vm.tap(KeyEvent.KEYCODE_DPAD_LEFT, gapMs = 400L)
+            runCurrent()
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+            runCurrent()
+            assertEquals("English rewind works again", 700L, player.positionMs.value)
+            player.emitPosition(31_000L)
+            runCurrent()
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + PhraseRewindController.SEEK_CONFIRM_MS + 100L)
+            runCurrent()
+
+            // DOWN x2 = Spanish phrase rewind.
+            vm.tap(KeyEvent.KEYCODE_DPAD_DOWN, gapMs = 400L)
+            vm.tap(KeyEvent.KEYCODE_DPAD_DOWN, gapMs = 400L)
+            runCurrent()
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+            runCurrent()
+            assertEquals("Spanish rewind works again", 700L, player.positionMs.value)
+
+            // UP opens the menu at once (back inside a line).
+            player.emitPosition(31_000L)
+            runCurrent()
+            advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + PhraseRewindController.SEEK_CONFIRM_MS + 100L)
+            runCurrent()
+            assertTrue(vm.tap(KeyEvent.KEYCODE_DPAD_UP))
+            runCurrent()
+            assertTrue("UP opens the menu again", vm.uiState.value.assistant != null)
+            vm.onAssistantAction(AssistantAction.DismissOverlay)
+            runCurrent()
+
+            // And back to NORMAL: the keys are plain again.
+            vm.holdDown(1_500L)
+            runCurrent()
+            assertEquals(PlayerMode.NORMAL, vm.playerMode.value)
+            vm.tap(KeyEvent.KEYCODE_DPAD_UP)
+            runCurrent()
+            assertNull(vm.uiState.value.assistant)
+            assertTrue(vm.uiState.value.tracksPanel != null)
+        }
+
+    private suspend fun TestScope.teacherKeysAfterPickingSubtitleInNormal(pick: String?) {
+        seed(movieWithTwoEnglishSubtitles())
+        modeSettings = InMemorySettingsRepository()
+        val vm = openedWithTracks()
+        player.emitDuration(600_000L)
+        player.play()
+        player.emitPosition(31_000L)
+        runCurrent()
+        vm.holdDown(1_500L)
+        runCurrent()
+        assertEquals(PlayerMode.NORMAL, vm.playerMode.value)
+        vm.tap(KeyEvent.KEYCODE_DPAD_UP)
+        runCurrent()
+        assertTrue(vm.uiState.value.tracksPanel != null)
+        vm.selectSubtitle(pick)
+        runCurrent()
+        assertEquals("the viewer's choice stays", pick, player.selectedSubtitleId.value)
+        vm.holdDown(1_500L)
+        runCurrent()
+        assertEquals(PlayerMode.TEACHER, vm.playerMode.value)
+        assertEquals("the viewer's choice is untouched by the toggle", pick, player.selectedSubtitleId.value)
+        assertTrue("hidden English mode still available", vm.uiState.value.assistantAvailable)
+
+        vm.tap(KeyEvent.KEYCODE_DPAD_LEFT, gapMs = 400L)
+        vm.tap(KeyEvent.KEYCODE_DPAD_LEFT, gapMs = 400L)
+        runCurrent()
+        advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+        runCurrent()
+        assertEquals("English phrase rewind runs", 700L, player.positionMs.value)
+        val message = vm.uiState.value.message
+        assertTrue("no unavailable message: $message", message == null || message == PlayerViewModel.MODE_TEACHER)
+        player.emitPosition(31_000L)
+        runCurrent()
+        advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + PhraseRewindController.SEEK_CONFIRM_MS + 100L)
+        runCurrent()
+        vm.tap(KeyEvent.KEYCODE_DPAD_DOWN, gapMs = 400L)
+        vm.tap(KeyEvent.KEYCODE_DPAD_DOWN, gapMs = 400L)
+        runCurrent()
+        advanceTimeBy(PhraseRewindController.REWIND_GROUP_WINDOW_MS + 1)
+        runCurrent()
+        assertEquals("Spanish phrase rewind runs", 700L, player.positionMs.value)
+    }
+
+    @Test
+    fun teacherKeysWorkAfterPickingAnotherSubtitleInNormalMode() =
+        runTest(dispatcher) {
+            teacherKeysAfterPickingSubtitleInNormal("s2")
+        }
+
+    @Test
+    fun teacherKeysWorkAfterTurningSubtitlesOffInNormalMode() =
+        runTest(dispatcher) {
+            teacherKeysAfterPickingSubtitleInNormal(null)
         }
 
     @Test

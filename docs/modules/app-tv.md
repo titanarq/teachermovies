@@ -566,34 +566,43 @@ UP used to open stays reachable on MENU. Alternatives discarded: keeping RIGHT a
   visible reason `... ← ↓ retroceden 10 s`; the log line is `DOWN: hidden mode none, seek -10s`.
 - The menu hint (`ARRIBA Explicar · ATRÁS Cerrar`) is unchanged; the on-screen texts name no other key.
 
-## Reproductor: modo normal / Teacher Movies, alternado manteniendo ARRIBA (owner request 2026-10-24)
+## Reproductor: modo normal / Teacher Movies, alternado manteniendo ABAJO (owner request 2026-10-24; key moved from UP to DOWN)
 **Actual.** `PlayerMode { NORMAL, TEACHER }` lives in `:core-model` (`AppSettings.playerMode`, default
 `TEACHER` = the keys of the section above; DataStore key `playerMode`, stored by enum name, an
 unknown name reads as `TEACHER`; `SettingsRepository.setPlayerMode`).
 - `TEACHER`: unchanged (LEFT/DOWN rewind English/Spanish, UP opens the menu, RIGHT seeks +10 s).
 - `NORMAL`: a plain player. `AssistantKeyMapper.map(keyCode, overlayOpen, mode)` returns null for every
-  key with the menu closed, so `RemoteKeyMapper` applies: LEFT/RIGHT seek -/+10 s (native), UP/DOWN do
-  nothing, CAPTIONS does nothing. MENU = tracks panel and BACK = exit in both modes. The overlay-open
+  key with the menu closed, so `RemoteKeyMapper` applies: LEFT/RIGHT seek -/+10 s (native), UP opens the
+  tracks panel (`ShowTracks`, the owner's remote has no MENU key; `RemoteKeyMapper` maps UP, which only
+  reaches it in NORMAL because TEACHER's assistant takes UP first), DOWN does nothing, CAPTIONS does
+  nothing. MENU = tracks panel and BACK = exit in both modes. The overlay-open
   mapping ignores the mode. The hidden-subtitle engine keeps running (cheap, and the mode can flip back).
-- Toggle: **holding DPAD_UP for 600 ms** (`ModeToggleDetector.HOLD_MS`) toggles the mode, in either mode,
+- Toggle: **holding DPAD_DOWN for 600 ms** (`ModeToggleDetector.HOLD_MS`) toggles the mode, in either mode,
   exactly once per hold (repeats do nothing; the release after a hold does nothing). Detected from the
   key-down event time (`KeyEvent.eventTime`), not from `repeatCount`, so remotes with a slow repeat rate
   behave the same. `PlayerViewModel.onKeyDown(keyCode, repeatCount, eventTimeMs)` / `onKeyUp(keyCode)`
   replaced the screen's former `dispatchKey`; `PlayerScreen` only forwards the events.
-- Consequence of long-press on UP: UP is consumed in both modes and its short-press action (the menu in
-  `TEACHER`) runs on **key-up**, not key-down, because at key-down a tap cannot yet be told from the start
-  of a hold. UP pressed while the menu is open still explains (the overlay handles its own keys), so the
-  toggle is only available with the menu closed.
+- Consequence of long-press on DOWN: DOWN is consumed in both modes and its short-press action (the
+  Spanish phrase rewind in `TEACHER`; nothing in `NORMAL`) runs on **key-up**, not key-down, because at
+  key-down a tap cannot yet be told from the start of a hold. The burst counting of #347 stays correct: each
+  tap adds one press to the 1.5 s group when it is released, so N quick taps still mean N phrases (the group
+  window now starts at the first release, up to one tap-length later than before). UP is a plain key again,
+  acting on key-down: `TEACHER` opens the captured-line menu at once, `NORMAL` is the plain-player UP: it opens the tracks panel,
+  the owner's subtitle-change key. The toggle is only available with the
+  menu closed (DOWN with the menu open still rewinds Spanish; the overlay handles its own keys).
 - Feedback: `PlayerViewModel.MODE_TEACHER = "Modo Teacher Movies"` / `MODE_NORMAL = "Modo normal"`, shown
   through `showMessage` (the transport overlay message of #374, `MESSAGE_TIMEOUT_MS`). The mode is held in
   `PlayerViewModel.playerMode` (a `StateFlow`), read once from the settings when the player opens (the
   default until then) and saved on every toggle; `PlayerViewModel.Factory` takes the `SettingsRepository`.
-- Decision and alternatives (why not another key): no other D-pad key is free (LEFT/DOWN rewind in
+- Decision change (owner, 2026-10-24): the toggle was first long-press UP (#386). **UP was rejected**
+  because in `NORMAL` mode UP is the owner's key to change subtitles; using it for the toggle took that
+  function away. DOWN does nothing in `NORMAL`, so it costs nothing there.
+- Original decision and alternatives (why not another key): no other D-pad key is free (LEFT/DOWN rewind in
   `TEACHER`, RIGHT seeks, OK pauses, BACK exits, MENU opens the tracks panel). *Dedicated colour key*
   (red/green/yellow/blue): rejected, many Android TV remotes (Mi Box, Chromecast, Fire TV) have none.
   *Item in the UP menu*: rejected, the menu is only reachable in `TEACHER` and needs a captured line, so it
   could not take the player back from `NORMAL`. *Settings screen only*: rejected, not usable mid-movie.
-  *CAPTIONS*: absent on most remotes. Long-press UP needs no extra hardware and costs only the key-up
+  *CAPTIONS*: absent on most remotes. Long-press needs no extra hardware and costs only the key-up
   deferral above; a double press was rejected because UP presses in a 1.5 s group already mean something
   in the menu.
 - Tests: `AssistantKeyMapperTest` (both modes), `ModeToggleDetectorTest` (once per hold),

@@ -19,6 +19,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,7 +81,7 @@ fun PlayerRoute(
 /**
  * Full-screen video with the transport overlay. The root box holds focus for the whole route, so
  * every remote key lands here: [onKey] gets each key-down (code, repeat count, event time) and returns
- * whether it was a player key; [onKeyUp] answers the key-up (a short press of UP acts there, #385);
+ * whether it was a player key; [onKeyUp] answers the key-up (a short press of DOWN acts there, #385);
  * other keys (volume, HOME) pass through. BACK is one of the mapped keys; [BackHandler] is only the fallback should BACK arrive as a back gesture instead.
  *
  * While [PlayerUiState.tracksPanel] is open (#79) the root box maps no key, so the D-pad and OK
@@ -206,7 +207,14 @@ fun PlayerScreen(
             )
         }
     }
-    LaunchedEffect(panelOpen, assistantOpen) { if (!panelOpen && !assistantOpen) focus.requestFocus() }
+    // Wait one frame so the closing panel's focused list row is already gone: asking while it is still
+    // composed can leave the root box without focus and every remote key dead (#388, unproven on a TV).
+    LaunchedEffect(panelOpen, assistantOpen) {
+        if (!panelOpen && !assistantOpen) {
+            withFrameNanos { }
+            focus.requestFocus()
+        }
+    }
 }
 
 @Composable

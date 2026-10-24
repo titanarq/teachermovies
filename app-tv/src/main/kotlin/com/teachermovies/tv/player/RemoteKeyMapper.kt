@@ -35,9 +35,12 @@ object RemoteKeyMapper {
 
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> PlayerAction.SeekBy(LONG_SEEK_MS)
 
-            // MENU only: DPAD_UP opens the assistant menu (AssistantKeyMapper), and DPAD_RIGHT stays
+            // MENU always opens the tracks panel. DPAD_UP does too, but it only gets here in NORMAL
+            // mode: in TEACHER the assistant takes UP first (captured-line menu). DPAD_RIGHT stays
             // the player's native seek.
-            KeyEvent.KEYCODE_MENU -> PlayerAction.ShowTracks
+            KeyEvent.KEYCODE_MENU,
+            KeyEvent.KEYCODE_DPAD_UP,
+            -> PlayerAction.ShowTracks
 
             KeyEvent.KEYCODE_BACK -> PlayerAction.Exit
 

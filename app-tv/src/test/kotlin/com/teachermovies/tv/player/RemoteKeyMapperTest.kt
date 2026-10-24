@@ -33,7 +33,6 @@ class RemoteKeyMapperTest {
     fun otherKeysMapToNull() {
         listOf(
             KeyEvent.KEYCODE_DPAD_DOWN,
-            KeyEvent.KEYCODE_DPAD_UP,
             KeyEvent.KEYCODE_VOLUME_UP,
             KeyEvent.KEYCODE_VOLUME_DOWN,
             KeyEvent.KEYCODE_HOME,
