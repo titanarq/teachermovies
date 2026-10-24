@@ -42,6 +42,7 @@ import com.teachermovies.core.model.TorrentId
 import com.teachermovies.player.api.VideoSurfaceHost
 import com.teachermovies.tv.player.AssistantAction
 import com.teachermovies.tv.player.AssistantKeyMapper
+import com.teachermovies.tv.player.KeepScreenOnWhilePlaying
 import com.teachermovies.tv.player.PlayerUiState
 import com.teachermovies.tv.player.PlayerViewModel
 import com.teachermovies.tv.player.RemoteKeyMapper
@@ -129,6 +130,7 @@ fun PlayerScreen(
     val assistantOpen = assistant != null
     val focus = remember { FocusRequester() }
     BackHandler(onBack = onBack)
+    KeepScreenOnWhilePlaying(state.isPlaying)
     Box(
         modifier =
             modifier
